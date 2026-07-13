@@ -1,0 +1,9 @@
+node_modules/
+dist/
+work/
+outputs/
+tmp/
+.impeccable/
+docs/superpowers/
+*.tsbuildinfo
+.DS_Store
