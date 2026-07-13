@@ -1,6 +1,6 @@
 export const KATAN_REPOSITORY_URL = 'https://github.com/nawwwal/katan-agents'
-export const KATAN_AGENT_GUIDE_URL = `${KATAN_REPOSITORY_URL}/blob/main/docs/LOCAL_AGENTS.md#first-time-codex-setup`
-export const KATAN_CONNECTOR_REVISION = '5514bf2a6f8b5c4456e5c7e5a25de9e609b6f40d'
+export const KATAN_CONNECTOR_REVISION = 'ab9bc0b87a8540d5d885540024c57ab98679f7f5'
+export const KATAN_AGENT_GUIDE_URL = `${KATAN_REPOSITORY_URL}/blob/${KATAN_CONNECTOR_REVISION}/docs/LOCAL_AGENTS.md#first-time-codex-setup`
 
 const KATAN_CONNECTOR_DIRECTORY = '$HOME/projects/katan-agent-connector'
 

@@ -410,7 +410,7 @@ For a manual fresh install, run:
 
 ```bash
 set -euo pipefail
-KATAN_CONNECTOR_REVISION=5514bf2a6f8b5c4456e5c7e5a25de9e609b6f40d
+KATAN_CONNECTOR_REVISION=ab9bc0b87a8540d5d885540024c57ab98679f7f5
 KATAN_CONNECTOR_DIR="$HOME/projects/katan-agent-connector"
 
 mkdir -p "$HOME/projects"
