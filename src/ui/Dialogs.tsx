@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { currentActorId } from '../game/engine'
 import { visibleScore } from '../game/room'
-import type { AgentStatus, GameAction, GameDisplayState, Resource, Resources } from '../game/types'
+import type { AgentStatus, DevelopmentCard, GameAction, GameDisplayState, Resource, Resources } from '../game/types'
 import { RESOURCES, emptyResources } from '../game/types'
-import type { PlacementMode } from '../scene/GameScene'
 import type { DialogName } from './Hud'
-import { CardsIcon, CloseIcon, HammerIcon, TradeIcon } from './Icons'
+import { CardsIcon, CloseIcon, TradeIcon } from './Icons'
+import { DEVELOPMENT_ART, DEVELOPMENT_CARDS, DEVELOPMENT_NAME, DEVELOPMENT_SHORT, RESOURCE_IMAGE, RESOURCE_LABEL } from './gameVisuals'
 
 type DialogProps = {
   game: GameDisplayState
@@ -14,10 +14,7 @@ type DialogProps = {
   agentStatuses?: Record<string, AgentStatus>
   onClose: () => void
   onAction: (action: GameAction) => boolean
-  onPlacementMode: (mode: PlacementMode) => void
 }
-
-const resourceLabel = (resource: Resource) => resource[0].toUpperCase() + resource.slice(1)
 
 function Modal({ title, icon, children, onClose, locked = false, wide = false }: { title: string; icon?: React.ReactNode; children: React.ReactNode; onClose: () => void; locked?: boolean; wide?: boolean }) {
   const backdropRef = useRef<HTMLDivElement>(null)
@@ -65,24 +62,10 @@ function Modal({ title, icon, children, onClose, locked = false, wide = false }:
   </div>
 }
 
-function BuildDialog({ game, onClose, onAction, onPlacementMode }: Omit<DialogProps, 'dialog' | 'humanId'>) {
-  const count = (type: GameAction['type']) => game.legalActions.filter((action) => action.type === type).length
-  const development = game.legalActions.find((action) => action.type === 'buy-development')
-  const choose = (mode: PlacementMode) => { onPlacementMode(mode); onClose() }
-  return <Modal title="Build on the island" icon={<HammerIcon />} onClose={onClose}>
-    <div className="build-grid">
-      <button disabled={!count('build-road')} onClick={() => choose('road')}><span className="piece road-piece" /><strong>Road</strong><small>1 brick + 1 lumber</small><em>{count('build-road')} paths</em></button>
-      <button disabled={!count('build-settlement')} onClick={() => choose('settlement')}><span className="piece settlement-piece" /><strong>Settlement</strong><small>brick + lumber + wool + grain</small><em>{count('build-settlement')} corners</em></button>
-      <button disabled={!count('build-city')} onClick={() => choose('city')}><span className="piece city-piece" /><strong>City</strong><small>3 ore + 2 grain</small><em>{count('build-city')} upgrades</em></button>
-      <button disabled={!development} onClick={() => { if (development && onAction(development)) onClose() }}><img src="/assets/resource-development.webp" alt="" /><strong>Development</strong><small>ore + wool + grain</small><em>{game.developmentDeckCount} left</em></button>
-    </div>
-  </Modal>
-}
-
 function TradeDialog({ game, humanId, onClose, onAction }: Pick<DialogProps, 'game' | 'humanId' | 'onClose' | 'onAction'>) {
   const maritime = game.legalActions.filter((action): action is Extract<GameAction, { type: 'maritime-trade' }> => action.type === 'maritime-trade')
-  const [give, setGive] = useState<Resource>('brick')
-  const [receive, setReceive] = useState<Resource>('grain')
+  const [give, setGive] = useState<Resource>(maritime[0]?.give ?? 'brick')
+  const [receive, setReceive] = useState<Resource>(maritime[0]?.receive ?? 'grain')
   const [maritimeRatio, setMaritimeRatio] = useState<2 | 3 | 4>()
   const [otherId, setOtherId] = useState(game.players.find((candidate) => candidate.id !== humanId)?.id ?? '')
   const [domesticGive, setDomesticGive] = useState<Resources>(() => emptyResources())
@@ -104,33 +87,40 @@ function TradeDialog({ game, humanId, onClose, onAction }: Pick<DialogProps, 'ga
   } : undefined
   useEffect(() => setMaritimeRatio(undefined), [give, receive])
 
-  return <Modal title="Trade resources" icon={<TradeIcon />} onClose={onClose} wide>
+  const chooseGive = (resource: Resource) => {
+    setGive(resource)
+    if (!maritime.some((action) => action.give === resource && action.receive === receive)) setReceive(maritime.find((action) => action.give === resource)?.receive ?? receive)
+  }
+  return <Modal title="Trade table" icon={<TradeIcon />} onClose={onClose} wide>
     <div className="trade-columns">
-      <section><h3>Maritime trade</h3><p>Use your best harbor rate or choose the always-available 4:1 exchange.</p><div className="trade-row"><label>You give<select value={give} onChange={(event) => setGive(event.target.value as Resource)}>{RESOURCES.map((resource) => <option key={resource} value={resource}>{resourceLabel(resource)}</option>)}</select></label><span className="trade-arrow">→</span><label>You receive<select value={receive} onChange={(event) => setReceive(event.target.value as Resource)}>{RESOURCES.map((resource) => <option key={resource} value={resource}>{resourceLabel(resource)}</option>)}</select></label></div>
-        {matchingMaritime.length > 1 ? <label>Exchange rate<select aria-label="Maritime exchange rate" value={selectedMaritime?.ratio ?? 4} onChange={(event) => setMaritimeRatio(Number(event.target.value) as 2 | 3 | 4)}>{matchingMaritime.map((action) => <option key={action.ratio} value={action.ratio}>{action.ratio}:1</option>)}</select></label> : null}
-        <button className="modal-primary" disabled={!selectedMaritime} onClick={() => { if (selectedMaritime && onAction(selectedMaritime)) onClose() }}>{selectedMaritime ? `Trade ${selectedMaritime.ratio}:1` : 'Trade unavailable'}</button>
+      <section className="maritime-table"><header><h3>Harbor</h3><span className="public-stack" title="Best available exchange rate">{selectedMaritime?.ratio ?? '–'}<small>:1</small></span></header><div className="trade-exchange-picker"><ResourcePicker label="Give" value={give} onChange={chooseGive} disabled={(resource) => !maritime.some((action) => action.give === resource)} /><span className="trade-arrow" aria-hidden="true">→</span><ResourcePicker label="Receive" value={receive} onChange={setReceive} disabled={(resource) => resource === give || !maritime.some((action) => action.give === give && action.receive === resource)} /></div>
+        {matchingMaritime.length > 1 ? <div className="ratio-picker" aria-label="Exchange rate">{matchingMaritime.map((action) => <button className={selectedMaritime?.ratio === action.ratio ? 'selected' : ''} key={action.ratio} onClick={() => setMaritimeRatio(action.ratio)}>{action.ratio}:1</button>)}</div> : null}
+        <button className="modal-primary" disabled={!selectedMaritime} onClick={() => { if (selectedMaritime && onAction(selectedMaritime)) onClose() }}>{selectedMaritime ? `Exchange ${selectedMaritime.ratio} for 1` : 'Unavailable'}</button>
       </section>
-      <section><h3>Domestic trade</h3><p>Combine any number of cards. The other player decides without revealing their hand.</p><label>Partner<select value={otherId} onChange={(event) => setOtherId(event.target.value)}>{game.players.filter((candidate) => candidate.id !== humanId).map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name}</option>)}</select></label>
+      <section className="domestic-table"><header><h3>Player trade</h3><span className="privacy-mark" title="Only public card totals are visible">Hidden hands</span></header><div className="trade-partners" role="radiogroup" aria-label="Trade partner">{game.players.filter((candidate) => candidate.id !== humanId).map((candidate) => <button role="radio" aria-checked={candidate.id === otherId} className={`${candidate.color} ${candidate.id === otherId ? 'selected' : ''}`} value={candidate.id} key={candidate.id} onClick={() => setOtherId(candidate.id)}><span className={`player-crest ${candidate.color}`}>{candidate.name[0]}</span><strong>{candidate.name}</strong><small title="Public card stacks"><b>▰ {candidate.resourceCount}</b><b>◈ {candidate.developmentCount}</b><b>★ {visibleScore(game, candidate.id, humanId)}</b></small></button>)}</div>
         <TradeBundle title="You give" values={domesticGive} limits={player.resources} onChange={setDomesticGive} />
-        <TradeBundle title="You receive" values={domesticReceive} onChange={setDomesticReceive} />
+        <TradeBundle title="You ask" values={domesticReceive} onChange={setDomesticReceive} />
         {overlap ? <p className="trade-warning">A resource cannot appear on both sides.</p> : null}
-        <button className="modal-primary" disabled={!domesticAction} onClick={() => { if (domesticAction && onAction(domesticAction)) onClose() }}>Send {giveTotal} for {receiveTotal}</button>
+        <button className="modal-primary" disabled={!domesticAction} onClick={() => { if (domesticAction && onAction(domesticAction)) onClose() }}>Offer {giveTotal} ↔ {receiveTotal}</button>
       </section>
     </div>
   </Modal>
 }
 
-const describeTradeResources = (resources: Partial<Resources>) => RESOURCES
-  .filter((resource) => resources[resource])
-  .map((resource) => `${resources[resource]} ${resourceLabel(resource)}`)
-  .join(', ')
+function ResourcePicker({ label, value, onChange, disabled }: { label: string; value: Resource; onChange: (resource: Resource) => void; disabled?: (resource: Resource) => boolean }) {
+  return <fieldset className="resource-picker"><legend>{label}</legend><div>{RESOURCES.map((resource) => <button key={resource} className={value === resource ? 'selected' : ''} disabled={disabled?.(resource)} onClick={() => onChange(resource)} aria-pressed={value === resource} aria-label={RESOURCE_LABEL[resource]} title={RESOURCE_LABEL[resource]}><img src={RESOURCE_IMAGE[resource]} alt="" /></button>)}</div></fieldset>
+}
 
 function TradeBundle({ title, values, limits, onChange }: { title: string; values: Resources; limits?: Resources; onChange: React.Dispatch<React.SetStateAction<Resources>> }) {
   const change = (resource: Resource, value: number) => onChange((current) => ({
     ...current,
     [resource]: Math.max(0, Math.min(limits?.[resource] ?? 19, Number.isFinite(value) ? Math.floor(value) : 0)),
   }))
-  return <fieldset className="trade-bundle"><legend>{title}</legend><div>{RESOURCES.map((resource) => <label key={resource}><img src={`/assets/resource-${resource}.webp`} alt="" /><span>{resourceLabel(resource)}</span><input type="number" inputMode="numeric" min="0" max={limits?.[resource] ?? 19} value={values[resource]} onChange={(event) => change(resource, event.currentTarget.valueAsNumber)} aria-label={`${title} ${resource}`} /></label>)}</div></fieldset>
+  return <fieldset className="trade-bundle"><legend>{title}</legend><div>{RESOURCES.map((resource) => <div className="resource-stepper" key={resource} title={RESOURCE_LABEL[resource]}><img src={RESOURCE_IMAGE[resource]} alt="" /><strong>{values[resource]}</strong><span><button disabled={values[resource] === 0} onClick={() => change(resource, values[resource] - 1)} aria-label={`Remove ${RESOURCE_LABEL[resource]} from ${title}`}>−</button><button disabled={values[resource] >= (limits?.[resource] ?? 19)} onClick={() => change(resource, values[resource] + 1)} aria-label={`Add ${RESOURCE_LABEL[resource]} to ${title}`}>+</button></span>{limits ? <small>{limits[resource]} owned</small> : <small>{RESOURCE_LABEL[resource]}</small>}</div>)}</div></fieldset>
+}
+
+function VisualTradeBundle({ title, values }: { title: string; values: Partial<Resources> }) {
+  return <div className="trade-contents"><small>{title}</small><div>{RESOURCES.filter((resource) => values[resource]).map((resource) => <span key={resource} title={RESOURCE_LABEL[resource]}><img src={RESOURCE_IMAGE[resource]} alt="" /><b>{values[resource]}</b></span>)}</div></div>
 }
 
 function TradeResponseDialog({ game, onAction }: Pick<DialogProps, 'game' | 'onAction'>) {
@@ -156,32 +146,24 @@ function TradeResponseDialog({ game, onAction }: Pick<DialogProps, 'game' | 'onA
   } : undefined
   return <Modal title={`${from?.name ?? 'A player'} offers a trade`} locked onClose={() => {}}>
     <div className="trade-response">
-      <div><small>You receive</small><strong>{describeTradeResources(trade.give)}</strong></div>
+      <VisualTradeBundle title="You receive" values={trade.give} />
       <span>↔</span>
-      <div><small>You give</small><strong>{describeTradeResources(trade.receive)}</strong></div>
+      <VisualTradeBundle title="You give" values={trade.receive} />
     </div>
-    <p className="modal-note">Your private hand stays hidden. If you cannot supply the requested card, only decline is available.</p>
-    <div className="counter-offer"><strong>Counteroffer</strong><TradeBundle title="You give" values={counterGive} limits={actor.resources} onChange={setCounterGive} /><TradeBundle title="You receive" values={counterReceive} onChange={setCounterReceive} />{counterOverlap ? <p className="trade-warning">A resource cannot appear on both sides.</p> : null}<button disabled={!counter} onClick={() => counter && onAction(counter)}>Send {counterGiveTotal} for {counterReceiveTotal}</button></div>
     <div className="trade-response-actions"><button onClick={() => reject && onAction(reject)}>Decline</button><button className="modal-primary" disabled={!accept} onClick={() => accept && onAction(accept)}>Accept trade</button></div>
+    <div className="counter-offer"><strong>Counter</strong><TradeBundle title="You give" values={counterGive} limits={actor.resources} onChange={setCounterGive} /><TradeBundle title="You ask" values={counterReceive} onChange={setCounterReceive} />{counterOverlap ? <p className="trade-warning">A resource cannot appear on both sides.</p> : null}<button disabled={!counter} onClick={() => counter && onAction(counter)}>Offer {counterGiveTotal} ↔ {counterReceiveTotal}</button></div>
   </Modal>
-}
-
-const CARD_COPY: Record<string, string> = {
-  knight: 'Move the robber and steal a card',
-  'road-building': 'Place two roads without paying',
-  'year-of-plenty': 'Take any two bank resources',
-  monopoly: 'Claim one resource type from every rival',
-  'victory-point': 'Hidden until it gives you the win',
 }
 
 function CardsDialog({ game, humanId, onClose, onAction }: Pick<DialogProps, 'game' | 'humanId' | 'onClose' | 'onAction'>) {
   const player = game.players.find((candidate) => candidate.id === humanId)!
-  const counts = useMemo(() => player.development.reduce<Record<string, number>>((result, card) => ({ ...result, [card]: (result[card] ?? 0) + 1 }), {}), [player.development])
+  const counts = useMemo(() => player.development.reduce<Partial<Record<DevelopmentCard, number>>>((result, card) => ({ ...result, [card]: (result[card] ?? 0) + 1 }), {}), [player.development])
   const playable = game.legalActions.filter((action): action is Extract<GameAction, { type: 'play-development' }> => action.type === 'play-development')
-  return <Modal title="Development cards" icon={<CardsIcon />} onClose={onClose}>
-    <div className="card-list">{Object.keys(CARD_COPY).map((card) => {
+  return <Modal title="Development hand" icon={<CardsIcon />} onClose={onClose} wide>
+    <div className="card-list">{DEVELOPMENT_CARDS.map((card) => {
       const action = playable.find((candidate) => candidate.card === card)
-      return <article key={card}><img src="/assets/resource-development.webp" alt="" /><div><strong>{card.replaceAll('-', ' ')}</strong><p>{CARD_COPY[card]}</p></div><span>{counts[card] ?? 0}</span>{card !== 'victory-point' ? <button disabled={!action} onClick={() => { if (action && onAction(action)) onClose() }}>Play</button> : null}</article>
+      const count = counts[card] ?? 0
+      return <article className={count ? '' : 'empty'} key={card}><img src={DEVELOPMENT_ART[card]} alt="" /><div><strong>{DEVELOPMENT_NAME[card]}</strong><p>{DEVELOPMENT_SHORT[card]}</p></div><span aria-label={`${count} owned`}>{count}</span>{card !== 'victory-point' ? <button disabled={!action} onClick={() => { if (action && onAction(action)) onClose() }}>Play</button> : <em>Keep hidden</em>}</article>
     })}</div>
     {game.playedDevelopmentThisTurn ? <p className="modal-note">You have already played a development card this turn.</p> : null}
   </Modal>
@@ -193,21 +175,29 @@ function DiscardDialog({ game, humanId, onAction }: Pick<DialogProps, 'game' | '
   const [chosen, setChosen] = useState<Resources>(() => emptyResources())
   useEffect(() => setChosen(emptyResources()), [game.revision])
   const total = RESOURCES.reduce((sum, resource) => sum + chosen[resource], 0)
-  const adjust = (resource: Resource, direction: 1 | -1) => setChosen((current) => ({ ...current, [resource]: Math.max(0, Math.min(player.resources[resource], current[resource] + direction)) }))
-  return <Modal title={`Discard ${required} cards`} locked onClose={() => {}}><p className="modal-intro">A seven was rolled. Choose exactly half of your hand, rounded down.</p><div className="discard-grid">{RESOURCES.map((resource) => <div key={resource}><strong>{resourceLabel(resource)}</strong><small>{player.resources[resource]} owned</small><div><button onClick={() => adjust(resource, -1)} aria-label={`Remove ${resource}`}>−</button><span>{chosen[resource]}</span><button onClick={() => adjust(resource, 1)} aria-label={`Add ${resource}`}>+</button></div></div>)}</div><button className="modal-primary" disabled={total !== required} onClick={() => onAction({ type: 'discard', resources: chosen })}>Discard {total} / {required}</button></Modal>
+  return <Modal title={`Discard ${required}`} locked onClose={() => {}}><TradeBundle title="Choose cards" values={chosen} limits={player.resources} onChange={setChosen} /><button className="modal-primary" disabled={total !== required} onClick={() => onAction({ type: 'discard', resources: chosen })}>Discard {total} / {required}</button></Modal>
 }
 
 function ChoiceDialog({ game, onAction }: Pick<DialogProps, 'game' | 'onAction'>) {
+  const [plenty, setPlenty] = useState<Resource[]>([])
+  useEffect(() => setPlenty([]), [game.revision])
+  const plentyActions = game.legalActions.filter((action): action is Extract<GameAction, { type: 'choose-year-of-plenty' }> => action.type === 'choose-year-of-plenty')
+  const signature = (resources: readonly Resource[]) => [...resources].sort().join('|')
+  const plentyAction = plenty.length === 2 ? plentyActions.find((action) => signature(action.resources) === signature(plenty)) : undefined
+  const canAddPlenty = (resource: Resource) => {
+    const candidate = plenty.length >= 2 ? [resource] : [...plenty, resource]
+    return plentyActions.some((action) => candidate.length === 1 ? action.resources.includes(candidate[0]) : signature(action.resources) === signature(candidate))
+  }
+  const addPlenty = (resource: Resource) => setPlenty((current) => current.length >= 2 ? [resource] : [...current, resource])
   if (game.phase === 'choose-victim') {
     const actions = game.legalActions.filter((action): action is Extract<GameAction, { type: 'steal-from' }> => action.type === 'steal-from')
-    return <Modal title="Choose a rival" locked onClose={() => {}}><div className="choice-list">{actions.map((action) => { const player = game.players.find((candidate) => candidate.id === action.playerId)!; return <button key={action.playerId} onClick={() => onAction(action)}><span className={`player-crest ${player.color}`}>{player.name[0]}</span><strong>{player.name}</strong><small>{player.resourceCount} cards</small></button> })}</div></Modal>
+    return <Modal title="Choose a rival" locked onClose={() => {}}><div className="choice-list">{actions.map((action) => { const player = game.players.find((candidate) => candidate.id === action.playerId)!; return <button key={action.playerId} onClick={() => onAction(action)}><span className={`player-crest ${player.color}`}>{player.name[0]}</span><strong>{player.name}</strong><small>▰ {player.resourceCount} · ◈ {player.developmentCount}</small></button> })}</div></Modal>
   }
   if (game.phase === 'year-of-plenty') {
-    const actions = game.legalActions.filter((action): action is Extract<GameAction, { type: 'choose-year-of-plenty' }> => action.type === 'choose-year-of-plenty')
-    return <Modal title="Year of Plenty" locked onClose={() => {}}><p className="modal-intro">Choose a pair the bank can supply.</p><div className="choice-list compact">{actions.map((action, index) => <button key={`${action.resources.join('-')}-${index}`} onClick={() => onAction(action)}><strong>{resourceLabel(action.resources[0])} + {resourceLabel(action.resources[1])}</strong></button>)}</div></Modal>
+    return <Modal title="Year of Plenty" locked onClose={() => {}}><div className="choice-slots" aria-label="Chosen resources">{[0, 1].map((index) => <button key={index} disabled={!plenty[index]} onClick={() => setPlenty((current) => current.slice(0, index))}>{plenty[index] ? <img src={RESOURCE_IMAGE[plenty[index]]} alt={RESOURCE_LABEL[plenty[index]]} /> : <span>+</span>}</button>)}</div><div className="resource-choice-grid">{RESOURCES.map((resource) => <button key={resource} disabled={!canAddPlenty(resource)} onClick={() => addPlenty(resource)} aria-label={RESOURCE_LABEL[resource]}><img src={RESOURCE_IMAGE[resource]} alt="" /><span>{RESOURCE_LABEL[resource]}</span></button>)}</div><button className="modal-primary" disabled={!plentyAction} onClick={() => plentyAction && onAction(plentyAction)}>Take selected pair</button></Modal>
   }
   if (game.phase === 'monopoly') {
-    return <Modal title="Monopoly" locked onClose={() => {}}><p className="modal-intro">Every rival will surrender the resource you name.</p><div className="choice-list compact">{RESOURCES.map((resource) => <button key={resource} onClick={() => onAction({ type: 'choose-monopoly', resource })}><strong>{resourceLabel(resource)}</strong></button>)}</div></Modal>
+    return <Modal title="Monopoly" locked onClose={() => {}}><div className="resource-choice-grid">{RESOURCES.map((resource) => <button key={resource} onClick={() => onAction({ type: 'choose-monopoly', resource })} aria-label={RESOURCE_LABEL[resource]}><img src={RESOURCE_IMAGE[resource]} alt="" /><span>{RESOURCE_LABEL[resource]}</span></button>)}</div></Modal>
   }
   if (game.phase === 'game-over') {
     const winner = game.players.find((player) => player.id === game.winnerId)
@@ -238,7 +228,6 @@ export function Dialogs(props: DialogProps) {
   if (humanMustAct && props.game.phase === 'trade-response') return <TradeResponseDialog game={props.game} onAction={props.onAction} />
   if (humanMustAct && ['choose-victim', 'year-of-plenty', 'monopoly'].includes(props.game.phase)) return <ChoiceDialog game={props.game} onAction={props.onAction} />
   if (props.game.phase === 'game-over') return <ChoiceDialog game={props.game} onAction={props.onAction} />
-  if (props.dialog === 'build') return <BuildDialog game={props.game} onClose={props.onClose} onAction={props.onAction} onPlacementMode={props.onPlacementMode} />
   if (props.dialog === 'trade') return <TradeDialog game={props.game} humanId={props.humanId} onClose={props.onClose} onAction={props.onAction} />
   if (props.dialog === 'cards') return <CardsDialog game={props.game} humanId={props.humanId} onClose={props.onClose} onAction={props.onAction} />
   if (props.dialog === 'rules') return <RulesDialog onClose={props.onClose} />

@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { currentActorId } from '../game/engine'
 import { visibleScore } from '../game/room'
-import type { AgentStatus, GameAction, GameDisplayState, Resource } from '../game/types'
+import type { AgentStatus, GameAction, GameDisplayState } from '../game/types'
 import type { GamePresentation } from '../game/useGame'
 import { RESOURCES } from '../game/types'
 import type { PlacementMode } from '../scene/GameScene'
-import { BookIcon, CardsIcon, DiceIcon, FlagIcon, HammerIcon, TradeIcon } from './Icons'
+import { BookIcon, CardsIcon, DiceIcon, FlagIcon, TradeIcon } from './Icons'
+import { BUILD_COSTS, RESOURCE_IMAGE } from './gameVisuals'
 
-export type DialogName = 'build' | 'trade' | 'cards' | 'rules' | 'history' | null
+export type DialogName = 'trade' | 'cards' | 'rules' | 'history' | null
 
 type HudProps = {
   game: GameDisplayState
@@ -28,27 +29,19 @@ type HudProps = {
   onExitMatch: () => void
 }
 
-const RESOURCE_IMAGE: Record<Resource, string> = {
-  brick: '/assets/resource-brick.webp',
-  lumber: '/assets/resource-lumber.webp',
-  ore: '/assets/resource-ore.webp',
-  grain: '/assets/resource-grain.webp',
-  wool: '/assets/resource-wool.webp',
-}
-
 const phaseCopy: Record<GameDisplayState['phase'], string> = {
-  'setup-settlement': 'Choose a glowing corner for your settlement',
-  'setup-road': 'Choose an adjacent path for your road',
-  'pre-roll': 'Roll to wake the island',
-  action: 'Trade, build, play a card, or end your turn',
-  discard: 'The robber demands half of a large hand',
-  'move-robber': 'Move the robber to a different terrain hex',
-  'choose-victim': 'Choose an adjacent rival',
-  'road-building': 'Place your free roads',
-  'year-of-plenty': 'Choose two resources from the bank',
-  monopoly: 'Name the resource everyone must surrender',
-  'trade-response': 'Review the trade waiting for your answer',
-  'game-over': 'The island has a new steward',
+  'setup-settlement': 'Place settlement',
+  'setup-road': 'Place adjacent road',
+  'pre-roll': 'Roll dice',
+  action: 'Build · trade · cards',
+  discard: 'Discard half',
+  'move-robber': 'Move robber',
+  'choose-victim': 'Choose rival',
+  'road-building': 'Place free roads',
+  'year-of-plenty': 'Choose two resources',
+  monopoly: 'Choose one resource',
+  'trade-response': 'Trade waiting',
+  'game-over': 'Match complete',
 }
 
 const countResources = (game: GameDisplayState, playerId: string) => {
@@ -62,7 +55,6 @@ function TurnPanel({ game, thinkingPlayerId, onAction, placementMode }: Pick<Hud
   const actorId = currentActorId(game)
   const actor = game.players.find((player) => player.id === actorId)
   const actorThinking = thinkingPlayerId === actorId
-  const thinkingCopy = actor?.name.trim().toLowerCase() === 'you' ? 'You must act' : `${actor?.name ?? 'Player'} must act`
   const total = game.lastRoll ? game.lastRoll[0] + game.lastRoll[1] : undefined
   const placementType = placementMode === 'road' ? 'build-road' : placementMode === 'settlement' ? 'build-settlement' : placementMode === 'city' ? 'build-city' : undefined
   const suggested = game.legalActions.find((action) => ['place-settlement', 'place-road', 'move-robber'].includes(action.type) || (game.phase === 'road-building' && action.type === 'build-road') || action.type === placementType)
@@ -76,10 +68,9 @@ function TurnPanel({ game, thinkingPlayerId, onAction, placementMode }: Pick<Hud
           ? 'Upgrade suggested city'
           : 'Move robber to suggested hex'
   return <section ref={panelRef} className="turn-panel wood-panel" aria-live="polite" tabIndex={-1}>
-    <div className="brand-lockup"><span>K</span>ATAN</div>
     <div className="turn-owner">
       <span className={`player-crest ${actor?.color ?? 'ivory'}`}>{actor?.name.slice(0, 1)}</span>
-      <div><strong>{actorThinking ? thinkingCopy : actor?.name}</strong><small>{phaseCopy[game.phase]}</small></div>
+      <div><small>{actorThinking ? 'Agent turn' : 'Current turn'}</small><strong>{actor?.name}</strong><span>{phaseCopy[game.phase]}</span></div>
     </div>
     {game.lastRoll ? <div className="dice-result" aria-label={`Last roll ${total}`}><span>{game.lastRoll[0]}</span><span>{game.lastRoll[1]}</span><strong>{total}</strong></div> : null}
     {suggested ? <button className="setup-suggest" onClick={() => onAction(suggested)}>{suggestedLabel}</button> : null}
@@ -98,7 +89,12 @@ function PlayerRail({ game, humanId, agentStatuses }: Pick<HudProps, 'game' | 'h
       <span className="rank">{index + 1}</span>
       <span className={`player-crest ${player.color}`}>{player.name.slice(0, 1)}</span>
       <div className="player-identity"><strong>{player.name}</strong><small title={player.controller === 'agent' ? agentStatuses[player.id]?.detail : undefined}>{player.controller === 'agent' ? `${agentStatusCopy[agentStatuses[player.id]?.state ?? 'idle']}${agentStatuses[player.id]?.detail ? ` · ${agentStatuses[player.id]?.detail}` : ''}` : 'Human player'}</small></div>
-      <div className="player-stats"><span title="Victory points">★ {visibleScore(game, player.id, humanId)}</span><span title="Resource cards">▰ {countResources(game, player.id)}</span><span title="Played knights">♞ {player.playedKnights}</span></div>
+      <div className="player-stats" aria-label={`${visibleScore(game, player.id, humanId)} victory points, ${countResources(game, player.id)} resource cards, ${player.developmentCount} development cards`}>
+        <span title="Victory points"><b aria-hidden="true">★</b>{visibleScore(game, player.id, humanId)}</span>
+        <span title="Resource cards"><b aria-hidden="true">▰</b>{countResources(game, player.id)}</span>
+        <span title="Development cards"><b aria-hidden="true">◈</b>{player.developmentCount}</span>
+        <span className="knight-stat" title="Played knights"><b aria-hidden="true">♞</b>{player.playedKnights}</span>
+      </div>
       {game.longestRoad?.playerId === player.id ? <span className="award" title="Longest road">LR</span> : null}
       {game.largestArmy?.playerId === player.id ? <span className="award" title="Largest army">LA</span> : null}
     </article>)}
@@ -166,9 +162,7 @@ function AgentDecisionPreview({ game, thinkingPlayerId, agentStatuses }: Pick<Hu
   const status = agentStatuses[actor.id]
   const stage = status?.state ?? 'idle'
   return <aside className={`agent-decision-preview ${stage}`} aria-live="polite">
-    <header><span className={`player-crest ${actor.color}`}>{actor.name[0]}</span><div><strong>{actor.name}</strong><small>Local agent · revision {status?.revision ?? game.revision}</small></div></header>
-    <ol><li className="done">Agent seat owns this decision</li><li>Private MCP view stays separate</li><li>No fallback bot will move</li></ol>
-    <p>{agentStatusCopy[stage]}{status?.detail ? ` · ${status.detail}` : ''}</p>
+    <span className={`player-crest ${actor.color}`}>{actor.name[0]}</span><div><strong>{actor.name}</strong><small>Local agent · revision {status?.revision ?? game.revision}</small></div><i aria-hidden="true" /><p>{stage === 'thinking' ? 'Choosing a move' : 'Waiting for agent'}</p>
   </aside>
 }
 
@@ -194,42 +188,56 @@ function ActionPreview({ action, onConfirm, onCancel }: { action: GameAction; on
   return <section className="action-preview" aria-live="polite"><div><strong>{title}</strong><span>{detail}</span></div><button onClick={onCancel}>Cancel</button><button className="confirm" autoFocus onClick={onConfirm}>Confirm</button></section>
 }
 
-function EventLog({ game, onHistory }: { game: GameDisplayState; onHistory: () => void }) {
-  return <aside className="event-log wood-panel"><header><strong>Event log</strong><button onClick={onHistory} title="Open full match history"><span>History</span><b>{game.revision}</b></button></header><ol>{game.events.slice(-7).toReversed().map((event) => <li key={event.id}><span className="event-dot" />{event.message}</li>)}</ol></aside>
-}
-
-function ResourceWallet({ game, humanId }: Pick<HudProps, 'game' | 'humanId'>) {
+function ResourceWallet({ game, humanId, onCards }: Pick<HudProps, 'game' | 'humanId'> & { onCards: () => void }) {
   const player = game.players.find((candidate) => candidate.id === humanId)
   if (!player) return null
   return <section className="resource-wallet" aria-label="Your resources">
-    {RESOURCES.map((resource) => <div className={`resource-card ${resource}`} key={resource} title={resource}>
+    {RESOURCES.map((resource) => <article className={`resource-card ${resource}`} key={resource} title={resource}>
       <img src={RESOURCE_IMAGE[resource]} alt="" /><span>{player.resources[resource]}</span><small>{resource}</small>
-    </div>)}
-    <div className="resource-card development" title="Development cards"><img src="/assets/resource-development.webp" alt="" /><span>{player.development.length}</span><small>cards</small></div>
+    </article>)}
+    <button className="resource-card development" title="Open development cards" onClick={onCards}><img src="/assets/resource-development.webp" alt="" /><span>{player.development.length}</span><small>cards</small></button>
   </section>
 }
 
+const BUILD_COMMANDS = [
+  { kind: 'road', label: 'Road', mode: 'road', actionType: 'build-road' },
+  { kind: 'settlement', label: 'Settle', mode: 'settlement', actionType: 'build-settlement' },
+  { kind: 'city', label: 'City', mode: 'city', actionType: 'build-city' },
+] as const
+
+function CostPips({ kind }: { kind: keyof typeof BUILD_COSTS }) {
+  return <span className="cost-pips" aria-hidden="true">{RESOURCES.flatMap((resource) => Array.from({ length: BUILD_COSTS[kind][resource] ?? 0 }, (_, index) => <img key={`${resource}-${index}`} src={RESOURCE_IMAGE[resource]} alt="" />))}</span>
+}
+
 function ActionTray(props: HudProps) {
-  const { game, humanId, placementMode, onDialog, onAction } = props
+  const { game, humanId, placementMode, onDialog, onPlacementMode, onAction } = props
   const humanTurn = currentActorId(game) === humanId
   const roll = game.legalActions.find((action) => action.type === 'roll-dice')
   const end = game.legalActions.find((action) => action.type === 'end-turn' || action.type === 'finish-road-building')
+  const buyDevelopment = game.legalActions.find((action) => action.type === 'buy-development')
   const inAction = game.phase === 'action' && humanTurn
   if (!humanTurn || ['setup-settlement', 'setup-road', 'discard', 'move-robber', 'choose-victim', 'year-of-plenty', 'monopoly', 'trade-response'].includes(game.phase)) return null
   return <nav className="action-tray wood-panel" aria-label="Turn actions">
-    {game.phase === 'pre-roll' ? <button className="primary" disabled={!roll} onClick={() => roll && onAction(roll)}><DiceIcon /><span>Roll dice</span></button> : null}
-    {inAction ? <button onClick={() => onDialog('trade')}><TradeIcon /><span>Trade</span></button> : null}
-    {inAction ? <button className={placementMode ? 'selected' : ''} onClick={() => onDialog('build')}><HammerIcon /><span>Build</span></button> : null}
-    {['pre-roll', 'action'].includes(game.phase) ? <button onClick={() => onDialog('cards')}><CardsIcon /><span>Cards</span></button> : null}
-    {end ? <button className="finish" onClick={() => onAction(end)}><FlagIcon /><span>{end.type === 'finish-road-building' ? 'Finish card' : 'End turn'}</span></button> : null}
+    {inAction ? <div className="build-rail" aria-label="Build">
+      {BUILD_COMMANDS.map((command) => {
+        const choices = game.legalActions.filter((action) => action.type === command.actionType).length
+        const selected = placementMode === command.mode
+        return <button key={command.kind} className={`build-command ${command.kind} ${selected ? 'selected' : ''}`} disabled={!choices} onClick={() => onPlacementMode(selected ? null : command.mode)} aria-pressed={selected} aria-label={`${command.label}, ${choices} legal locations`}><i aria-hidden="true" /><span>{command.label}</span><CostPips kind={command.kind} /><em>{choices}</em></button>
+      })}
+      <button className="build-command development" disabled={!buyDevelopment} onClick={() => buyDevelopment && onAction(buyDevelopment)} aria-label={`Buy development card, ${game.developmentDeckCount} remain`}><CardsIcon /><span>Develop</span><CostPips kind="development" /><em>{game.developmentDeckCount}</em></button>
+    </div> : null}
+    <div className="turn-rail">
+      {game.phase === 'pre-roll' ? <button className="primary" disabled={!roll} onClick={() => roll && onAction(roll)}><DiceIcon /><span>Roll</span></button> : null}
+      {inAction ? <button onClick={() => onDialog('trade')}><TradeIcon /><span>Trade</span></button> : null}
+      {['pre-roll', 'action'].includes(game.phase) ? <button onClick={() => onDialog('cards')}><CardsIcon /><span>Cards</span></button> : null}
+      {end ? <button className="finish" onClick={() => onAction(end)}><FlagIcon /><span>{end.type === 'finish-road-building' ? 'Finish' : 'End'}</span></button> : null}
+    </div>
   </nav>
 }
 
 const coachCopy: Partial<Record<GameDisplayState['phase'], { title: string; detail: string }>> = {
   'setup-settlement': { title: 'Found your first outpost', detail: 'Pick a corner touching productive numbers and a mix of resources.' },
   'setup-road': { title: 'Point toward your expansion', detail: 'Your road must touch the settlement you just placed.' },
-  'pre-roll': { title: 'Start with the dice', detail: 'Matching terrain produces for every adjacent settlement or city.' },
-  action: { title: 'Shape the turn', detail: 'Trade is optional. Build or play one card when useful, then end the turn.' },
   discard: { title: 'A seven was rolled', detail: 'Hands above seven discard half before the robber moves.' },
   'move-robber': { title: 'Block a rival tile', detail: 'The robber stops production there and may let you steal from an adjacent rival.' },
   'choose-victim': { title: 'Choose one adjacent rival', detail: 'You steal one random resource without seeing their hand.' },
@@ -253,8 +261,7 @@ export function Hud(props: HudProps) {
     <TurnPanel game={game} thinkingPlayerId={props.thinkingPlayerId} onAction={props.onAction} placementMode={props.placementMode} />
     <ContextCoach game={game} humanId={props.humanId} />
     <PlayerRail game={game} humanId={props.humanId} agentStatuses={props.agentStatuses} />
-    <EventLog game={game} onHistory={() => onDialog('history')} />
-    <ResourceWallet game={game} humanId={props.humanId} />
+    <ResourceWallet game={game} humanId={props.humanId} onCards={() => onDialog('cards')} />
     <ActionTray {...props} />
     <div className="utility-controls">
       <button className="history-button" onClick={() => onDialog('history')} title="Open match history and controller status"><b aria-hidden="true">☷</b><span>History</span></button>

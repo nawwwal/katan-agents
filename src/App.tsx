@@ -156,7 +156,7 @@ export default function App() {
       onMuted={setMuted}
       onExitMatch={returnToTitle}
     />
-    <Dialogs game={game} humanId={viewerPlayerId} dialog={dialog} agentStatuses={agentStatuses} onClose={() => setDialog(null)} onAction={act} onPlacementMode={setPlacementMode} /></> : null}
+    <Dialogs game={game} humanId={viewerPlayerId} dialog={dialog} agentStatuses={agentStatuses} onClose={() => setDialog(null)} onAction={act} /></> : null}
     {interactive && game ? <div className="sr-only board-targets" role="group" aria-label="Board targets">
       {boardActions.map((action, index) => {
         const target = 'vertexId' in action ? action.vertexId : 'edgeId' in action ? action.edgeId : 'hexId' in action ? action.hexId : index
