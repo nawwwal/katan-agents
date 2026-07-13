@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
-import { chooseBotAction } from './bot'
+import { chooseSimulationAction } from './simulationPolicy'
 import { applyAction, createGame, getPlayerView } from './engine'
 
-const hiddenCardGame = createGame({ seed: 41, controllers: ['human', 'bot', 'agent'] })
+const hiddenCardGame = createGame({ seed: 41, controllers: ['human', 'agent', 'agent'] })
 hiddenCardGame.players[1].development = ['victory-point']
 hiddenCardGame.players[1].boughtDevelopment = ['knight']
 hiddenCardGame.players[1].resources = { brick: 1, lumber: 1, ore: 1, grain: 1, wool: 1 }
@@ -15,7 +15,7 @@ assert.equal(redacted.includes('knight'), false, 'opponent fresh development ide
 assert.equal(redacted.includes('victory-point'), false, 'opponent hidden victory card must stay private')
 assert.equal(hiddenCardView.publicState.players[1].publicScore, 0, 'opponent hidden victory points must not alter public score')
 
-const malformedTradeGame = createGame({ seed: 42, controllers: ['human', 'bot', 'agent'] })
+const malformedTradeGame = createGame({ seed: 42, controllers: ['human', 'agent', 'agent'] })
 malformedTradeGame.phase = 'action'
 malformedTradeGame.activePlayerIndex = 0
 malformedTradeGame.actingPlayerId = 'p0'
@@ -31,7 +31,7 @@ const malformedTrade = applyAction(malformedTradeGame, {
 })
 assert.equal(malformedTrade.ok, false, 'negative domestic-trade amounts must be rejected')
 
-const tradeGame = createGame({ seed: 44, controllers: ['human', 'bot', 'agent'] })
+const tradeGame = createGame({ seed: 44, controllers: ['human', 'agent', 'agent'] })
 tradeGame.phase = 'action'
 tradeGame.activePlayerIndex = 0
 tradeGame.actingPlayerId = 'p0'
@@ -54,7 +54,7 @@ assert.equal(acceptedTrade.state.actingPlayerId, 'p0')
 assert.equal(acceptedTrade.state.players[0].resources.grain, 1)
 assert.equal(acceptedTrade.state.players[1].resources.brick, 1)
 
-const multiTradeGame = createGame({ seed: 46, controllers: ['human', 'bot', 'agent'] })
+const multiTradeGame = createGame({ seed: 46, controllers: ['human', 'agent', 'agent'] })
 multiTradeGame.phase = 'action'
 multiTradeGame.activePlayerIndex = 0
 multiTradeGame.actingPlayerId = 'p0'
@@ -74,7 +74,7 @@ assert.equal(multiAccepted.state.players[0].resources.grain, 2)
 assert.equal(multiAccepted.state.players[1].resources.brick, 2)
 assert.equal(multiAccepted.state.players[1].resources.lumber, 1)
 
-const counterGame = createGame({ seed: 45, controllers: ['human', 'bot', 'agent'] })
+const counterGame = createGame({ seed: 45, controllers: ['human', 'agent', 'agent'] })
 counterGame.phase = 'action'
 counterGame.activePlayerIndex = 0
 counterGame.actingPlayerId = 'p0'
@@ -95,7 +95,7 @@ assert.equal(acceptedCounter.state.actingPlayerId, 'p0', 'the original active pl
 assert.equal(acceptedCounter.state.players[0].resources.wool, 1)
 assert.equal(acceptedCounter.state.players[1].resources.ore, 1)
 
-const monopolyGame = createGame({ seed: 43, controllers: ['bot', 'bot', 'agent'] })
+const monopolyGame = createGame({ seed: 43, controllers: ['agent', 'agent', 'agent'] })
 monopolyGame.phase = 'monopoly'
 monopolyGame.activePlayerIndex = 0
 monopolyGame.actingPlayerId = 'p0'
@@ -107,9 +107,9 @@ samePublicGame.players[1].resources = { brick: 3, lumber: 0, ore: 0, grain: 0, w
 samePublicGame.players[2].resources = { brick: 2, lumber: 0, ore: 0, grain: 0, wool: 0 }
 
 assert.deepEqual(
-  chooseBotAction(getPlayerView(monopolyGame, 'p0')),
-  chooseBotAction(getPlayerView(samePublicGame, 'p0')),
-  'bot decisions must not change when only hidden opponent resource types change',
+  chooseSimulationAction(getPlayerView(monopolyGame, 'p0')),
+  chooseSimulationAction(getPlayerView(samePublicGame, 'p0')),
+  'simulation decisions must not change when only hidden opponent resource types change',
 )
 
 console.log('integrity check passed')

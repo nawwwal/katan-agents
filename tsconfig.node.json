@@ -7,5 +7,5 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "server/**/*.ts", "api/**/*.ts", "src/game/board.ts", "src/game/engine.ts", "src/game/room.ts", "src/game/types.ts"]
 }

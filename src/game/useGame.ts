@@ -1,193 +1,309 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { chooseBotAction } from './bot'
-import { applyAction, createGame, currentActorId, getPlayerView } from './engine'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { currentActorId } from './engine'
 import { RESOURCES } from './types'
-import type { AgentStatus, CreateGameOptions, GameAction, GameEvent, GameState, Resources } from './types'
+import { toDisplayState } from './room'
+import type { AgentStatus, GameAction, GameDisplayState, GameEvent, Resources } from './types'
+import type { RoomCredentials, RoomView, ServerRoomMessage } from './room'
 
-const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
-
-export type SpectatorPace = 'slow' | 'steady' | 'fast'
 export type GamePresentation = {
   revision: number
-  action: GameAction
   actionType: GameAction['type']
   events: GameEvent[]
   resourceDeltas: Record<string, Partial<Resources>>
   awardChanges: string[]
 }
 
-const PACE_MS: Record<SpectatorPace, { beforeAction: number; betweenAgentStages: number; afterSelection: number }> = {
-  slow: { beforeAction: 1_650, betweenAgentStages: 720, afterSelection: 900 },
-  steady: { beforeAction: 950, betweenAgentStages: 420, afterSelection: 560 },
-  fast: { beforeAction: 220, betweenAgentStages: 110, afterSelection: 140 },
-}
+export type RoomConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting'
 
-class AgentDecisionError extends Error {
-  constructor(readonly code: 'disconnected' | 'timeout' | 'invalid', message: string) {
-    super(message)
-  }
-}
+const SESSION_PREFIX = 'katan:room-seat'
+const normalizeRoomCode = (value: string | null | undefined) => value?.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6) ?? ''
+const sessionKey = (code: string) => `${SESSION_PREFIX}:${normalizeRoomCode(code)}`
 
-const checkAgentHealth = async (signal: AbortSignal) => {
+const storedCredentials = () => {
   try {
-    const response = await fetch('/agent-api/health', { signal: AbortSignal.any([signal, AbortSignal.timeout(2_500)]) })
-    if (!response.ok) throw new AgentDecisionError('disconnected', `Bridge returned ${response.status}`)
-    return (await response.json()) as { ok: boolean; mode: 'heuristic' | 'external' }
-  } catch (error) {
-    if (error instanceof AgentDecisionError) throw error
-    if (error instanceof DOMException && error.name === 'TimeoutError') throw new AgentDecisionError('timeout', 'Bridge health check timed out')
-    throw new AgentDecisionError('disconnected', 'Bridge is not reachable')
+    const code = normalizeRoomCode(new URLSearchParams(window.location.search).get('room'))
+    if (!code) return undefined
+    const value = sessionStorage.getItem(sessionKey(code))
+    if (!value) return undefined
+    const parsed = JSON.parse(value) as RoomCredentials
+    return parsed.code === code && typeof parsed.token === 'string' && typeof parsed.playerId === 'string' ? parsed : undefined
+  } catch {
+    return undefined
   }
 }
 
-const askLocalAgent = async (state: GameState, playerId: string, signal: AbortSignal) => {
-  const response = await fetch('/agent-api/v1/decision', {
+const requestRoom = async <T>(path: string, body: unknown): Promise<T> => {
+  const response = await fetch(path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(getPlayerView(state, playerId)),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(35_000)]),
+    body: JSON.stringify(body),
   })
-  if (!response.ok) throw new AgentDecisionError(response.status === 504 ? 'timeout' : response.status === 422 ? 'invalid' : 'disconnected', `Agent bridge returned ${response.status}`)
-  const decision = (await response.json()) as { revision?: number; action?: GameAction }
-  if (decision.revision !== state.revision || !decision.action?.type) throw new AgentDecisionError('invalid', 'Agent response did not match the current revision')
-  return decision as { revision: number; action: GameAction }
+  const payload = await response.json() as { data?: T; error?: { message?: string } }
+  if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? 'The room request failed.')
+  return payload.data
+}
+
+const eventActionType = (event: GameEvent | undefined, previous?: GameDisplayState): GameAction['type'] | undefined => {
+  if (!event) return undefined
+  if (event.type === 'settlement-built') return previous?.phase === 'setup-settlement' ? 'place-settlement' : 'build-settlement'
+  if (event.type === 'road-built') return previous?.phase === 'setup-road' ? 'place-road' : 'build-road'
+  return ({
+    dice: 'roll-dice',
+    discard: 'discard',
+    'robber-moved': 'move-robber',
+    robbery: 'steal-from',
+    'city-built': 'build-city',
+    'development-bought': 'buy-development',
+    'development-played': 'play-development',
+    'year-of-plenty': 'choose-year-of-plenty',
+    monopoly: 'choose-monopoly',
+    'maritime-trade': 'maritime-trade',
+    'road-building-finished': 'finish-road-building',
+    'trade-offered': 'offer-trade',
+    'trade-countered': 'counter-trade',
+    'trade-accepted': 'respond-trade',
+    'trade-rejected': 'respond-trade',
+    'turn-ended': 'end-turn',
+  } as Record<string, GameAction['type']>)[event.type]
 }
 
 export const useGame = () => {
-  const [game, setGame] = useState<GameState>()
+  const [credentials, setCredentials] = useState<RoomCredentials | undefined>(storedCredentials)
+  const [room, setRoom] = useState<RoomView>()
+  const [game, setGame] = useState<GameDisplayState>()
   const [error, setError] = useState<string>()
-  const [thinkingPlayerId, setThinkingPlayerId] = useState<string>()
-  const [spectating, setSpectating] = useState(false)
-  const [spectatorPaused, setSpectatorPaused] = useState(false)
-  const [spectatorPace, setSpectatorPace] = useState<SpectatorPace>('steady')
-  const [automationEnabled, setAutomationEnabled] = useState(false)
-  const [agentStatuses, setAgentStatuses] = useState<Record<string, AgentStatus>>({})
+  const [busy, setBusy] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [connectionState, setConnectionState] = useState<RoomConnectionState>(credentials ? 'connecting' : 'idle')
   const [presentation, setPresentation] = useState<GamePresentation>()
-  const gameRef = useRef(game)
-  gameRef.current = game
+  const socketRef = useRef<WebSocket | undefined>(undefined)
+  const roomRef = useRef<RoomView | undefined>(undefined)
+  const gameRef = useRef<GameDisplayState | undefined>(undefined)
+  const pendingRevisionRef = useRef<number | undefined>(undefined)
 
-  const start = useCallback((options: CreateGameOptions) => {
-    const next = createGame(options)
+  const applySnapshot = useCallback((nextRoom: RoomView) => {
+    const currentRoom = roomRef.current
+    if (currentRoom?.code === nextRoom.code && (
+      nextRoom.updatedAt < currentRoom.updatedAt
+      || (currentRoom.game && nextRoom.game && nextRoom.game.revision < currentRoom.game.revision)
+    )) return
+    roomRef.current = nextRoom
+    setRoom(nextRoom)
+    setError(undefined)
+    if (!nextRoom.game) {
+      gameRef.current = undefined
+      setGame(undefined)
+      setPresentation(undefined)
+      return
+    }
+    const next = toDisplayState(nextRoom.game)
+    const previous = gameRef.current
+    if (pendingRevisionRef.current !== undefined && next.revision >= pendingRevisionRef.current) {
+      pendingRevisionRef.current = undefined
+      setSubmitting(false)
+    }
+    if (previous && next.revision > previous.revision) {
+      const events = next.events.filter((event) => event.revision > previous.revision)
+      const ownBefore = previous.players.find((player) => player.id === nextRoom.viewerPlayerId)
+      const ownAfter = next.players.find((player) => player.id === nextRoom.viewerPlayerId)
+      const ownDeltas = Object.fromEntries(RESOURCES.flatMap((resource) => {
+        const delta = (ownAfter?.resources[resource] ?? 0) - (ownBefore?.resources[resource] ?? 0)
+        return delta ? [[resource, delta]] : []
+      }))
+      const actionType = events.toReversed().map((event) => eventActionType(event, previous)).find((type) => type !== undefined)
+      const awardChanges = [
+        previous.longestRoad?.playerId !== next.longestRoad?.playerId ? `${next.players.find((player) => player.id === next.longestRoad?.playerId)?.name ?? 'No one'} now holds Longest Road` : undefined,
+        previous.largestArmy?.playerId !== next.largestArmy?.playerId ? `${next.players.find((player) => player.id === next.largestArmy?.playerId)?.name ?? 'No one'} now holds Largest Army` : undefined,
+      ].filter((change): change is string => Boolean(change))
+      if (actionType) setPresentation({
+        revision: next.revision,
+        actionType,
+        events,
+        resourceDeltas: { [nextRoom.viewerPlayerId]: ownDeltas },
+        awardChanges,
+      })
+    }
     gameRef.current = next
     setGame(next)
-    setError(undefined)
-    setThinkingPlayerId(undefined)
-    setSpectatorPaused(false)
-    setSpectatorPace('steady')
-    setAgentStatuses(Object.fromEntries(next.players.filter((player) => player.controller === 'agent').map((player) => [player.id, { state: 'idle', detail: 'Waiting for first turn' } satisfies AgentStatus])))
-    setPresentation(undefined)
-    return next
   }, [])
 
-  const reset = useCallback(() => {
-    gameRef.current = undefined
-    setGame(undefined)
+  useEffect(() => {
+    if (!credentials) return
+    let stopped = false
+    let reconnectTimer = 0
+    let heartbeat = 0
+    let reconnectDelay = 250
+
+    const connect = () => {
+      if (stopped) return
+      setConnectionState((state) => state === 'connected' ? 'reconnecting' : 'connecting')
+      const socket = new WebSocket(`${window.location.origin.replace(/^http/, 'ws')}/api/ws`)
+      socketRef.current = socket
+      socket.addEventListener('open', () => {
+        reconnectDelay = 250
+        setConnectionState((state) => state === 'reconnecting' ? 'reconnecting' : 'connecting')
+        socket.send(JSON.stringify({ type: 'hello', code: credentials.code, token: credentials.token }))
+        heartbeat = window.setInterval(() => {
+          if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'ping' }))
+        }, 15_000)
+      })
+      socket.addEventListener('message', (event) => {
+        let message: ServerRoomMessage
+        try {
+          message = JSON.parse(String(event.data)) as ServerRoomMessage
+        } catch {
+          setError('The room sent an unreadable update. Reconnecting…')
+          socket.close()
+          return
+        }
+        if (message.type === 'snapshot') {
+          setConnectionState('connected')
+          applySnapshot(message.room)
+        } else if (message.type === 'error') {
+          setError(message.error.message)
+          if (message.requestId) {
+            pendingRevisionRef.current = undefined
+            setSubmitting(false)
+          }
+          if (['invalid_seat_token', 'room_not_found'].includes(message.error.code)) {
+            stopped = true
+            window.clearTimeout(reconnectTimer)
+            window.clearInterval(heartbeat)
+            sessionStorage.removeItem(sessionKey(credentials.code))
+            setCredentials(undefined)
+            gameRef.current = undefined
+            setGame(undefined)
+            setPresentation(undefined)
+            pendingRevisionRef.current = undefined
+            setSubmitting(false)
+            setConnectionState('idle')
+            socket.close()
+          }
+        }
+        else if (message.type === 'ack') setError(undefined)
+      })
+      socket.addEventListener('close', () => {
+        window.clearInterval(heartbeat)
+        if (stopped) return
+        setConnectionState('reconnecting')
+        reconnectTimer = window.setTimeout(connect, reconnectDelay)
+        reconnectDelay = Math.min(reconnectDelay * 2, 5_000)
+      })
+      socket.addEventListener('error', () => socket.close())
+    }
+
+    connect()
+    return () => {
+      stopped = true
+      window.clearTimeout(reconnectTimer)
+      window.clearInterval(heartbeat)
+      socketRef.current?.close()
+      socketRef.current = undefined
+    }
+  }, [applySnapshot, credentials])
+
+  const remember = useCallback((next: { credentials: RoomCredentials; room: RoomView }) => {
+    sessionStorage.setItem(sessionKey(next.credentials.code), JSON.stringify(next.credentials))
+    setCredentials(next.credentials)
+    applySnapshot(next.room)
+  }, [applySnapshot])
+
+  const createRoom = useCallback(async (name: string, seatsTotal: 3 | 4) => {
+    setBusy(true)
     setError(undefined)
-    setThinkingPlayerId(undefined)
-    setSpectating(false)
-    setSpectatorPaused(false)
-    setSpectatorPace('steady')
-    setAutomationEnabled(false)
-    setAgentStatuses({})
-    setPresentation(undefined)
+    try {
+      remember(await requestRoom('/api/rooms', { name, seatsTotal }))
+      return true
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not create the room.')
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }, [remember])
+
+  const joinRoom = useCallback(async (code: string, name: string) => {
+    setBusy(true)
+    setError(undefined)
+    try {
+      remember(await requestRoom(`/api/rooms/${code.trim().toUpperCase()}/seats`, { name, controller: 'human' }))
+      return true
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not join the room.')
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }, [remember])
+
+  const send = useCallback((message: object) => {
+    if (socketRef.current?.readyState !== WebSocket.OPEN) {
+      setError('The room is reconnecting. Your move was not sent.')
+      return false
+    }
+    socketRef.current.send(JSON.stringify(message))
+    return true
   }, [])
 
   const submit = useCallback((action: GameAction) => {
     const current = gameRef.current
-    if (!current) return
-    const result = applyAction(current, action)
-    if (!result.ok) {
-      setError(result.message)
-      return
+    if (!current || pendingRevisionRef.current !== undefined) return false
+    const sent = send({ type: 'action', requestId: crypto.randomUUID(), expectedRevision: current.revision, action })
+    if (sent) {
+      pendingRevisionRef.current = current.revision
+      setSubmitting(true)
     }
-    const resourceDeltas = Object.fromEntries(result.state.players.map((player) => {
-      const before = current.players.find((candidate) => candidate.id === player.id)
-      const deltas = Object.fromEntries(RESOURCES.flatMap((resource) => {
-        const delta = player.resources[resource] - (before?.resources[resource] ?? 0)
-        return delta ? [[resource, delta]] : []
-      }))
-      return [player.id, deltas]
-    }))
-    gameRef.current = result.state
-    setGame(result.state)
-    const awardChanges = [
-      current.longestRoad?.playerId !== result.state.longestRoad?.playerId ? `${result.state.players.find((player) => player.id === result.state.longestRoad?.playerId)?.name ?? 'No one'} now holds Longest Road` : undefined,
-      current.largestArmy?.playerId !== result.state.largestArmy?.playerId ? `${result.state.players.find((player) => player.id === result.state.largestArmy?.playerId)?.name ?? 'No one'} now holds Largest Army` : undefined,
-    ].filter((change): change is string => Boolean(change))
-    setPresentation({ revision: result.state.revision, action, actionType: action.type, events: result.events, resourceDeltas, awardChanges })
+    return sent
+  }, [send])
+
+  const start = useCallback(() => send({ type: 'start', requestId: crypto.randomUUID() }), [send])
+
+  const reset = useCallback(() => {
+    if (credentials) sessionStorage.removeItem(sessionKey(credentials.code))
+    socketRef.current?.close()
+    socketRef.current = undefined
+    roomRef.current = undefined
+    gameRef.current = undefined
+    setCredentials(undefined)
+    setRoom(undefined)
+    setGame(undefined)
     setError(undefined)
-  }, [])
+    setSubmitting(false)
+    pendingRevisionRef.current = undefined
+    setConnectionState('idle')
+    setPresentation(undefined)
+  }, [credentials])
 
-  useEffect(() => {
-    if (!game || !automationEnabled || spectatorPaused) return
-    if (game.phase === 'game-over') return
-    const actorId = currentActorId(game)
-    const actor = game.players.find((player) => player.id === actorId)
-    if (!actor || (actor.controller === 'human' && !spectating)) return
-    let cancelled = false
-    const agentRequest = new AbortController()
-    setThinkingPlayerId(actor.id)
-    if (actor.controller === 'agent') {
-      setAgentStatuses((statuses) => ({ ...statuses, [actor.id]: { state: 'connecting', detail: 'Opening the local bridge', revision: game.revision } }))
-    }
+  const thinkingPlayerId = useMemo(() => {
+    if (!game || room?.status !== 'playing') return undefined
+    const actor = game.players.find((player) => player.id === currentActorId(game))
+    return actor?.controller === 'agent' ? actor.id : undefined
+  }, [game, room?.status])
 
-    const act = async () => {
-      const pace = PACE_MS[spectatorPace]
-      await wait(pace.beforeAction)
-      if (cancelled) return
-      let action: GameAction | undefined
-      let usedFallback = false
-      const current = gameRef.current
-      if (!current || currentActorId(current) !== actor.id) return
-      if (actor.controller === 'agent') {
-        try {
-          const health = await checkAgentHealth(agentRequest.signal)
-          if (cancelled) return
-          setAgentStatuses((statuses) => ({ ...statuses, [actor.id]: { state: 'connected', detail: health.mode === 'external' ? 'External runner ready' : 'Heuristic bridge', revision: current.revision } }))
-          await wait(pace.betweenAgentStages)
-          if (cancelled) return
-          setAgentStatuses((statuses) => ({ ...statuses, [actor.id]: { state: 'thinking', detail: 'Reviewing legal actions', revision: current.revision } }))
-          const decision = await askLocalAgent(current, actor.id, agentRequest.signal)
-          const selectedAction = decision.action
-          action = selectedAction
-          setAgentStatuses((statuses) => ({ ...statuses, [actor.id]: { state: 'selected', detail: selectedAction.type.replaceAll('-', ' '), revision: decision.revision, actionType: selectedAction.type } }))
-          await wait(pace.afterSelection)
-        } catch (error) {
-          if (cancelled || agentRequest.signal.aborted) return
-          const failure = error instanceof AgentDecisionError ? error.code : error instanceof DOMException && error.name === 'TimeoutError' ? 'timeout' : 'invalid'
-          setAgentStatuses((statuses) => ({ ...statuses, [actor.id]: { state: failure, detail: error instanceof Error ? error.message : 'Agent decision failed', revision: current.revision } }))
-          const fallbackAction = chooseBotAction(getPlayerView(current, actor.id))
-          action = fallbackAction
-          if (fallbackAction) {
-            usedFallback = true
-            setAgentStatuses((statuses) => ({ ...statuses, [actor.id]: { state: 'fallback', detail: `Bot chose ${fallbackAction.type.replaceAll('-', ' ')}`, revision: current.revision, actionType: fallbackAction.type } }))
-            await wait(pace.afterSelection)
-          } else setAgentStatuses((statuses) => ({ ...statuses, [actor.id]: { state: 'fatal', detail: 'No legal fallback action', revision: current.revision } }))
-        }
-      } else action = chooseBotAction(getPlayerView(current, actor.id))
-      if (!cancelled && action) {
-        const latest = gameRef.current
-        if (!latest || latest.revision !== current.revision || currentActorId(latest) !== actor.id) return
-        const appliedAction = action
-        submit(appliedAction)
-        if (actor.controller === 'agent') setAgentStatuses((statuses) => ({ ...statuses, [actor.id]: { state: usedFallback ? 'fallback' : 'applied', detail: usedFallback ? `Applied bot fallback · ${appliedAction.type.replaceAll('-', ' ')}` : appliedAction.type.replaceAll('-', ' '), revision: current.revision, actionType: appliedAction.type } }))
-      }
-      if (!cancelled) setThinkingPlayerId(undefined)
-    }
-    void act()
-    return () => {
-      cancelled = true
-      agentRequest.abort()
-      setThinkingPlayerId(undefined)
-      if (actor.controller === 'agent') {
-        setAgentStatuses((statuses) => {
-          const status = statuses[actor.id]
-          if (!status || !['connecting', 'connected', 'thinking', 'selected'].includes(status.state)) return statuses
-          return { ...statuses, [actor.id]: { state: 'idle', detail: 'Decision stopped before completion', revision: game.revision } }
-        })
-      }
-    }
-  }, [automationEnabled, game, spectatorPace, spectatorPaused, spectating, submit])
+  const agentStatuses = useMemo(() => Object.fromEntries((game?.players ?? [])
+    .filter((player) => player.controller === 'agent')
+    .map((player) => [player.id, {
+      state: thinkingPlayerId === player.id ? 'thinking' : 'idle',
+      detail: thinkingPlayerId === player.id ? 'Waiting for a local agent action' : 'Agent seat',
+      revision: game?.revision,
+    } satisfies AgentStatus])), [game, thinkingPlayerId])
 
-  return { game, start, reset, submit, error, thinkingPlayerId, agentStatuses, presentation, spectating, setSpectating, spectatorPaused, setSpectatorPaused, spectatorPace, setSpectatorPace, automationEnabled, setAutomationEnabled }
+  return {
+    room,
+    game,
+    hasCredentials: Boolean(credentials),
+    viewerPlayerId: room?.viewerPlayerId,
+    createRoom,
+    joinRoom,
+    start,
+    reset,
+    submit,
+    error,
+    busy,
+    submitting,
+    connectionState,
+    thinkingPlayerId,
+    agentStatuses,
+    presentation,
+  }
 }

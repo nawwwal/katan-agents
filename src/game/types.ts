@@ -1,10 +1,10 @@
 export const RESOURCES = ['brick', 'lumber', 'ore', 'grain', 'wool'] as const
 export type Resource = (typeof RESOURCES)[number]
 export type Terrain = Resource | 'desert'
-export type Controller = 'human' | 'bot' | 'agent' | 'spectator'
+export type Controller = 'human' | 'agent'
 export type PlayerColor = 'coral' | 'blue' | 'amber' | 'ivory'
 export type AgentStatus = {
-  state: 'idle' | 'disconnected' | 'connecting' | 'connected' | 'thinking' | 'selected' | 'applied' | 'timeout' | 'invalid' | 'fallback' | 'fatal'
+  state: 'idle' | 'thinking'
   detail?: string
   revision?: number
   actionType?: GameAction['type']
@@ -170,6 +170,7 @@ export type PublicGameState = Omit<GameState, 'players' | 'developmentDeck' | 'l
 export type CreateGameOptions = {
   seed?: number
   privateRandomSeed?: number
+  random?: () => number
   controllers?: Controller[]
   names?: string[]
 }
@@ -182,6 +183,13 @@ export type PlayerView = {
   publicState: PublicGameState
   privateState: Pick<Player, 'resources' | 'development' | 'boughtDevelopment'>
   resourceCounts: Record<string, number>
+  legalActions: GameAction[]
+}
+
+export type VisiblePlayer = PublicPlayer & Pick<Player, 'resources' | 'development' | 'boughtDevelopment'>
+
+export type GameDisplayState = Omit<PublicGameState, 'players'> & {
+  players: VisiblePlayer[]
   legalActions: GameAction[]
 }
 

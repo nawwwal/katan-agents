@@ -1,20 +1,23 @@
 # Katan — The Island Manual
 
-> Settle a living 3D island, bargain with rivals, outbuild the table, and race to **10 victory points**. Play yourself, invite built-in bots, give seats to local AI agents, or pour a drink and spectate the whole contest.
+> Settle a living 3D island, bargain with rivals, outbuild the table, and race to **10 victory points**—with friends in other cities or local Codex agents playing from their own threads.
 
-Katan is a local-first browser strategy game built with React, Three.js, and one rules engine shared by every kind of player. Human clicks, bot choices, and external-agent decisions all become the same validated game actions. The island is fully interactive, the board is seeded, private hands stay private, and every public move is preserved in the match history.
+Katan is a realtime browser strategy game built with React, Three.js, WebSockets, and one authoritative rules engine. Create a private room, share its six-character code, and fill the seats beside the human host with any mix of remote humans and local agents. Every seat gets its own redacted view: your hand stays yours, the server validates every move, and every browser sees the same island revision immediately.
 
 **At a glance**
 
 - 3 or 4 players
-- Human, built-in bot, and local-agent seats
+- A human host plus any mix of remote-human and local-agent seats
+- Shareable private room codes
+- Authoritative, reconnect-safe server state
+- Realtime turns and player-to-player trades
 - Full setup-to-victory match flow
 - Seeded 19-hex islands
 - Domestic and maritime trade
 - Development cards, robber, ports, Longest Road, and Largest Army
-- Pausable agent-only spectator matches
 - Responsive mouse, touch, and keyboard-friendly interface
-- No account, cloud service, or database required
+- No accounts and no in-game bots
+- Local in-memory development or Vercel + Upstash Redis hosting
 
 > [!IMPORTANT]
 > `KATAN` is an unofficial prototype codename. This project is not affiliated with or endorsed by CATAN GmbH. The art, interface, and code are original, but a public product should use an original name and presentation or obtain the appropriate permission.
@@ -33,7 +36,7 @@ Katan is a local-first browser strategy game built with React, Three.js, and one
 - [Development cards](#development-cards)
 - [Longest Road and Largest Army](#longest-road-and-largest-army)
 - [Read the table](#read-the-table)
-- [Spectator mode](#spectator-mode)
+- [Rooms and reconnects](#rooms-and-reconnects)
 - [Local-agent seats](#local-agent-seats)
 - [Commands](#commands)
 - [Architecture](#architecture)
@@ -48,7 +51,8 @@ Katan is a local-first browser strategy game built with React, Three.js, and one
 - Node.js `^20.19.0` or `>=22.12.0`
 - npm
 - A modern browser with WebGL and hardware acceleration
-- Two terminal windows if the table contains a local-agent seat
+- Two terminal windows for local development
+- A local MCP-capable agent client, such as Codex, for agent seats
 
 ### Clone and install
 
@@ -58,15 +62,15 @@ cd katan-agents
 npm install
 ```
 
-### Start the agent bridge
+### Start the room server
 
 In the first terminal:
 
 ```bash
-npm run bridge
+npm run rooms
 ```
 
-This starts the fast offline heuristic bridge at `127.0.0.1:8787`. It is deterministic, needs no model credentials, and is the easiest way to use a **Local agent** seat.
+This starts the authoritative room service at `127.0.0.1:8787`. Without `REDIS_URL` it keeps rooms in memory, which is perfect for local play.
 
 ### Start the game
 
@@ -78,11 +82,11 @@ npm run dev
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173).
 
-That is it. No account creation, database migration, environment file, or cloud project stands between you and the island.
+That is it. Create a room in one browser, then open another local tab and join with the code. For other devices or internet play, deploy the same app to Vercel as described below.
 
 ### Run the production build locally
 
-Keep the bridge running, then use:
+Keep the room server running, then use:
 
 ```bash
 npm run build
@@ -95,36 +99,32 @@ Stop either server with `Ctrl+C` in its terminal.
 
 ## Choose your table
 
-The title screen offers two ways into the game.
+The title screen offers two ways into the same authoritative room system.
 
-### Start game
+### Create room
 
-Use this when you want to play.
+The creator becomes the host.
 
-1. Choose a 3-player or 4-player table.
-2. Give every seat a name.
-3. Assign each seat a controller.
-4. Enter an island seed from `1` to `999999`.
-5. Select **Create island**.
-6. Review the placement order, then select **Enter the island**.
+1. Enter your player name.
+2. Choose a 3-player or 4-player table.
+3. Select **Create room**.
+4. Copy the room code, human link, or ready-made agent prompt.
+5. Start once every seat has been claimed.
 
-A playable table contains exactly one **Human** seat. Every other seat can be a built-in bot or local agent.
+The server creates the island only when the host starts. The public board is generated there, while the development deck, dice, and steals use cryptographic server randomness, so no browser or local agent can predict them.
 
-### Watch agents
+### Join with code
 
-Use this when you want the table to play itself.
+Enter your name and the six-character code. A browser always claims a human seat. A local Codex thread claims an agent seat through MCP using the same code.
 
-Every seat is automated. You can pause the match, change its pace, inspect the public timeline, watch agent decisions arrive, and follow the game all the way to the final standings.
-
-### Controller types
+### Seat types
 
 | Controller | Who decides? | What it can see |
 |---|---|---|
-| **Human** | You, on this device | Your private hand and all public state |
-| **Built-in bot** | The in-browser deterministic bot | A redacted player view and its legal actions |
-| **Local agent** | A process behind the local bridge | The same redacted view, including only its own private hand |
+| **Human** | A person in a browser, anywhere | Their private hand, legal actions, and all public state |
+| **Local agent** | One Codex or MCP-capable process | The same seat-specific view, its rules playbook, and typed tools |
 
-The island seed reproduces the public board and setup order. Dice, the development deck, and random steals use a separate private random seed, so a shared board seed does not reveal future hidden outcomes.
+There is deliberately no built-in bot or silent fallback. If a live browser session or MCP process disconnects, it reconnects to the same seat automatically. If that session and its private token are destroyed, v1 cannot reclaim the seat; create a fresh room.
 
 ## The object of the game
 
@@ -138,7 +138,7 @@ Be the first player to reach **10 victory points on your own turn**.
 | Longest Road | 2 VP |
 | Largest Army | 2 VP |
 
-Your visible score hides unrevealed victory-point cards from rivals and spectators. When those hidden points complete a win on your turn, the game reveals the result and crowns the new steward of the island.
+Your visible score hides unrevealed victory-point cards from rivals. When those hidden points complete a win on your turn, the game reveals the result and crowns the new steward of the island.
 
 ## Know the island
 
@@ -316,13 +316,13 @@ Each player row shows:
 - `♞` played Knights;
 - `LR` when holding Longest Road;
 - `LA` when holding Largest Army;
-- controller or local-agent status.
+- seat type and whose decision the room is awaiting.
 
-Your own row shows your true score while you are seated. Rivals and spectators see only public points until hidden victory cards are revealed.
+Your own row shows your true score. Rivals see only public points until hidden victory cards are revealed.
 
 ### Resource wallet
 
-The bottom wallet shows your private brick, lumber, ore, grain, wool, and development-card counts. It disappears while spectating because spectators receive public state only.
+The bottom wallet shows your private brick, lumber, ore, grain, wool, and development-card counts. Other browsers and agent seats never receive those identities.
 
 ### Action tray
 
@@ -334,9 +334,7 @@ The bottom wallet shows your private brick, lumber, ore, grain, wool, and develo
 
 ### Utility controls
 
-- **Spectate** leaves your private seat view and watches public play.
-- **Take seat** returns to your human seat without restarting the match.
-- **History** shows controller status and the latest public events.
+- **History** shows seat types and the latest public events.
 - **Sound** toggles the game audio.
 - **Rules** opens the in-game quick reference.
 - **Menu** leaves the current match and returns to the title screen.
@@ -350,77 +348,73 @@ The bottom wallet shows your private brick, lumber, ore, grain, wool, and develo
 - `Escape` closes an unlocked dialog.
 - Reduced-motion preferences disable decorative scene movement and compress transitions.
 
-## Spectator mode
+## Rooms and reconnects
 
-Select **Watch agents** on the title screen for a zero-human match, or choose **Spectate** during a human game.
+The room is the source of truth. A browser or agent sends one action with the revision it observed; the server accepts it only when that seat is the current actor and the revision is still current. Accepted actions are applied once, persisted, and broadcast as personalized snapshots.
 
-While spectating you can:
+What that means at the table:
 
-- pause and resume automated play;
-- choose **Slow**, **Steady**, or **Fast** pacing;
-- inspect the public event history;
-- monitor bot and local-agent decisions;
-- return to your human seat when the match includes one;
-- watch the final standings, then rematch on a new seed.
+- refreshing the page restores the same seat from session storage;
+- a dropped WebSocket reconnects with exponential backoff and reloads a full snapshot;
+- controls stay locked until the authenticated snapshot arrives;
+- stale double-clicks and late messages cannot apply twice;
+- a disconnected player keeps their seat and the game waits for them;
+- room codes are shareable, but private seat tokens never appear in the URL.
 
-Pausing stops automation and aborts an in-flight local-agent decision. Resuming asks the current controller for a fresh action at the unchanged game revision.
+Redis-backed rooms expire 24 hours after their last mutation and survive instance changes, reconnects, and deployments until then. Local in-memory rooms last until the room server stops.
 
 ## Local-agent seats
 
-Every controller speaks one language: a validated `GameAction` chosen from a seat-specific `PlayerView`.
+Each Codex thread runs one tiny local MCP process. That process connects outward to the hosted room exactly like a browser player, claims one agent seat, and exposes a small rules-aware tool set. The MCP process runs locally; Vercel performs no model inference and pays no model bill.
 
 ```mermaid
 flowchart LR
-  Human[Human UI] --> Action[Legal GameAction]
-  Bot[Built-in bot] --> View[Redacted PlayerView]
-  Agent[Local agent] --> View
-  View --> Action
-  Action --> Engine[Rules reducer]
-  Engine --> State[Authoritative game state]
-  State --> Island[3D island and HUD]
-  State --> View
+  Browser[Human browser] <-->|WebSocket| Room[Authoritative room service]
+  Codex[Local Codex thread] --> MCP[Local Katan MCP]
+  MCP <-->|WebSocket| Room
+  Room --> Engine[Rules reducer]
+  Engine --> Redis[Room snapshot + event stream]
+  Room --> View[Seat-specific PlayerView]
+  View --> Browser
+  View --> MCP
 ```
 
-### Fast offline agent
+### The agent tools
 
-```bash
-npm run bridge
+| Tool | Purpose |
+|---|---|
+| `join_room` | Claim one agent seat with a code and name |
+| `read_rules` | Load the concise base-game and protocol playbook |
+| `get_view` | Read public state, the agent's private hand, legal actions, and optional board geometry |
+| `wait_for_turn` | Sleep efficiently until this seat must decide, the game finishes, or the timeout expires |
+| `play_action` | Submit one revision-locked legal action and wait for authoritative confirmation |
+
+The MCP also exposes `katan://rules/base-game` as a resource and a `play-katan` prompt. The model never receives another player's resource identities, development cards, any seat token, the board seed, private random seed, or another seat's legal actions.
+
+### Run a local agent seat
+
+Configure one MCP server in Codex, using the deployed game origin:
+
+```toml
+[mcp_servers.katan]
+command = "npm"
+args = ["run", "mcp", "--prefix", "/absolute/path/to/katan-agents"]
+
+[mcp_servers.katan.env]
+KATAN_SERVER_URL = "https://your-katan.vercel.app"
 ```
 
-This bridge chooses a legal action with the included deterministic heuristic.
+For local development, set `KATAN_SERVER_URL` to `http://127.0.0.1:8787`.
 
-### Verified Codex agent
+Then tell the thread:
 
-With an authenticated Codex CLI `0.144.0` or newer on `PATH`:
-
-```bash
-npm run bridge:codex
+```text
+Use the Katan MCP. Join room ABC234 as Atlas. Read the rules, keep your
+own personality, play to win from only your private view, and continue
+calling wait_for_turn and play_action until the match ends.
 ```
 
-The adapter requests `gpt-5.6-sol` in an ephemeral, read-only, no-tool environment. It does not silently downgrade the model.
-
-### Bring your own local runner
-
-```bash
-KATAN_AGENT_COMMAND=your-agent-cli \
-KATAN_AGENT_ARGS='["your", "fixed", "arguments"]' \
-npm run bridge
-```
-
-The command receives one prompt on standard input and must print one legal action as JSON. The browser cannot choose the executable, arguments, path, model, tokens, or environment.
-
-The bridge:
-
-- binds only to `127.0.0.1:8787`;
-- accepts requests only from the local game origin;
-- exposes only allowlisted player-view fields;
-- never sends another seat's private hand;
-- validates the response against current legal actions;
-- caps request and process output;
-- allows one external decision at a time;
-- kills timed-out or cancelled children;
-- removes each temporary working directory;
-- falls back safely when an agent is unavailable or invalid.
+Create a four-player room and open three Codex tasks with the same code to get three different agent personalities beside the human host. Each task launches its own MCP process; that process stores its private seat token internally and waits independently. Nothing in the game server decides for them.
 
 Read [Local agent seats](docs/LOCAL_AGENTS.md) for the full contract and security boundary.
 
@@ -429,15 +423,16 @@ Read [Local agent seats](docs/LOCAL_AGENTS.md) for the full contract and securit
 | Command | Purpose |
 |---|---|
 | `npm run dev` | Start the Vite development server on `127.0.0.1:5173` |
-| `npm run bridge` | Start the local heuristic/custom-runner bridge on `127.0.0.1:8787` |
-| `npm run bridge:codex` | Start the verified Codex-backed bridge |
-| `npm test` | Run board, engine, integrity, rules, simulation, and bridge checks |
+| `npm run rooms` | Start the authoritative local room server on `127.0.0.1:8787` |
+| `npm run mcp` | Start one local stdio MCP adapter for a Codex agent seat |
+| `npm test` | Run board, engine, integrity, rules, simulation, room, and MCP checks |
 | `npm run check:board` | Verify the 19-hex, 54-vertex, 72-edge board graph |
 | `npm run check:engine` | Exercise the main rules reducer flow |
 | `npm run check:integrity` | Check resource, piece, and state invariants |
 | `npm run check:rules` | Check timing, robber, award, trade, and victory rules |
-| `npm run check:simulation` | Complete deterministic automated matches |
-| `npm run check:bridge` | Check bridge origins, redaction, concurrency, aborts, cleanup, and timeouts |
+| `npm run check:simulation` | Complete test-only deterministic matches against engine invariants |
+| `npm run check:rooms` | Check room creation, seat auth, private views, revisions, and realtime fanout |
+| `npm run check:mcp` | Launch a real MCP child, join an agent, wait, act, and verify browser fanout |
 | `npm run typecheck` | Type-check the application and server code |
 | `npm run lint` | Lint `src` and `server` with Oxlint |
 | `npm run build` | Type-check and create the production bundle in `dist` |
@@ -445,38 +440,46 @@ Read [Local agent seats](docs/LOCAL_AGENTS.md) for the full contract and securit
 
 ## Architecture
 
-The browser owns one authoritative `GameState`. The pure `applyAction` reducer is the only code allowed to change resources, pieces, phases, awards, scores, and the event timeline. Three.js renders that state but does not decide any rule.
+The room service owns the only full `GameState`. The pure `applyAction` reducer is the only code allowed to change resources, pieces, phases, awards, scores, and the event timeline. Browsers and agents receive personalized `PlayerView` snapshots and can only propose actions.
 
 ```text
-src/game/       board generation, types, rules reducer, bots, simulations
+src/game/       board generation, types, rules reducer, room protocol, simulations
 src/scene/      Three.js island, pieces, water, camera, and effects
 src/ui/         journey screens, HUD, dialogs, controls, and history
 src/audio/      procedural interaction and match audio
-server/         heuristic, custom-runner, and Codex agent bridges
+server/         authoritative rooms, Redis store, WebSockets, MCP adapter, checks
+api/            Vercel Node entrypoint
 public/assets/  original terrain and resource artwork
 docs/           architecture and local-agent contracts
 ```
 
-The rules engine exposes legal actions for the current actor. The UI, bot, and external agent choose among those actions; the reducer validates the choice again before applying it. That gives every controller identical rules without trusting any renderer or model.
+The server authenticates the seat, checks the expected revision and current actor, runtime-parses the action, and then asks the reducer to validate it again. The browser never receives the full development deck, private random seed, or another seat's hand.
 
-Read [Katan architecture](docs/ARCHITECTURE.md) for state ownership, redaction, and the hosted-room migration path.
+Read [Katan architecture](docs/ARCHITECTURE.md) for state ownership, Redis keys, WebSocket fanout, and reconnect behavior.
 
 ## Hosting
 
-`npm run build` creates a static, root-hosted client suitable for same-device human-versus-bot play. The production bundle currently assumes absolute `/assets` and `/agent-api` paths, so serve it from `/` and provide an equivalent `/agent-api` reverse proxy when using local-agent seats.
+The repository is configured for one Vercel project: Vite serves the 3D client, `api/server.ts` exports the Node HTTP/WebSocket server, and Upstash Redis stores authoritative rooms plus a small cross-instance event stream. This follows Vercel's current [native WebSocket function model](https://vercel.com/docs/functions/websockets) and its official [WebSockets + Redis Streams realtime pattern](https://vercel.com/kb/guide/real-time-chat-websockets).
 
-There are two important limits:
+### Deploy to Vercel
 
-1. **A public HTTPS page cannot reliably call a loopback HTTP bridge.** Hosted local agents need a signed desktop companion that connects outward to the room service.
-2. **A static client cannot run fair multi-browser human rooms.** Each browser would otherwise own private hands. Fair remote rooms need an authoritative server that sends every seat only its redacted player view.
+1. Import the repository into Vercel.
+2. Enable Fluid compute. Native WebSockets require it.
+3. Add an [Upstash Redis integration](https://vercel.com/docs/redis) with Mumbai as its primary region.
+4. Expose its connection string as `REDIS_URL`.
+5. Deploy. No separate socket host or model service is required.
 
-The existing revisioned action contract and pure reducer are the intended boundary for that future room service.
+`REDIS_URL` is mandatory on Vercel; `/api/health` returns `503` instead of allowing split-brain in-memory rooms when it is missing. The server also applies short per-IP limits to room creation, seat joins, and unauthenticated socket opens.
+
+The included `vercel.json` routes `/api/rooms`, `/api/health`, and `/api/ws` to the exported Node server, deploys it in Vercel's Mumbai `bom1` region, and gives WebSocket functions a 300-second duration. Clients reconnect automatically when Vercel rotates an instance. Redis preserves the room and carries accepted-action notifications to sockets on other instances.
+
+Keep compute and Redis in the same region; change `bom1` only when most players move elsewhere. Add accounts, Postgres, rankings, or match archives only when the product actually needs them; live games need only Redis.
 
 ## Troubleshooting
 
 ### The page does not open
 
-Confirm `npm run dev` is still running and open `http://127.0.0.1:5173`, not the bridge port.
+Confirm both `npm run rooms` and `npm run dev` are still running, then open `http://127.0.0.1:5173`. Port `8787` is the API, not the game UI.
 
 ### The production preview does not open
 
@@ -487,15 +490,9 @@ npm run build
 npm run preview
 ```
 
-### A local-agent seat says disconnected or uses a fallback
+### A local agent does not join
 
-Start the bridge in a separate terminal:
-
-```bash
-npm run bridge
-```
-
-If you are using a custom runner, confirm that it prints exactly one legal JSON action before the 30-second timeout.
+Confirm that Codex has the `katan` MCP configured with the correct `KATAN_SERVER_URL`, then restart that task so it launches the stdio process. Check `<game-origin>/api/health`, run `npm run check:mcp`, and call `join_room` while the table is still in the lobby. There is no fallback player: an empty or disconnected agent seat stays empty or waits.
 
 ### The browser says the board needs WebGL
 
@@ -515,7 +512,7 @@ The action is not legal in the current state. Check:
 
 ### The board is different after a rematch
 
-That is intentional. Rematch increments the island seed and raises a new board.
+That is intentional. The authoritative server raises a fresh island with new public and private randomness.
 
 ### Sound is silent
 

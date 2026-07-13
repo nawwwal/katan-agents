@@ -2,7 +2,7 @@ import { ContactShadows, useCursor } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Suspense, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import type { BoardEdge, GameAction, GameState, PlayerColor } from '../game/types'
+import type { BoardEdge, GameAction, GameDisplayState, PlayerColor } from '../game/types'
 import type { GamePresentation } from '../game/useGame'
 import { ActionEffects } from './ActionEffects'
 import { CameraRig } from './CameraRig'
@@ -13,7 +13,7 @@ import { Water } from './Water'
 type PlacementMode = 'road' | 'settlement' | 'city' | null
 
 type SceneProps = {
-  game: GameState
+  game: GameDisplayState
   placementMode: PlacementMode
   pendingAction?: GameAction
   presentation?: GamePresentation
@@ -29,7 +29,7 @@ const PLAYER_COLORS: Record<PlayerColor, string> = {
   ivory: '#eee6cd',
 }
 
-const edgeTransform = (game: GameState, edge: BoardEdge) => {
+const edgeTransform = (game: GameDisplayState, edge: BoardEdge) => {
   const [a, b] = edge.vertices.map((id) => game.board.vertices[id])
   const dx = b.x - a.x
   const dz = b.z - a.z
@@ -40,7 +40,7 @@ const edgeTransform = (game: GameState, edge: BoardEdge) => {
   }
 }
 
-function Road({ game, edgeId, color, legal, pending, reducedMotion, touchTarget, onSelect }: { game: GameState; edgeId: string; color?: string; legal?: boolean; pending?: boolean; reducedMotion: boolean; touchTarget?: boolean; onSelect?: () => void }) {
+function Road({ game, edgeId, color, legal, pending, reducedMotion, touchTarget, onSelect }: { game: GameDisplayState; edgeId: string; color?: string; legal?: boolean; pending?: boolean; reducedMotion: boolean; touchTarget?: boolean; onSelect?: () => void }) {
   const edge = game.board.edges[edgeId]
   const transform = edgeTransform(game, edge)
   const [hovered, setHovered] = useState(false)
@@ -68,7 +68,7 @@ function Road({ game, edgeId, color, legal, pending, reducedMotion, touchTarget,
   </group>
 }
 
-function Building({ game, vertexId, playerId, type, legalCity, pendingCity, reducedMotion, onCity }: { game: GameState; vertexId: string; playerId: string; type: 'settlement' | 'city'; legalCity: boolean; pendingCity?: boolean; reducedMotion: boolean; onCity?: () => void }) {
+function Building({ game, vertexId, playerId, type, legalCity, pendingCity, reducedMotion, onCity }: { game: GameDisplayState; vertexId: string; playerId: string; type: 'settlement' | 'city'; legalCity: boolean; pendingCity?: boolean; reducedMotion: boolean; onCity?: () => void }) {
   const vertex = game.board.vertices[vertexId]
   const player = game.players.find((candidate) => candidate.id === playerId)
   const [hovered, setHovered] = useState(false)
@@ -102,7 +102,7 @@ function Building({ game, vertexId, playerId, type, legalCity, pendingCity, redu
   </group>
 }
 
-function VertexTarget({ game, vertexId, action, pending, touchTarget, onAction }: { game: GameState; vertexId: string; action: GameAction; pending?: boolean; touchTarget?: boolean; onAction: (action: GameAction) => void }) {
+function VertexTarget({ game, vertexId, action, pending, touchTarget, onAction }: { game: GameDisplayState; vertexId: string; action: GameAction; pending?: boolean; touchTarget?: boolean; onAction: (action: GameAction) => void }) {
   const vertex = game.board.vertices[vertexId]
   const [hovered, setHovered] = useState(false)
   useCursor(hovered)

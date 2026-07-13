@@ -1,64 +1,85 @@
 # Local agent seats
 
-The browser, built-in bots, and external agents all return the same `GameAction` JSON from a redacted `PlayerView`. The bridge binds only to `127.0.0.1:8787`; the Vite dev and preview servers proxy `/agent-api/*` to it.
+A local agent is a real seat, not an in-game bot. One Codex task launches one stdio MCP process, claims one room seat, keeps its token inside that process, and connects outward to the same hosted WebSocket endpoint as every browser.
 
-## Start the built-in local runner
+## Configure Codex
 
-Start the bridge in the first terminal:
+Add the server to your Codex MCP configuration. Use an absolute repository path.
 
-```bash
-npm run bridge
+```toml
+[mcp_servers.katan]
+command = "npm"
+args = ["run", "mcp", "--prefix", "/absolute/path/to/katan-agents"]
+
+[mcp_servers.katan.env]
+KATAN_SERVER_URL = "https://your-katan.vercel.app"
 ```
 
-Then start the game in a second terminal:
+For local development:
 
-```bash
-npm run dev
+```toml
+KATAN_SERVER_URL = "http://127.0.0.1:8787"
 ```
 
-The bridge selects one legal action with a deterministic heuristic. This is the fast offline fallback; it does not launch an external model process.
+Restart the Codex task after changing MCP configuration.
 
-## Attach a model runner
+## Invite one agent
 
-Set one operator-controlled command and a JSON array of fixed arguments before starting the bridge. The browser cannot change either value.
+1. Create a room in the browser.
+2. Copy the agent prompt from the lobby.
+3. Send it to a Codex task with the Katan MCP enabled.
 
-```bash
-KATAN_AGENT_COMMAND=your-agent-cli \
-KATAN_AGENT_ARGS='["your", "fixed", "arguments"]' \
-npm run bridge
+```text
+Use the Katan MCP. Join room ABC234 as Atlas. Read the rules, keep your
+own personality, play to win from only your private view, and continue
+calling wait_for_turn and play_action until the match ends.
 ```
 
-The command receives one prompt on stdin and must print one legal action as a JSON object. The bridge runs it in a new temporary directory, passes only `PATH`, `HOME`, `CODEX_HOME`, `LANG`, and `TMPDIR`, limits output to 64 KB, kills it after 30 seconds, validates the action against `legalActions`, then deletes the temporary directory. Discards and domestic trades may derive different non-negative resource quantities, but the bridge validates their required count, private-hand limits, participants, and disjoint give/receive bundles before the engine validates them again.
+For three agents, use three Codex tasks and the same room code. Each task has a separate MCP process, private seat, conversation, and personality.
 
-## Run the verified Codex seat
+## Tool contract
 
-With an authenticated Codex CLI `0.144.0` or newer on `PATH`, start the Codex bridge in the first terminal:
+### `join_room`
 
-```bash
-npm run bridge:codex
-```
+Claims an `agent` seat while the room is in its lobby. Inputs are `code`, `name`, and an optional `serverUrl`. The tool returns the lobby and this process's player ID; it never returns the seat token.
 
-Then start the game in a second terminal:
+### `read_rules`
 
-```bash
-npm run dev
-```
+Returns the concise base-game playbook, including setup, costs, robber, domestic and maritime trade, development cards, awards, victory, and the revision protocol. The same text is available at `katan://rules/base-game`.
 
-The adapter currently requests `gpt-5.6-sol` in an ephemeral, read-only, no-tool configuration. It explicitly disables both stable execution paths, `shell_tool` and `unified_exec`, in addition to plugins, apps, browser, memory, goals, multi-agent, image, computer-use, and hooks. Set `KATAN_CODEX_MODEL` only when deliberately changing the model; the adapter never silently downgrades it.
+### `get_view`
 
-The decision endpoint requires the local game origin, reserializes only allowlisted `PlayerView` fields, admits one process at a time, aborts the child when playback is paused, the request disconnects, or the bridge shuts down, byte-caps both output streams, and returns stable error codes without child stderr.
+Returns:
 
-## Player view contract
+- room status and seats;
+- current revision, phase, actor, and whether this agent must act;
+- this seat's private resources and development cards;
+- public state, recent events, and current legal actions;
+- optional board geometry when `includeBoard` is true.
+
+Use board geometry for settlement, road, city, robber, harbor, and route decisions. It is optional because the 19-hex graph does not need to consume context on every turn.
+
+### `wait_for_turn`
+
+Waits on the live WebSocket instead of polling. It returns when this seat must act, the game finishes, or its 1–45 second timeout expires. Lobby joins and other players' moves are absorbed inside the same tool call, so the model does not spin while it waits.
+
+### `play_action`
+
+Takes the current `expectedRevision` and one action JSON object. It returns only after the authoritative room advances and browsers can observe the new revision. If another event won the race, it reports the stale revision and the agent must read again.
+
+## Player-view example
 
 ```json
 {
-  "v": 1,
   "revision": 42,
-  "playerId": "p2",
   "phase": "action",
-  "publicState": {},
-  "privateState": {},
-  "resourceCounts": { "p0": 5, "p1": 7, "p2": 4 },
+  "currentActorId": "p2",
+  "isYourTurn": true,
+  "privateState": {
+    "resources": { "brick": 1, "lumber": 2, "ore": 0, "grain": 1, "wool": 0 },
+    "development": [],
+    "boughtDevelopment": []
+  },
   "legalActions": [
     { "type": "build-road", "edgeId": "e17" },
     { "type": "end-turn" }
@@ -66,4 +87,42 @@ The decision endpoint requires the local game origin, reserializes only allowlis
 }
 ```
 
-The external process never receives a bearer token, arbitrary command arguments, or hidden state from another seat.
+Opponent hands are represented only by public counts. The model cannot ask for full state, another seat's view, or server-side secrets.
+
+## Operating loop
+
+```text
+join_room → read_rules
+      ↓
+wait_for_turn
+      ↓
+get_view(includeBoard when useful)
+      ↓
+play_action(expectedRevision, legal action)
+      └────────────── repeat until finished
+```
+
+One turn may require several calls: settlement then road, discard then robber then victim, a trade response, Road Building's two roads, or action then end turn.
+
+## Failure behavior
+
+- If the MCP process disconnects, the room retains its seat and waits.
+- If Vercel rotates the socket, the process reconnects and reloads the room.
+- If an action is stale or illegal, the server does not mutate state and the agent must inspect the current view.
+- If an agent task stops, no server-side fallback takes its turn.
+- Seat credentials live only in the MCP process. A living process reconnects automatically; if it is destroyed, v1 cannot reclaim that seat.
+- Redis-backed rooms expire 24 hours after their last mutation. Local in-memory rooms last until the room server stops.
+
+## Local smoke test
+
+Start the room service:
+
+```bash
+npm run rooms
+```
+
+The full automated check launches a real MCP child process, joins it beside two browser-style WebSocket clients, waits until the agent must act, submits a legal action, and verifies both browsers receive the new revision:
+
+```bash
+npm run check:mcp
+```

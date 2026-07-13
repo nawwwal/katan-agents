@@ -1,7 +1,7 @@
 import { useFrame } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import type { GameState, Resource } from '../game/types'
+import type { GameDisplayState, Resource } from '../game/types'
 import type { GamePresentation } from '../game/useGame'
 
 const RESOURCE_COLOR: Record<Resource, string> = {
@@ -53,7 +53,7 @@ function PulseRing({ position, color, reducedMotion }: { position: [number, numb
   </mesh>
 }
 
-function ProductionEffects({ game, presentation, reducedMotion }: { game: GameState; presentation: GamePresentation; reducedMotion: boolean }) {
+function ProductionEffects({ game, presentation, reducedMotion }: { game: GameDisplayState; presentation: GamePresentation; reducedMotion: boolean }) {
   const total = game.lastRoll ? game.lastRoll[0] + game.lastRoll[1] : 0
   const producing = game.board.hexes.filter((tile) => tile.number === total && tile.id !== game.board.robberHexId && tile.terrain !== 'desert')
   const flows = useMemo(() => producing.flatMap((tile) => tile.vertices.flatMap((vertexId) => {
@@ -74,7 +74,7 @@ function ProductionEffects({ game, presentation, reducedMotion }: { game: GameSt
   </group>
 }
 
-function ConstructionBurst({ game, presentation, reducedMotion }: { game: GameState; presentation: GamePresentation; reducedMotion: boolean }) {
+function ConstructionBurst({ game, presentation, reducedMotion }: { game: GameDisplayState; presentation: GamePresentation; reducedMotion: boolean }) {
   const event = presentation.events.findLast((candidate) => candidate.publicData?.vertexId || candidate.publicData?.edgeId || candidate.publicData?.hexId)
   const target = useMemo(() => {
     const vertexId = event?.publicData?.vertexId
@@ -121,7 +121,7 @@ function ConstructionBurst({ game, presentation, reducedMotion }: { game: GameSt
   </mesh>)}</group>
 }
 
-export function ActionEffects({ game, presentation, reducedMotion }: { game: GameState; presentation?: GamePresentation; reducedMotion: boolean }) {
+export function ActionEffects({ game, presentation, reducedMotion }: { game: GameDisplayState; presentation?: GamePresentation; reducedMotion: boolean }) {
   if (!presentation) return null
   return <group key={presentation.revision}>
     <ProductionEffects game={game} presentation={presentation} reducedMotion={reducedMotion} />

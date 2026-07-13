@@ -2,7 +2,7 @@ import { Html, useCursor, useTexture } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import type { Board, GameAction, GameState, HexTile, Terrain } from '../game/types'
+import type { Board, GameAction, GameDisplayState, HexTile, Terrain } from '../game/types'
 import { TerrainProps } from './Props'
 
 const TERRAIN_ASSET: Record<Terrain, string> = {
@@ -253,7 +253,7 @@ function Lighthouse({ position }: { position: [number, number, number] }) {
   </group>
 }
 
-function Harbors({ game, reducedMotion }: { game: GameState; reducedMotion: boolean }) {
+function Harbors({ game, reducedMotion }: { game: GameDisplayState; reducedMotion: boolean }) {
   return <>{game.board.harbors.map((harbor, index) => {
     const edge = game.board.edges[harbor.edgeId]
     const [a, b] = edge.vertices.map((id) => game.board.vertices[id])
@@ -274,7 +274,7 @@ function Harbors({ game, reducedMotion }: { game: GameState; reducedMotion: bool
   })}</>
 }
 
-export function Island({ game, robberActions, onAction, reducedMotion = false }: { game: GameState; robberActions: Map<string, RobberAction>; onAction: (action: GameAction) => void; reducedMotion?: boolean }) {
+export function Island({ game, robberActions, onAction, reducedMotion = false }: { game: GameDisplayState; robberActions: Map<string, RobberAction>; onAction: (action: GameAction) => void; reducedMotion?: boolean }) {
   return <group>
     <ShallowWater board={game.board} />
     <IslandBase board={game.board} />

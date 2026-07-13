@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { applyAction, createGame, scorePlayer } from './engine'
 
-let game = createGame({ seed: 11, controllers: ['human', 'bot', 'bot'] })
+let game = createGame({ seed: 11, controllers: ['human', 'agent', 'agent'] })
 assert.equal(game.phase, 'setup-settlement')
 
 for (let step = 0; step < 12; step += 1) {

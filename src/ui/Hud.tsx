@@ -1,22 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { currentActorId, publicScorePlayer, scorePlayer } from '../game/engine'
-import type { AgentStatus, GameAction, GameState, Resource } from '../game/types'
-import type { GamePresentation, SpectatorPace } from '../game/useGame'
+import { currentActorId } from '../game/engine'
+import { visibleScore } from '../game/room'
+import type { AgentStatus, GameAction, GameDisplayState, Resource } from '../game/types'
+import type { GamePresentation } from '../game/useGame'
 import { RESOURCES } from '../game/types'
 import type { PlacementMode } from '../scene/GameScene'
-import { BookIcon, CardsIcon, DiceIcon, EyeIcon, FlagIcon, HammerIcon, TradeIcon } from './Icons'
+import { BookIcon, CardsIcon, DiceIcon, FlagIcon, HammerIcon, TradeIcon } from './Icons'
 
 export type DialogName = 'build' | 'trade' | 'cards' | 'rules' | 'history' | null
 
 type HudProps = {
-  game: GameState
+  game: GameDisplayState
   humanId: string
   thinkingPlayerId?: string
   agentStatuses: Record<string, AgentStatus>
   presentation?: GamePresentation
-  spectating: boolean
-  spectatorPaused: boolean
-  spectatorPace: SpectatorPace
   muted: boolean
   placementMode: PlacementMode
   pendingAction?: GameAction
@@ -26,9 +24,6 @@ type HudProps = {
   onAction: (action: GameAction) => void
   onConfirmAction: () => void
   onCancelAction: () => void
-  onSpectating: (value: boolean) => void
-  onSpectatorPaused: (value: boolean) => void
-  onSpectatorPace: (value: SpectatorPace) => void
   onMuted: (value: boolean) => void
   onExitMatch: () => void
 }
@@ -41,7 +36,7 @@ const RESOURCE_IMAGE: Record<Resource, string> = {
   wool: '/assets/resource-wool.webp',
 }
 
-const phaseCopy: Record<GameState['phase'], string> = {
+const phaseCopy: Record<GameDisplayState['phase'], string> = {
   'setup-settlement': 'Choose a glowing corner for your settlement',
   'setup-road': 'Choose an adjacent path for your road',
   'pre-roll': 'Roll to wake the island',
@@ -56,23 +51,21 @@ const phaseCopy: Record<GameState['phase'], string> = {
   'game-over': 'The island has a new steward',
 }
 
-const countResources = (game: GameState, playerId: string) => {
+const countResources = (game: GameDisplayState, playerId: string) => {
   const player = game.players.find((candidate) => candidate.id === playerId)
-  return player ? RESOURCES.reduce((total, resource) => total + player.resources[resource], 0) : 0
+  return player?.resourceCount ?? 0
 }
 
-function TurnPanel({ game, thinkingPlayerId, onAction, spectating, placementMode }: Pick<HudProps, 'game' | 'thinkingPlayerId' | 'onAction' | 'spectating' | 'placementMode'>) {
+function TurnPanel({ game, thinkingPlayerId, onAction, placementMode }: Pick<HudProps, 'game' | 'thinkingPlayerId' | 'onAction' | 'placementMode'>) {
   const panelRef = useRef<HTMLElement>(null)
   useEffect(() => { panelRef.current?.focus() }, [])
   const actorId = currentActorId(game)
   const actor = game.players.find((player) => player.id === actorId)
   const actorThinking = thinkingPlayerId === actorId
-  const thinkingCopy = actor?.name.trim().toLowerCase() === 'you' ? 'You are thinking' : `${actor?.name ?? 'Player'} is thinking`
+  const thinkingCopy = actor?.name.trim().toLowerCase() === 'you' ? 'You must act' : `${actor?.name ?? 'Player'} must act`
   const total = game.lastRoll ? game.lastRoll[0] + game.lastRoll[1] : undefined
   const placementType = placementMode === 'road' ? 'build-road' : placementMode === 'settlement' ? 'build-settlement' : placementMode === 'city' ? 'build-city' : undefined
-  const suggested = !spectating && actor?.controller === 'human'
-    ? game.legalActions.find((action) => ['place-settlement', 'place-road', 'move-robber'].includes(action.type) || (game.phase === 'road-building' && action.type === 'build-road') || action.type === placementType)
-    : undefined
+  const suggested = game.legalActions.find((action) => ['place-settlement', 'place-road', 'move-robber'].includes(action.type) || (game.phase === 'road-building' && action.type === 'build-road') || action.type === placementType)
   const suggestedLabel = suggested?.type === 'place-settlement'
     ? 'Place suggested settlement'
     : suggested?.type === 'place-road' || suggested?.type === 'build-road'
@@ -95,34 +88,24 @@ function TurnPanel({ game, thinkingPlayerId, onAction, spectating, placementMode
 
 const agentStatusCopy: Record<AgentStatus['state'], string> = {
   idle: 'Waiting',
-  disconnected: 'Disconnected',
-  connecting: 'Connecting',
-  connected: 'Connected',
-  thinking: 'Thinking',
-  selected: 'Action selected',
-  applied: 'Action applied',
-  timeout: 'Timed out',
-  invalid: 'Invalid response',
-  fallback: 'Fallback used',
-  fatal: 'Fatal failure',
+  thinking: 'Turn pending',
 }
 
-function PlayerRail({ game, humanId, thinkingPlayerId, spectating, agentStatuses }: Pick<HudProps, 'game' | 'humanId' | 'thinkingPlayerId' | 'spectating' | 'agentStatuses'>) {
+function PlayerRail({ game, humanId, agentStatuses }: Pick<HudProps, 'game' | 'humanId' | 'agentStatuses'>) {
   const activeId = currentActorId(game)
   return <aside className="player-rail" aria-label="Players">
     {game.players.map((player, index) => <article key={player.id} className={`player-row ${player.color} ${activeId === player.id ? 'active' : ''}`}>
       <span className="rank">{index + 1}</span>
       <span className={`player-crest ${player.color}`}>{player.name.slice(0, 1)}</span>
-      <div className="player-identity"><strong>{player.name}</strong><small title={player.controller === 'agent' ? agentStatuses[player.id]?.detail : undefined}>{player.controller === 'agent' ? `${agentStatusCopy[agentStatuses[player.id]?.state ?? 'idle']}${agentStatuses[player.id]?.detail ? ` · ${agentStatuses[player.id]?.detail}` : ''}` : thinkingPlayerId === player.id ? 'Bot thinking' : player.controller === 'human' ? 'Human' : 'Built-in bot'}</small></div>
-      <div className="player-stats"><span title="Victory points">★ {player.id === humanId && !spectating ? scorePlayer(game, player.id) : publicScorePlayer(game, player.id)}</span><span title="Resource cards">▰ {countResources(game, player.id)}</span><span title="Played knights">♞ {player.playedKnights}</span></div>
+      <div className="player-identity"><strong>{player.name}</strong><small title={player.controller === 'agent' ? agentStatuses[player.id]?.detail : undefined}>{player.controller === 'agent' ? `${agentStatusCopy[agentStatuses[player.id]?.state ?? 'idle']}${agentStatuses[player.id]?.detail ? ` · ${agentStatuses[player.id]?.detail}` : ''}` : 'Human player'}</small></div>
+      <div className="player-stats"><span title="Victory points">★ {visibleScore(game, player.id, humanId)}</span><span title="Resource cards">▰ {countResources(game, player.id)}</span><span title="Played knights">♞ {player.playedKnights}</span></div>
       {game.longestRoad?.playerId === player.id ? <span className="award" title="Longest road">LR</span> : null}
       {game.largestArmy?.playerId === player.id ? <span className="award" title="Largest army">LA</span> : null}
     </article>)}
-    <article className="player-row spectator-row"><span className="rank">◉</span><span className="player-crest spectator"><EyeIcon /></span><div className="player-identity"><strong>Spectator</strong><small>Public timeline</small></div></article>
   </aside>
 }
 
-function DiceMoment({ game, presentation }: { game: GameState; presentation?: GamePresentation }) {
+function DiceMoment({ game, presentation }: { game: GameDisplayState; presentation?: GamePresentation }) {
   const [dice, setDice] = useState<[number, number]>()
   useEffect(() => {
     if (!game.lastRoll || presentation?.actionType !== 'roll-dice') return
@@ -156,7 +139,7 @@ const actionLabel: Partial<Record<GameAction['type'], string>> = {
   'end-turn': 'Turn passed',
 }
 
-function TransitionMoment({ presentation, humanId, spectating }: { presentation: GamePresentation; humanId: string; spectating: boolean }) {
+function TransitionMoment({ presentation, humanId }: { presentation: GamePresentation; humanId: string }) {
   const [visible, setVisible] = useState(true)
   useEffect(() => {
     setVisible(true)
@@ -165,15 +148,12 @@ function TransitionMoment({ presentation, humanId, spectating }: { presentation:
   }, [presentation.revision])
   if (!visible || presentation.actionType === 'roll-dice') return null
   const deltas = presentation.resourceDeltas[humanId] ?? {}
-  const changes = !spectating ? RESOURCES.filter((resource) => deltas[resource]).map((resource) => ({ resource, delta: deltas[resource]! })) : []
+  const changes = RESOURCES.filter((resource) => deltas[resource]).map((resource) => ({ resource, delta: deltas[resource]! }))
   const message = presentation.events.at(-1)?.message
-  const trade = presentation.action.type === 'offer-trade' || presentation.action.type === 'counter-trade' ? presentation.action.trade : undefined
-  const development = presentation.action.type === 'buy-development' || presentation.action.type === 'play-development'
-  const robber = presentation.action.type === 'move-robber' || presentation.action.type === 'steal-from'
-  const tradeCards = (resources: Partial<Record<Resource, number>>, direction: 'give' | 'receive') => <ul className={`trade-flight ${direction}`}>{RESOURCES.filter((resource) => resources[resource]).map((resource) => <li key={resource}><img src={RESOURCE_IMAGE[resource]} alt="" /><b>{resources[resource]}</b></li>)}</ul>
-  return <div className={`transition-moment ${trade ? 'trade-moment' : development ? 'development-moment' : robber ? 'robber-moment' : ''}`} role="status">
-    {trade ? <div className="trade-exchange">{tradeCards(trade.give, 'give')}<b>↔</b>{tradeCards(trade.receive, 'receive')}</div> : null}
-    {development ? <div className="card-reveal"><img src="/assets/resource-development.webp" alt="" /><b>{presentation.action.type === 'play-development' ? presentation.action.card.replaceAll('-', ' ') : 'Mystery card'}</b></div> : null}
+  const development = presentation.actionType === 'buy-development' || presentation.actionType === 'play-development'
+  const robber = presentation.actionType === 'move-robber' || presentation.actionType === 'steal-from'
+  return <div className={`transition-moment ${development ? 'development-moment' : robber ? 'robber-moment' : ''}`} role="status">
+    {development ? <div className="card-reveal"><img src="/assets/resource-development.webp" alt="" /><b>{presentation.actionType === 'play-development' ? 'Development played' : 'Mystery card'}</b></div> : null}
     {robber ? <div className="robber-reveal" aria-hidden="true"><i>♟</i><span /></div> : null}
     <div><strong>{actionLabel[presentation.actionType] ?? presentation.actionType.replaceAll('-', ' ')}</strong>{message ? <span>{message}</span> : null}{presentation.awardChanges.map((change) => <em key={change}>★ {change}</em>)}</div>
     {changes.length ? <ul className="resource-deltas">{changes.map(({ resource, delta }) => <li key={resource} className={resource}><img src={RESOURCE_IMAGE[resource]} alt="" /><b>{delta > 0 ? `+${delta}` : delta}</b></li>)}</ul> : null}
@@ -184,10 +164,10 @@ function AgentDecisionPreview({ game, thinkingPlayerId, agentStatuses }: Pick<Hu
   const actor = game.players.find((player) => player.id === thinkingPlayerId && player.controller === 'agent')
   if (!actor) return null
   const status = agentStatuses[actor.id]
-  const stage = status?.state ?? 'connecting'
+  const stage = status?.state ?? 'idle'
   return <aside className={`agent-decision-preview ${stage}`} aria-live="polite">
     <header><span className={`player-crest ${actor.color}`}>{actor.name[0]}</span><div><strong>{actor.name}</strong><small>Local agent · revision {status?.revision ?? game.revision}</small></div></header>
-    <ol><li className={['connecting', 'connected', 'thinking', 'selected', 'applied', 'fallback'].includes(stage) ? 'done' : ''}>Receive redacted public state</li><li className={['thinking', 'selected', 'applied', 'fallback'].includes(stage) ? 'done' : ''}>Review {game.legalActions.length} legal actions</li><li className={['selected', 'applied', 'fallback'].includes(stage) ? 'done' : ''}>{status?.actionType ? `Select ${status.actionType.replaceAll('-', ' ')}` : 'Select one action'}</li></ol>
+    <ol><li className="done">Agent seat owns this decision</li><li>Private MCP view stays separate</li><li>No fallback bot will move</li></ol>
     <p>{agentStatusCopy[stage]}{status?.detail ? ` · ${status.detail}` : ''}</p>
   </aside>
 }
@@ -214,7 +194,7 @@ function ActionPreview({ action, onConfirm, onCancel }: { action: GameAction; on
   return <section className="action-preview" aria-live="polite"><div><strong>{title}</strong><span>{detail}</span></div><button onClick={onCancel}>Cancel</button><button className="confirm" autoFocus onClick={onConfirm}>Confirm</button></section>
 }
 
-function EventLog({ game, onHistory }: { game: GameState; onHistory: () => void }) {
+function EventLog({ game, onHistory }: { game: GameDisplayState; onHistory: () => void }) {
   return <aside className="event-log wood-panel"><header><strong>Event log</strong><button onClick={onHistory} title="Open full match history"><span>History</span><b>{game.revision}</b></button></header><ol>{game.events.slice(-7).toReversed().map((event) => <li key={event.id}><span className="event-dot" />{event.message}</li>)}</ol></aside>
 }
 
@@ -230,8 +210,8 @@ function ResourceWallet({ game, humanId }: Pick<HudProps, 'game' | 'humanId'>) {
 }
 
 function ActionTray(props: HudProps) {
-  const { game, humanId, spectating, placementMode, onDialog, onAction } = props
-  const humanTurn = currentActorId(game) === humanId && !spectating
+  const { game, humanId, placementMode, onDialog, onAction } = props
+  const humanTurn = currentActorId(game) === humanId
   const roll = game.legalActions.find((action) => action.type === 'roll-dice')
   const end = game.legalActions.find((action) => action.type === 'end-turn' || action.type === 'finish-road-building')
   const inAction = game.phase === 'action' && humanTurn
@@ -245,7 +225,7 @@ function ActionTray(props: HudProps) {
   </nav>
 }
 
-const coachCopy: Partial<Record<GameState['phase'], { title: string; detail: string }>> = {
+const coachCopy: Partial<Record<GameDisplayState['phase'], { title: string; detail: string }>> = {
   'setup-settlement': { title: 'Found your first outpost', detail: 'Pick a corner touching productive numbers and a mix of resources.' },
   'setup-road': { title: 'Point toward your expansion', detail: 'Your road must touch the settlement you just placed.' },
   'pre-roll': { title: 'Start with the dice', detail: 'Matching terrain produces for every adjacent settlement or city.' },
@@ -259,9 +239,8 @@ const coachCopy: Partial<Record<GameState['phase'], { title: string; detail: str
   'trade-response': { title: 'A trade is waiting', detail: 'Accept, decline, or send a counteroffer without revealing your hand.' },
 }
 
-function ContextCoach({ game, humanId, spectating }: Pick<HudProps, 'game' | 'humanId' | 'spectating'>) {
+function ContextCoach({ game, humanId }: Pick<HudProps, 'game' | 'humanId'>) {
   const actorId = currentActorId(game)
-  if (spectating) return <aside className="context-coach"><strong>Watching the public table</strong><span>Pause any time. History keeps every action and controller status available.</span></aside>
   if (actorId !== humanId) return null
   const copy = coachCopy[game.phase]
   if (!copy) return null
@@ -269,19 +248,15 @@ function ContextCoach({ game, humanId, spectating }: Pick<HudProps, 'game' | 'hu
 }
 
 export function Hud(props: HudProps) {
-  const { game, spectating, spectatorPaused, spectatorPace, muted, onSpectating, onSpectatorPaused, onSpectatorPace, onMuted, onExitMatch, onDialog, error } = props
-  const hasHumanSeat = game.players.some((player) => player.controller === 'human')
+  const { game, muted, onMuted, onExitMatch, onDialog, error } = props
   return <div className="hud-layer">
-    <TurnPanel game={game} thinkingPlayerId={props.thinkingPlayerId} onAction={props.onAction} spectating={props.spectating} placementMode={props.placementMode} />
-    <ContextCoach game={game} humanId={props.humanId} spectating={spectating} />
-    <PlayerRail game={game} humanId={props.humanId} thinkingPlayerId={props.thinkingPlayerId} spectating={props.spectating} agentStatuses={props.agentStatuses} />
+    <TurnPanel game={game} thinkingPlayerId={props.thinkingPlayerId} onAction={props.onAction} placementMode={props.placementMode} />
+    <ContextCoach game={game} humanId={props.humanId} />
+    <PlayerRail game={game} humanId={props.humanId} agentStatuses={props.agentStatuses} />
     <EventLog game={game} onHistory={() => onDialog('history')} />
-    {!spectating ? <ResourceWallet game={game} humanId={props.humanId} /> : null}
+    <ResourceWallet game={game} humanId={props.humanId} />
     <ActionTray {...props} />
     <div className="utility-controls">
-      {spectating ? <button className={spectatorPaused ? '' : 'active'} onClick={() => onSpectatorPaused(!spectatorPaused)} title="Pause or resume spectator playback"><EyeIcon /><span>{spectatorPaused ? 'Resume' : 'Pause'}</span></button> : <button onClick={() => onSpectating(true)} title="Enter spectator mode"><EyeIcon /><span>Spectate</span></button>}
-      {spectating ? <label className="spectator-speed" title="Spectator playback speed"><span>Pace</span><select value={spectatorPace} onChange={(event) => onSpectatorPace(event.target.value as SpectatorPace)} aria-label="Spectator playback speed"><option value="slow">Slow</option><option value="steady">Steady</option><option value="fast">Fast</option></select></label> : null}
-      {spectating && hasHumanSeat ? <button onClick={() => { onSpectatorPaused(false); onSpectating(false) }} title="Return to your seat"><b aria-hidden="true">♟</b><span>Take seat</span></button> : null}
       <button className="history-button" onClick={() => onDialog('history')} title="Open match history and controller status"><b aria-hidden="true">☷</b><span>History</span></button>
       <button className={muted ? '' : 'active'} onClick={() => onMuted(!muted)} title={muted ? 'Turn sound on' : 'Mute sound'}><b aria-hidden="true">♫</b><span>{muted ? 'Sound off' : 'Sound on'}</span></button>
       <button onClick={() => onDialog('rules')} title="Rules"><BookIcon /><span>Rules</span></button>
@@ -289,7 +264,7 @@ export function Hud(props: HudProps) {
     </div>
     <DiceMoment game={game} presentation={props.presentation} />
     <AgentDecisionPreview game={game} thinkingPlayerId={props.thinkingPlayerId} agentStatuses={props.agentStatuses} />
-    {props.presentation ? <TransitionMoment key={props.presentation.revision} presentation={props.presentation} humanId={props.humanId} spectating={spectating} /> : null}
+    {props.presentation ? <TransitionMoment key={props.presentation.revision} presentation={props.presentation} humanId={props.humanId} /> : null}
     {props.pendingAction ? <ActionPreview action={props.pendingAction} onConfirm={props.onConfirmAction} onCancel={props.onCancelAction} /> : null}
     {error ? <div className="toast" role="alert">{error}</div> : null}
   </div>

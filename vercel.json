@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/api/health", "destination": "/api/server" },
+    { "source": "/api/rooms", "destination": "/api/server" },
+    { "source": "/api/rooms/:path*", "destination": "/api/server" },
+    { "source": "/api/ws", "destination": "/api/server" }
+  ],
+  "functions": {
+    "api/server.ts": {
+      "maxDuration": 300,
+      "regions": ["bom1"]
+    }
+  }
+}

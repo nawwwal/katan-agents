@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chooseBotAction } from './bot'
+import { chooseSimulationAction } from './simulationPolicy'
 import { applyAction, createGame, currentActorId, getPlayerView, scorePlayer } from './engine'
 import { RESOURCES } from './types'
 
@@ -11,13 +11,13 @@ for (const playerCount of [3, 4] as const) {
     let game = createGame({
       seed,
       privateRandomSeed: seed * 7919,
-      controllers: Array(playerCount).fill('bot'),
+      controllers: Array(playerCount).fill('agent'),
     })
     for (let step = 0; step < 2_000 && game.phase !== 'game-over'; step += 1) {
       const actorId = currentActorId(game)
       assert.ok(game.legalActions.length, `seed ${seed} reached ${game.phase} without a legal action`)
-      const action = chooseBotAction(getPlayerView(game, actorId))
-      assert.ok(action, `seed ${seed} bot could not resolve ${game.phase}`)
+      const action = chooseSimulationAction(getPlayerView(game, actorId))
+      assert.ok(action, `seed ${seed} simulation could not resolve ${game.phase}`)
       const result = applyAction(game, action)
       assert.equal(result.ok, true, `seed ${seed} rejected ${action.type} during ${game.phase}`)
       if (!result.ok) break

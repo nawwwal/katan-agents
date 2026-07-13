@@ -42,7 +42,7 @@ const pay = (state: GameState, player: Player, cost: Partial<Resources>) => {
 }
 
 const currentPlayer = (state: GameState) => state.players[state.activePlayerIndex]
-export const currentActorId = (state: GameState) => state.actingPlayerId ?? currentPlayer(state).id
+export const currentActorId = (state: Pick<GameState, 'actingPlayerId' | 'activePlayerIndex' | 'players'>) => state.actingPlayerId ?? state.players[state.activePlayerIndex].id
 
 const playerById = (state: GameState, playerId: string) => state.players.find((player) => player.id === playerId)
 
@@ -390,10 +390,10 @@ const secureRandomSeed = () => {
 export const createGame = (options: CreateGameOptions = {}): GameState => {
   const seed = options.seed ?? Math.floor(Date.now() / 1000)
   const privateRandomSeed = options.privateRandomSeed ?? secureRandomSeed()
-  const controllers = (options.controllers ?? ['human', 'bot', 'agent']).filter((controller) => controller !== 'spectator').slice(0, 4)
+  const controllers = (options.controllers ?? ['human', 'agent', 'agent']).slice(0, 4)
   if (controllers.length < 3) throw new Error('Base game requires 3 or 4 players')
   const setupRandom = seededRandom(seed ^ 0xa5a5a5a5)
-  const privateRandom = seededRandom(privateRandomSeed ^ 0x6d2b79f5)
+  const privateRandom = options.random ?? seededRandom(privateRandomSeed ^ 0x6d2b79f5)
   const players: Player[] = controllers.map((controller, index) => ({
     id: `p${index}`,
     name: options.names?.[index] ?? NAMES[index],
@@ -441,10 +441,10 @@ export const createGame = (options: CreateGameOptions = {}): GameState => {
   return state
 }
 
-export const applyAction = (input: GameState, action: GameAction): ApplyResult => {
+export const applyAction = (input: GameState, action: GameAction, randomSource?: () => number): ApplyResult => {
   if (action.type === 'restart') {
     if (input.phase !== 'game-over') return fail('Restart is only available after the game ends')
-    return { ok: true, state: createGame({ seed: action.seed ?? input.seed + 1, controllers: input.players.map((player) => player.controller), names: input.players.map((player) => player.name) }), events: [] }
+    return { ok: true, state: createGame({ seed: action.seed ?? input.seed + 1, random: randomSource, controllers: input.players.map((player) => player.controller), names: input.players.map((player) => player.name) }), events: [] }
   }
   const state = structuredClone(input)
   const actorId = currentActorId(state)
@@ -487,7 +487,7 @@ export const applyAction = (input: GameState, action: GameAction): ApplyResult =
 
   if (action.type === 'roll-dice') {
     if (state.phase !== 'pre-roll' || actor.id !== currentPlayer(state).id) return fail('Roll at the start of your turn')
-    const random = seededRandom(state.privateRandomSeed ^ ((state.revision + 1) * 0x9e3779b1))
+    const random = randomSource ?? seededRandom(state.privateRandomSeed ^ ((state.revision + 1) * 0x9e3779b1))
     const dice: [number, number] = [1 + Math.floor(random() * 6), 1 + Math.floor(random() * 6)]
     state.lastRoll = dice
     const total = dice[0] + dice[1]
@@ -547,7 +547,7 @@ export const applyAction = (input: GameState, action: GameAction): ApplyResult =
     if (!victim) return fail('That player is unavailable')
     const cards = RESOURCES.flatMap((resource) => Array<Resource>(victim.resources[resource]).fill(resource))
     if (cards.length) {
-      const random = seededRandom(state.privateRandomSeed ^ ((state.revision + 1) * 0x85ebca6b))
+      const random = randomSource ?? seededRandom(state.privateRandomSeed ^ ((state.revision + 1) * 0x85ebca6b))
       const resource = cards[Math.floor(random() * cards.length)]
       victim.resources[resource] -= 1
       actor.resources[resource] += 1

@@ -1,197 +1,184 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useGameAudio } from './audio/useGameAudio'
-import { createGame, currentActorId } from './game/engine'
+import { createGame, currentActorId, getPlayerView } from './game/engine'
+import { toDisplayState } from './game/room'
 import type { GameAction } from './game/types'
 import { useGame } from './game/useGame'
 import { GameScene, type PlacementMode } from './scene/GameScene'
 import { Dialogs } from './ui/Dialogs'
 import { Hud, type DialogName } from './ui/Hud'
-import { Journey, type JourneyStage, type SeatConfig } from './ui/Journey'
+import { Journey, type JourneyStage } from './ui/Journey'
 
-const playSeats: SeatConfig[] = [
-  { name: 'You', controller: 'human' },
-  { name: 'Agent Blue', controller: 'bot' },
-  { name: 'Agent Amber', controller: 'agent' },
-]
-
-const spectatorSeats: SeatConfig[] = [
-  { name: 'Coral Guild', controller: 'bot' },
-  { name: 'Agent Blue', controller: 'agent' },
-  { name: 'Amber Guild', controller: 'bot' },
-]
-
+const boardActionTypes = new Set<GameAction['type']>(['place-settlement', 'place-road', 'build-road', 'build-settlement', 'build-city', 'move-robber'])
 const terrainName = (terrain: string) => terrain === 'lumber' ? 'forest' : terrain === 'wool' ? 'pasture' : terrain
 const boardSector = (x: number, z: number) => {
   if (Math.hypot(x, z) < 0.7) return 'center'
   const sectors = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east']
   return sectors[(Math.round(Math.atan2(z, x) / (Math.PI / 4)) + sectors.length) % sectors.length]
 }
-const describeBoardAction = (game: NonNullable<ReturnType<typeof useGame>['game']>, action: GameAction, option: number, total: number) => {
-  const describeHexes = (hexIds: string[]) => hexIds.map((hexId) => {
-    const tile = game.board.hexes.find((candidate) => candidate.id === hexId)
-    return tile ? `${terrainName(tile.terrain)}${tile.number ? ` ${tile.number}` : ''}` : undefined
-  }).filter(Boolean).join(', ')
-  let description = action.type.replaceAll('-', ' ')
-  let point: { x: number; z: number } | undefined
-  if ('vertexId' in action) {
-    const vertex = game.board.vertices[action.vertexId]
-    point = vertex
-    description = `${description} beside ${describeHexes(vertex?.hexes ?? [])}`
-  }
-  if ('edgeId' in action) {
-    const edge = game.board.edges[action.edgeId]
-    if (edge) {
-      const [a, b] = edge.vertices.map((id) => game.board.vertices[id])
-      point = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }
-    }
-    description = `${description} between ${describeHexes(edge?.hexes ?? [])}`
-  }
-  if ('hexId' in action) {
-    const tile = game.board.hexes.find((candidate) => candidate.id === action.hexId)
-    point = tile
-    description = `${description} to ${tile ? `${terrainName(tile.terrain)}${tile.number ? ` ${tile.number}` : ''}` : 'another tile'}`
-  }
-  return `${description} at the ${point ? boardSector(point.x, point.z) : 'board'}, option ${option + 1} of ${total}`
-}
 
 export default function App() {
-  const { game, start, reset, submit, error, thinkingPlayerId, agentStatuses, presentation, spectating, setSpectating, spectatorPaused, setSpectatorPaused, spectatorPace, setSpectatorPace, setAutomationEnabled } = useGame()
-  const previewGame = useMemo(() => createGame({ seed: 28, controllers: ['bot', 'bot', 'agent'] }), [])
-  const [stage, setStage] = useState<JourneyStage>('title')
-  const [mode, setMode] = useState<'play' | 'spectate'>('play')
-  const [seats, setSeats] = useState<SeatConfig[]>(playSeats)
-  const [seed, setSeed] = useState(28)
+  const initialRoomCode = useMemo(() => new URLSearchParams(window.location.search).get('room')?.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6) ?? '', [])
+  const { room, game, hasCredentials, viewerPlayerId, createRoom, joinRoom, start, reset, submit, error, busy, submitting, connectionState, thinkingPlayerId, agentStatuses, presentation } = useGame()
+  const previewGame = useMemo(() => {
+    const preview = createGame({ seed: 28, controllers: ['human', 'agent', 'agent'], names: ['You', 'Atlas', 'Ember'] })
+    return toDisplayState(getPlayerView(preview, preview.players[0].id))
+  }, [])
+  const [stage, setStage] = useState<JourneyStage>(initialRoomCode ? 'join' : 'title')
   const [dialog, setDialog] = useState<DialogName>(null)
   const [placementMode, setPlacementMode] = useState<PlacementMode>(null)
   const [pendingAction, setPendingAction] = useState<GameAction>()
   const displayedGame = game ?? previewGame
-  const humanId = displayedGame.players.find((player) => player.controller === 'human')?.id ?? displayedGame.players[0].id
-  const actor = game?.players.find((player) => player.id === currentActorId(game))
-  const interactive = stage === 'match' && Boolean(game && actor?.controller === 'human' && !spectating && game.phase !== 'game-over')
-  const boardActions = interactive && game ? game.legalActions.filter((action) => ['place-settlement', 'place-road', 'build-road', 'build-settlement', 'build-city', 'move-robber'].includes(action.type)) : []
+  const actorId = game ? currentActorId(game) : undefined
+  const viewerMustAct = Boolean(game && actorId === viewerPlayerId && game.phase !== 'game-over')
+  const interactive = stage === 'match' && room?.status === 'playing' && viewerMustAct && connectionState === 'connected' && !submitting
+  const boardActions = interactive && game ? game.legalActions.filter((action) => boardActionTypes.has(action.type)) : []
   const { muted, setMuted } = useGameAudio(presentation, stage === 'summary')
 
   useEffect(() => {
-    if (!interactive || game?.phase !== 'action') setPlacementMode(null)
-    if (!interactive) setDialog(null)
-    if (!interactive) setPendingAction(undefined)
-  }, [interactive, game?.phase])
+    if (!room) return
+    const url = new URL(window.location.href)
+    url.searchParams.set('room', room.code)
+    window.history.replaceState(null, '', url)
+    if (room.status === 'lobby') setStage('lobby')
+    else if (room.status === 'playing') setStage((current) => current === 'lobby' || current === 'introduction' ? 'introduction' : 'match')
+    else setStage('summary')
+  }, [room?.code, room?.status])
+
+  useEffect(() => {
+    if (hasCredentials || !room) return
+    setStage('join')
+    setDialog(null)
+    setPlacementMode(null)
+    setPendingAction(undefined)
+  }, [hasCredentials, room])
+
+  useEffect(() => {
+    if (viewerMustAct && game?.phase === 'action') return
+    setPlacementMode(null)
+    if (!viewerMustAct) setDialog(null)
+    if (!viewerMustAct) setPendingAction(undefined)
+  }, [game?.phase, viewerMustAct])
 
   useEffect(() => setPendingAction(undefined), [game?.revision])
 
-  useEffect(() => {
-    if (game?.phase !== 'game-over' || stage !== 'match') return
-    setAutomationEnabled(false)
-    setStage('summary')
-  }, [game?.phase, setAutomationEnabled, stage])
-
   const act = (action: GameAction) => {
-    if (!game) return
-    if (['place-settlement', 'place-road', 'build-road', 'build-settlement', 'build-city', 'move-robber'].includes(action.type)) {
+    if (!interactive) return false
+    if (boardActionTypes.has(action.type)) {
       setPendingAction(action)
-      return
+      return true
     }
-    submit(action)
-    if (['build-road', 'build-settlement', 'build-city'].includes(action.type)) setPlacementMode(null)
+    const sent = submit(action)
+    if (sent && ['build-road', 'build-settlement', 'build-city'].includes(action.type)) setPlacementMode(null)
+    return sent
   }
+
   const confirmPendingAction = () => {
-    if (!pendingAction) return
-    submit(pendingAction)
-    if (['build-road', 'build-settlement', 'build-city'].includes(pendingAction.type)) setPlacementMode(null)
+    if (!pendingAction || !interactive) return
+    if (submit(pendingAction) && ['build-road', 'build-settlement', 'build-city'].includes(pendingAction.type)) setPlacementMode(null)
     setPendingAction(undefined)
   }
 
-  const chooseMode = (nextMode: 'play' | 'spectate') => {
-    setMode(nextMode)
-    setSeats(nextMode === 'play' ? playSeats.map((seat) => ({ ...seat })) : spectatorSeats.map((seat) => ({ ...seat })))
-    setStage('configure')
+  const describeBoardAction = (action: GameAction, option: number, total: number) => {
+    if (!game) return action.type.replaceAll('-', ' ')
+    const describeHexes = (hexIds: string[]) => hexIds.map((hexId) => {
+      const tile = game.board.hexes.find((candidate) => candidate.id === hexId)
+      return tile ? `${terrainName(tile.terrain)}${tile.number ? ` ${tile.number}` : ''}` : undefined
+    }).filter(Boolean).join(', ')
+    let description = action.type.replaceAll('-', ' ')
+    let point: { x: number; z: number } | undefined
+    if ('vertexId' in action) {
+      const vertex = game.board.vertices[action.vertexId]
+      point = vertex
+      description = `${description} beside ${describeHexes(vertex?.hexes ?? [])}`
+    }
+    if ('edgeId' in action) {
+      const edge = game.board.edges[action.edgeId]
+      if (edge) {
+        const [a, b] = edge.vertices.map((id) => game.board.vertices[id])
+        point = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }
+      }
+      description = `${description} between ${describeHexes(edge?.hexes ?? [])}`
+    }
+    if ('hexId' in action) {
+      const tile = game.board.hexes.find((candidate) => candidate.id === action.hexId)
+      point = tile
+      description = `${description} to ${tile ? `${terrainName(tile.terrain)}${tile.number ? ` ${tile.number}` : ''}` : 'another tile'}`
+    }
+    return `${description} at the ${point ? boardSector(point.x, point.z) : 'board'}, option ${option + 1} of ${total}`
   }
 
-  const changeSeat = (index: number, patch: Partial<SeatConfig>) => setSeats((current) => current.map((seat, seatIndex) => seatIndex === index ? { ...seat, ...patch } : seat))
-  const changeSeatCount = (count: 3 | 4) => setSeats((current) => count === 3
-    ? current.slice(0, 3)
-    : [...current, { name: 'Ivory Guild', controller: 'bot' } satisfies SeatConfig].slice(0, 4))
-  const createConfiguredGame = (seedOverride = seed) => {
-    start({ seed: seedOverride, controllers: seats.map((seat) => seat.controller), names: seats.map((seat) => seat.name.trim() || 'Settler') })
-    setSpectating(mode === 'spectate' || !seats.some((seat) => seat.controller === 'human'))
-    setAutomationEnabled(false)
-    setStage('introduction')
-  }
-  const enterMatch = () => {
-    setStage('match')
-    setAutomationEnabled(true)
-  }
-  const rematch = () => {
-    const nextSeed = (game?.seed ?? seed) + 1
-    setSeed(nextSeed)
-    createConfiguredGame(nextSeed)
-  }
   const returnToTitle = () => {
     reset()
     setStage('title')
     setDialog(null)
     setPlacementMode(null)
     setPendingAction(undefined)
+    const url = new URL(window.location.href)
+    url.searchParams.delete('room')
+    window.history.replaceState(null, '', url)
   }
+
+  const create = async (name: string, seatsTotal: 3 | 4) => {
+    const created = await createRoom(name, seatsTotal)
+    if (created) setStage('lobby')
+    return created
+  }
+
+  const join = async (code: string, name: string) => {
+    const joined = await joinRoom(code, name)
+    if (joined) setStage('lobby')
+    return joined
+  }
+
+  const startMatch = () => { if (start()) setStage('introduction') }
+  const hudError = error ?? (connectionState === 'reconnecting' ? 'Reconnecting to the room…' : connectionState === 'connecting' ? 'Connecting to the room…' : undefined)
 
   return <main className="game-shell">
     <div className="ocean-layer" />
     <div className="vignette" />
     <GameScene game={displayedGame} placementMode={placementMode} pendingAction={pendingAction} presentation={presentation} cinematic={stage !== 'match'} onAction={act} interactive={interactive} />
-    {stage === 'match' && game ? <><Hud
+    {stage === 'match' && game && viewerPlayerId ? <><Hud
       game={game}
-      humanId={humanId}
+      humanId={viewerPlayerId}
       thinkingPlayerId={thinkingPlayerId}
       agentStatuses={agentStatuses}
       presentation={presentation}
-      spectating={spectating}
-      spectatorPaused={spectatorPaused}
-      spectatorPace={spectatorPace}
       muted={muted}
       placementMode={placementMode}
       pendingAction={pendingAction}
-      error={error}
+      error={hudError}
       onDialog={setDialog}
       onPlacementMode={setPlacementMode}
       onAction={act}
       onConfirmAction={confirmPendingAction}
       onCancelAction={() => setPendingAction(undefined)}
-      onSpectating={setSpectating}
-      onSpectatorPaused={setSpectatorPaused}
-      onSpectatorPace={setSpectatorPace}
       onMuted={setMuted}
       onExitMatch={returnToTitle}
     />
-    <Dialogs
-      game={game}
-      humanId={humanId}
-      dialog={dialog}
-      spectating={spectating}
-      agentStatuses={agentStatuses}
-      onClose={() => setDialog(null)}
-      onAction={act}
-      onPlacementMode={setPlacementMode}
-    /></> : null}
+    <Dialogs game={game} humanId={viewerPlayerId} dialog={dialog} agentStatuses={agentStatuses} onClose={() => setDialog(null)} onAction={act} onPlacementMode={setPlacementMode} /></> : null}
     {interactive && game ? <div className="sr-only board-targets" role="group" aria-label="Board targets">
       {boardActions.map((action, index) => {
         const target = 'vertexId' in action ? action.vertexId : 'edgeId' in action ? action.edgeId : 'hexId' in action ? action.hexId : index
-        return <button key={`${action.type}-${target}`} onClick={() => act(action)}>{describeBoardAction(game, action, index, boardActions.length)}</button>
+        return <button key={`${action.type}-${target}`} onClick={() => act(action)}>{describeBoardAction(action, index, boardActions.length)}</button>
       })}
     </div> : null}
     <Journey
       stage={stage}
-      mode={mode}
-      seats={seats}
-      seed={seed}
+      room={room}
       game={game}
-      onChooseMode={chooseMode}
-      onSeatChange={changeSeat}
-      onSeatCount={changeSeatCount}
-      onSeed={setSeed}
+      viewerPlayerId={viewerPlayerId}
+      busy={busy}
+      connectionState={connectionState}
+      error={error}
+      initialRoomCode={initialRoomCode}
+      onChoose={setStage}
+      onCreate={create}
+      onJoin={join}
       onBack={returnToTitle}
-      onCreate={createConfiguredGame}
-      onEnter={enterMatch}
-      onRematch={rematch}
+      onStart={startMatch}
+      onEnter={() => setStage('match')}
+      onRematch={startMatch}
     />
     <div className="copyright-note">Original prototype · base rules 2020</div>
   </main>

@@ -15,7 +15,7 @@ const settlementValue = (state: PublicGameState, vertexId: string) => {
   return score + resources.size * 1.6 + (vertex.harborId ? 2 : 0)
 }
 
-export const chooseBotAction = (view: PlayerView): GameAction | undefined => {
+export const chooseSimulationAction = (view: PlayerView): GameAction | undefined => {
   const { playerId, publicState: state, legalActions: actions } = view
   if (!actions.length) return undefined
 

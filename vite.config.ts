@@ -6,17 +6,17 @@ export default defineConfig({
   build: { chunkSizeWarningLimit: 1200 },
   server: {
     proxy: {
-      '/agent-api': {
+      '/api': {
         target: 'http://127.0.0.1:8787',
-        rewrite: (path) => path.replace(/^\/agent-api/, ''),
+        ws: true,
       },
     },
   },
   preview: {
     proxy: {
-      '/agent-api': {
+      '/api': {
         target: 'http://127.0.0.1:8787',
-        rewrite: (path) => path.replace(/^\/agent-api/, ''),
+        ws: true,
       },
     },
   },

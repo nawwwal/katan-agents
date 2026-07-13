@@ -9,7 +9,7 @@ const setActionTurn = (game: GameState, playerIndex: number) => {
   game.lastRoll = [3, 4]
 }
 
-const productionGame = createGame({ seed: 70, controllers: ['human', 'bot', 'bot'] })
+const productionGame = createGame({ seed: 70, controllers: ['human', 'agent', 'agent'] })
 let productionRevision = 0
 let productionTotal = 7
 while (productionTotal === 7) {
@@ -51,7 +51,7 @@ if (!partial.ok) throw new Error('single-player shortage roll failed')
 assert.equal(partial.state.players[0].resources[productionResource], 1)
 assert.equal(partial.state.bank[productionResource], 0, 'a sole claimant receives the remaining supply')
 
-const developmentGame = createGame({ seed: 71, controllers: ['human', 'bot', 'bot'] })
+const developmentGame = createGame({ seed: 71, controllers: ['human', 'agent', 'agent'] })
 setActionTurn(developmentGame, 0)
 developmentGame.players[0].resources = { brick: 0, lumber: 0, ore: 1, grain: 1, wool: 1 }
 developmentGame.developmentDeck = ['knight']
@@ -68,7 +68,7 @@ ended.state.actingPlayerId = 'p0'
 ended.state.phase = 'pre-roll'
 assert.equal(applyAction(ended.state, { type: 'play-development', card: 'knight' }).ok, true, 'the card becomes playable on a later turn')
 
-const emptyPlentyBank = createGame({ seed: 74, controllers: ['human', 'bot', 'bot'] })
+const emptyPlentyBank = createGame({ seed: 74, controllers: ['human', 'agent', 'agent'] })
 setActionTurn(emptyPlentyBank, 0)
 emptyPlentyBank.players[0].development = ['year-of-plenty']
 emptyPlentyBank.bank = { brick: 1, lumber: 0, ore: 0, grain: 0, wool: 0 }
@@ -95,7 +95,7 @@ const findRoadPath = (board: Board) => {
   throw new Error('board needs a five-road path')
 }
 
-const roadGame = createGame({ seed: 72, controllers: ['human', 'bot', 'bot'] })
+const roadGame = createGame({ seed: 72, controllers: ['human', 'agent', 'agent'] })
 const path = findRoadPath(roadGame.board)
 roadGame.roadOwners = Object.fromEntries(path.edges.map((edgeId) => [edgeId, 'p0']))
 roadGame.players[0].roads = [...path.edges]
@@ -117,7 +117,7 @@ assert.equal(interrupted.ok, true)
 if (!interrupted.ok) throw new Error('road interruption build failed')
 assert.notEqual(interrupted.state.longestRoad?.playerId, 'p0', 'an opponent settlement interrupts a continuous road')
 
-const victoryGame = createGame({ seed: 73, controllers: ['human', 'bot', 'bot'] })
+const victoryGame = createGame({ seed: 73, controllers: ['human', 'agent', 'agent'] })
 victoryGame.players[2].cities = ['a', 'b', 'c', 'd']
 victoryGame.players[2].settlements = ['e', 'f']
 setActionTurn(victoryGame, 0)
@@ -134,7 +134,7 @@ if (!onTheirTurn.ok) throw new Error('victory roll failed')
 assert.equal(onTheirTurn.state.winnerId, 'p2')
 assert.equal(onTheirTurn.state.phase, 'game-over')
 
-const robberGame = createGame({ seed: 75, controllers: ['human', 'bot', 'bot'] })
+const robberGame = createGame({ seed: 75, controllers: ['human', 'agent', 'agent'] })
 setActionTurn(robberGame, 0)
 robberGame.phase = 'move-robber'
 const robberTarget = robberGame.board.hexes.find((hex) => hex.id !== robberGame.board.robberHexId)!
@@ -155,7 +155,7 @@ assert.equal(emptyRobbery.ok, true)
 if (!emptyRobbery.ok) throw new Error('zero-card robbery failed')
 assert.equal(emptyRobbery.events.at(-1)?.message, 'Agent Blue had no resource cards to steal.')
 
-const roadBuildingGame = createGame({ seed: 76, controllers: ['human', 'bot', 'bot'] })
+const roadBuildingGame = createGame({ seed: 76, controllers: ['human', 'agent', 'agent'] })
 setActionTurn(roadBuildingGame, 0)
 const roadOrigin = Object.values(roadBuildingGame.board.vertices).find((vertex) => vertex.edges.length >= 2)!
 roadBuildingGame.buildings = { [roadOrigin.id]: { playerId: 'p0', type: 'settlement' } }
@@ -167,7 +167,7 @@ assert.equal(freeRoadActions.some((action) => action.type === 'build-road'), tru
 assert.equal(freeRoadActions.some((action) => action.type === 'finish-road-building'), false, 'Road Building cannot end while a free road is legal')
 assert.equal(applyAction(roadBuildingGame, { type: 'finish-road-building' }).ok, false)
 
-const harborTradeGame = createGame({ seed: 77, controllers: ['human', 'bot', 'bot'] })
+const harborTradeGame = createGame({ seed: 77, controllers: ['human', 'agent', 'agent'] })
 setActionTurn(harborTradeGame, 0)
 const genericHarbor = harborTradeGame.board.harbors.find((harbor) => harbor.ratio === 3)!
 harborTradeGame.players[0].ports = [genericHarbor.id]
