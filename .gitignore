@@ -7,3 +7,5 @@ tmp/
 docs/superpowers/
 *.tsbuildinfo
 .DS_Store
+.vercel
+.env*

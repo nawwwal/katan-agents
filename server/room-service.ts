@@ -1,9 +1,9 @@
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
-import Redis from 'ioredis'
-import { applyAction, createGame, currentActorId, getPlayerView } from '../src/game/engine'
-import { parsePlayerAction } from '../src/game/room'
-import type { Controller, GameState } from '../src/game/types'
-import type { RoomCredentials, RoomSeat, RoomStatus, RoomView } from '../src/game/room'
+import { Redis } from 'ioredis'
+import { applyAction, createGame, currentActorId, getPlayerView } from '../src/game/engine.js'
+import { parsePlayerAction } from '../src/game/room.js'
+import type { Controller, GameState } from '../src/game/types.js'
+import type { RoomCredentials, RoomSeat, RoomStatus, RoomView } from '../src/game/room.js'
 
 const ROOM_TTL_SECONDS = 24 * 60 * 60
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
@@ -284,7 +284,7 @@ export const playRoomAction = async (code: string, token: string, expectedRevisi
   const action = parsePlayerAction(getPlayerView(room.game, viewer.id), input)
   if (!action) throw new RoomError('illegal_action', 'That action is not legal in the current position.', 422)
   const result = applyAction(room.game, action, secureRandom)
-  if (!result.ok) throw new RoomError('illegal_action', result.message, 422)
+  if (result.ok === false) throw new RoomError('illegal_action', result.message, 422)
   room.game = result.state
   if (room.game.phase === 'game-over') room.status = 'finished'
 })

@@ -1,4 +1,4 @@
-import { createBoard, seededRandom, shuffle } from './board'
+import { createBoard, seededRandom, shuffle } from './board.js'
 import {
   RESOURCES,
   emptyResources,
@@ -12,7 +12,7 @@ import {
   type PlayerView,
   type Resource,
   type Resources,
-} from './types'
+} from './types.js'
 
 const COLORS: PlayerColor[] = ['coral', 'blue', 'amber', 'ivory']
 const NAMES = ['You', 'Agent Blue', 'Agent Amber', 'Ivory Guild']
@@ -410,7 +410,7 @@ export const createGame = (options: CreateGameOptions = {}): GameState => {
   }))
   const startingIndex = pickStartingIndex(setupRandom, players.length)
   const firstRound = players.map((_, offset) => (startingIndex + offset) % players.length)
-  const setupOrder = [...firstRound, ...firstRound.toReversed()]
+  const setupOrder = [...firstRound, ...[...firstRound].reverse()]
   const state: GameState = {
     version: 1,
     seed,

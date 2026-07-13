@@ -4,6 +4,9 @@
 
 Katan is a realtime browser strategy game built with React, Three.js, WebSockets, and one authoritative rules engine. Create a private room, share its six-character code, and fill the seats beside the human host with any mix of remote humans and local agents. Every seat gets its own redacted view: your hand stays yours, the server validates every move, and every browser sees the same island revision immediately.
 
+> [!TIP]
+> **The island is live:** [play Katan at katan-agents.vercel.app](https://katan-agents.vercel.app). Create a room, choose which seats belong to humans or local agents, and share the six-character code. No account is required.
+
 **At a glance**
 
 - 3 or 4 players
@@ -401,7 +404,7 @@ command = "npm"
 args = ["run", "mcp", "--prefix", "/absolute/path/to/katan-agents"]
 
 [mcp_servers.katan.env]
-KATAN_SERVER_URL = "https://your-katan.vercel.app"
+KATAN_SERVER_URL = "https://katan-agents.vercel.app"
 ```
 
 For local development, set `KATAN_SERVER_URL` to `http://127.0.0.1:8787`.
@@ -459,21 +462,44 @@ Read [Katan architecture](docs/ARCHITECTURE.md) for state ownership, Redis keys,
 
 ## Hosting
 
-The repository is configured for one Vercel project: Vite serves the 3D client, `api/server.ts` exports the Node HTTP/WebSocket server, and Upstash Redis stores authoritative rooms plus a small cross-instance event stream. This follows Vercel's current [native WebSocket function model](https://vercel.com/docs/functions/websockets) and its official [WebSockets + Redis Streams realtime pattern](https://vercel.com/kb/guide/real-time-chat-websockets).
+The production island lives at [katan-agents.vercel.app](https://katan-agents.vercel.app). Vite serves the 3D client, `api/server.ts` exports the Node HTTP/WebSocket server, and Upstash Redis stores authoritative rooms plus a small cross-instance event stream. This follows Vercel's current [native WebSocket function model](https://vercel.com/docs/functions/websockets) and its official [WebSockets + Redis Streams realtime pattern](https://vercel.com/kb/guide/real-time-chat-websockets).
+
+The current deployment uses the Upstash free plan in Mumbai (`bom1`), with eviction enabled and automatic paid upgrades disabled. Vercel performs no agent inference: browsers and tiny local MCP processes are the clients, so server cost is limited to realtime room traffic and Redis storage.
 
 ### Deploy to Vercel
 
-1. Import the repository into Vercel.
-2. Enable Fluid compute. Native WebSockets require it.
-3. Add an [Upstash Redis integration](https://vercel.com/docs/redis) with Mumbai as its primary region.
-4. Expose its connection string as `REDIS_URL`.
-5. Deploy. No separate socket host or model service is required.
+Use a current Vercel CLI from the repository root. The integration command provisions the free Redis database, attaches it to production, preview, and development, and supplies `REDIS_URL` automatically:
+
+```bash
+npx vercel@latest link --yes
+npx vercel@latest integration add upstash/upstash-kv \
+  --name katan-rooms \
+  -m primaryRegion=bom1 \
+  -m eviction=true \
+  -m prodPack=false \
+  -m autoUpgrade=false
+
+npm test
+npx vercel@latest build --prod --yes
+npx vercel@latest deploy --prebuilt --prod
+```
+
+New Vercel projects use Fluid compute by default. Native WebSockets require it, so keep it enabled. No separate socket host, database server, or model service is required.
+
+Once the deployment receives its stable alias, verify that the room store is genuinely shared rather than silently falling back to process memory:
+
+```bash
+curl https://katan-agents.vercel.app/api/health
+# {"ok":true,"storage":"redis"}
+```
 
 `REDIS_URL` is mandatory on Vercel; `/api/health` returns `503` instead of allowing split-brain in-memory rooms when it is missing. The server also applies short per-IP limits to room creation, seat joins, and unauthenticated socket opens.
 
 The included `vercel.json` routes `/api/rooms`, `/api/health`, and `/api/ws` to the exported Node server, deploys it in Vercel's Mumbai `bom1` region, and gives WebSocket functions a 300-second duration. Clients reconnect automatically when Vercel rotates an instance. Redis preserves the room and carries accepted-action notifications to sockets on other instances.
 
 Keep compute and Redis in the same region; change `bom1` only when most players move elsewhere. Add accounts, Postgres, rankings, or match archives only when the product actually needs them; live games need only Redis.
+
+This production project currently deploys through the CLI. GitHub automatic deployments are optional: first add GitHub as a login connection in the Vercel account, then connect `nawwwal/katan-agents` in the project settings. Until that is done, `vercel deploy --prebuilt --prod` remains the release command.
 
 ## Troubleshooting
 
@@ -489,6 +515,10 @@ Build first:
 npm run build
 npm run preview
 ```
+
+### A Vercel function build crashes inside TypeScript
+
+Keep the exact `typescript` version from `package.json`. It is intentionally pinned to `6.0.3`: Vercel's current Node function builder reads the TypeScript compiler API through `ts.sys`, which is no longer exposed from the TypeScript 7 package root. Do not upgrade that pin until the builder supports TypeScript 7.
 
 ### A local agent does not join
 

@@ -1,8 +1,8 @@
 import http from 'node:http'
 import { WebSocketServer, WebSocket } from 'ws'
-import { createRoom, enforceRateLimit, getRoomView, joinRoom, onRoomChange, playRoomAction, RoomError, roomStoreHealth, startRoom } from './room-service'
-import { parseClientRoomMessage } from '../src/game/room'
-import type { ServerRoomMessage } from '../src/game/room'
+import { createRoom, enforceRateLimit, getRoomView, joinRoom, onRoomChange, playRoomAction, RoomError, roomStoreHealth, startRoom } from './room-service.js'
+import { parseClientRoomMessage } from '../src/game/room.js'
+import type { ServerRoomMessage } from '../src/game/room.js'
 
 const MAX_BODY_BYTES = 32 * 1024
 

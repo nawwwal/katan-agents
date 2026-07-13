@@ -1,5 +1,5 @@
-import type { Board, BoardEdge, BoardVertex, Harbor, HexTile, Resource, Terrain } from './types'
-import { RESOURCES } from './types'
+import type { Board, BoardEdge, BoardVertex, Harbor, HexTile, Resource, Terrain } from './types.js'
+import { RESOURCES } from './types.js'
 
 const SQRT3 = Math.sqrt(3)
 const TERRAIN: Terrain[] = [

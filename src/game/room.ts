@@ -1,5 +1,5 @@
-import { RESOURCES, emptyResources } from './types'
-import type { Controller, GameAction, GameDisplayState, PlayerView, Resources } from './types'
+import { RESOURCES, emptyResources } from './types.js'
+import type { Controller, GameAction, GameDisplayState, PlayerView, Resources } from './types.js'
 
 export type RoomStatus = 'lobby' | 'playing' | 'finished'
 
