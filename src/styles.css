@@ -201,6 +201,28 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px s
 .invite-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .invite-actions button { min-height: 38px; padding: 0 11px; border: 1px solid #9a7544; border-radius: 7px; color: #f4e4bd; background: #3a2619; font-size: 10px; font-weight: 900; cursor: pointer; }
 .invite-actions button:hover { filter: brightness(1.13); }
+.invite-actions .agent-invite-trigger { border-color: #d5a849; color: #2d1b0d; background: linear-gradient(#f0cf72, #b87d2b); box-shadow: inset 0 0 0 1px rgba(255,255,255,.2); }
+.agent-invite-backdrop { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; padding: 18px; background: rgba(2,13,18,.78); backdrop-filter: blur(8px); animation: veil-in 160ms ease both; }
+.agent-invite-dialog { width: min(790px, calc(100vw - 28px)); max-height: calc(100dvh - 28px); overflow: auto; border: 2px solid #160d09; outline: 1px solid rgba(255,220,132,.52); border-radius: 15px; color: #f2e1ba; background: linear-gradient(145deg, #4a2c1b, #20130e 72%); box-shadow: inset 0 0 0 4px rgba(124,78,40,.3), 0 28px 78px rgba(0,0,0,.64); animation: title-arrive 220ms cubic-bezier(.2,.8,.2,1) both; }
+.agent-invite-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 20px 22px 16px; border-bottom: 1px solid rgba(255,222,150,.2); }
+.agent-invite-dialog header span, .agent-step-label { color: #d9bd7f; font-size: 9px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
+.agent-invite-dialog h3 { margin: 4px 0 0; color: #ffe8a4; font: 900 28px Georgia, serif; }
+.agent-invite-close { width: 38px; height: 38px; flex: 0 0 38px; border: 1px solid #8c6439; border-radius: 9px; color: #f4dfb1; background: #2a1911; font-size: 24px; line-height: 1; cursor: pointer; }
+.agent-invite-lede { margin: 0; padding: 16px 22px 0; color: #ddcaa5; font: 14px/1.5 Georgia, serif; }
+.agent-invite-steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 18px 22px 22px; }
+.agent-invite-steps article { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; padding: 18px; border: 1px solid rgba(218,174,84,.38); border-radius: 11px; background: linear-gradient(155deg, rgba(21,13,9,.35), rgba(83,48,25,.26)); }
+.agent-invite-steps h4 { margin: 8px 0 6px; color: #ffe7a0; font: 900 19px Georgia, serif; }
+.agent-invite-steps p { flex: 1; margin: 0 0 18px; color: #d9c7a4; font-size: 11px; line-height: 1.55; }
+.agent-invite-steps button { width: 100%; min-height: 44px; padding: 0 14px; font-size: 13px; }
+.agent-manual-copy { width: 100%; display: grid; gap: 5px; margin-top: 12px; padding: 11px; border: 1px solid rgba(242,207,115,.44); border-radius: 8px; background: rgba(8,15,16,.52); }
+.agent-manual-copy strong { color: #ffe7a0; font-size: 11px; }
+.agent-manual-copy span { color: #cdbd9e; font-size: 10px; line-height: 1.4; }
+.agent-manual-copy textarea { width: 100%; min-height: 116px; resize: vertical; padding: 9px; border: 1px solid #765632; border-radius: 6px; color: #f7e9c9; background: #120d0a; font: 10px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.agent-manual-copy textarea:focus { outline: 2px solid #f2cf73; outline-offset: 2px; }
+.agent-invite-dialog > footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px 22px 18px; border-top: 1px solid rgba(255,222,150,.18); }
+.agent-invite-dialog > footer p { max-width: 520px; margin: 0; color: #bfae8d; font-size: 10px; line-height: 1.45; }
+.agent-invite-dialog > footer a { flex: 0 0 auto; color: #f2cf73; font-size: 10px; font-weight: 900; text-decoration: none; }
+.agent-invite-dialog > footer a:hover { text-decoration: underline; }
 .lobby-seats .seat-card { min-height: 148px; }
 .seat-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 10px; border-top: 1px solid rgba(255,233,186,.16); color: #d7c3a0; font-size: 9px; text-transform: uppercase; }
 .seat-meta b { padding: 4px 7px; border-radius: 999px; color: #2e1b0d; background: #dfb653; font-size: 8px; }
@@ -421,6 +443,14 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px s
   .room-invite { align-items: flex-start; flex-direction: column; margin: 14px 14px 0; }
   .invite-actions { justify-content: flex-start; }
   .room-invite strong { font-size: 26px; }
+  .agent-invite-backdrop { align-items: end; padding: 8px; }
+  .agent-invite-dialog { width: 100%; max-height: calc(100dvh - 16px); }
+  .agent-invite-dialog > header { padding: 16px 15px 13px; }
+  .agent-invite-dialog h3 { font-size: 23px; }
+  .agent-invite-lede { padding: 13px 15px 0; font-size: 13px; }
+  .agent-invite-steps { grid-template-columns: 1fr; padding: 14px 15px 16px; }
+  .agent-invite-steps article { padding: 15px; }
+  .agent-invite-dialog > footer { align-items: flex-start; flex-direction: column; padding: 13px 15px 16px; }
   .seat-grid { grid-template-columns: 1fr; padding: 12px; }
   .seat-card { grid-template-columns: 1fr 1fr; }
   .seat-heading { grid-column: 1 / 3; }

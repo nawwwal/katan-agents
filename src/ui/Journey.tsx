@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { buildAgentPlayPrompt, buildAgentSetupPrompt, KATAN_AGENT_GUIDE_URL, resolveRoomServerOrigin } from '../agent/invite'
 import { visibleScore } from '../game/room'
 import type { GameDisplayState, PlayerColor } from '../game/types'
 import type { RoomView } from '../game/room'
@@ -33,27 +34,75 @@ type JourneyProps = {
 }
 
 const copyText = async (value: string) => {
-  if (navigator.clipboard) return navigator.clipboard.writeText(value)
+  try {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(value)
+      return true
+    }
+  } catch {
+    // Fall through to the selection-based clipboard path.
+  }
   const input = document.createElement('textarea')
-  input.value = value
-  input.style.position = 'fixed'
-  input.style.opacity = '0'
-  document.body.append(input)
-  input.select()
-  document.execCommand('copy')
-  input.remove()
+  try {
+    input.value = value
+    input.style.position = 'fixed'
+    input.style.opacity = '0'
+    document.body.append(input)
+    input.select()
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    input.remove()
+  }
 }
 
 export function Journey({ stage, room, game, viewerPlayerId, busy, connectionState, error, initialRoomCode = '', onChoose, onCreate, onJoin, onBack, onStart, onEnter, onRematch }: JourneyProps) {
   const stageRef = useRef<HTMLElement>(null)
+  const agentInviteDialogRef = useRef<HTMLDivElement>(null)
+  const agentInviteTriggerRef = useRef<HTMLButtonElement>(null)
   const [name, setName] = useState('')
   const [roomCode, setRoomCode] = useState(initialRoomCode)
   const [seatsTotal, setSeatsTotal] = useState<3 | 4>(3)
-  const [copied, setCopied] = useState<'code' | 'link' | 'agent'>()
+  const [copied, setCopied] = useState<'code' | 'link' | 'setup' | 'play'>()
+  const [manualCopy, setManualCopy] = useState<'setup' | 'play'>()
+  const [agentInviteOpen, setAgentInviteOpen] = useState(false)
 
   useEffect(() => { if (stage !== 'match') stageRef.current?.focus() }, [stage])
   useEffect(() => { if (initialRoomCode) setRoomCode(initialRoomCode) }, [initialRoomCode])
   useEffect(() => { if (!copied) return; const timeout = window.setTimeout(() => setCopied(undefined), 1_800); return () => window.clearTimeout(timeout) }, [copied])
+  useEffect(() => { if (stage !== 'lobby') setAgentInviteOpen(false) }, [stage])
+  useEffect(() => {
+    if (!agentInviteOpen) return
+    const returnFocus = agentInviteTriggerRef.current
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setAgentInviteOpen(false)
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusable = Array.from(agentInviteDialogRef.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? [])
+      if (!focusable.length) {
+        event.preventDefault()
+        agentInviteDialogRef.current?.focus()
+        return
+      }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      if (returnFocus?.isConnected) window.requestAnimationFrame(() => returnFocus.focus())
+    }
+  }, [agentInviteOpen])
   if (stage === 'match') return null
 
   if (stage === 'summary' && game) {
@@ -85,7 +134,7 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
       <div className="title-card">
         <span className="title-kicker">One island · humans and local agents</span>
         <h1 id="game-title">KATAN</h1>
-        <p>Create a private table, share its six-character code, and settle the same live island from any browser or Codex thread.</p>
+        <p>Create a private table, share its six-character code, and settle the same live island from any browser or Codex thread. First-time agents get their setup in the lobby.</p>
         <div className="title-actions">
           <button className="journey-primary" onClick={() => onChoose('create')}>Create room</button>
           <button className="journey-secondary" onClick={() => onChoose('join')}>Join with code</button>
@@ -114,7 +163,7 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
         <div className="room-form-body">
           <label>Player name<input autoFocus value={name} maxLength={22} autoComplete="nickname" placeholder="How the table will know you" onChange={(event) => setName(event.target.value)} /></label>
           {!creating ? <label>Room code<input className="room-code-input" value={roomCode} maxLength={6} autoCapitalize="characters" autoComplete="off" spellCheck={false} placeholder="ABC234" onChange={(event) => setRoomCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} /></label> : null}
-          <div className="room-form-note"><strong>{creating ? `${seatsTotal}-seat table` : 'One shared island'}</strong><span>{creating ? 'You will be the host. Humans join in a browser; agents join through the local Katan MCP.' : 'Your cards stay private to this seat. The server sends every player only the state they are allowed to see.'}</span></div>
+          <div className="room-form-note"><strong>{creating ? `${seatsTotal}-seat table` : 'One shared island'}</strong><span>{creating ? 'You will be the host. Humans get a browser link; the lobby gives new Codex players a one-time connector setup and a ready-to-play invite.' : 'Your cards stay private to this seat. The server sends every player only the state they are allowed to see.'}</span></div>
           {error ? <p className="journey-error" role="alert">{error}</p> : null}
         </div>
         <footer><p>{creating ? 'You can start once every human or agent seat has joined.' : 'Codes are case-insensitive and never contain confusing characters like O, I, 0, or 1.'}</p><button className="journey-primary" disabled={!valid || busy}>{busy ? 'Opening the table…' : creating ? 'Create room' : 'Join room'}</button></footer>
@@ -126,10 +175,22 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
     const emptySeats = Array.from({ length: room.seatsTotal - room.seats.length })
     const full = room.seats.length === room.seatsTotal
     const shareUrl = `${window.location.origin}${window.location.pathname}?room=${room.code}`
-    const agentPrompt = `Use the Katan MCP already configured in this Codex task. Join room ${room.code} as a local agent with your own name and personality. Read the rules, wait for your turn, and play to win without revealing hidden information.`
-    const doCopy = async (kind: 'code' | 'link' | 'agent', value: string) => { await copyText(value); setCopied(kind) }
+    const serverUrl = resolveRoomServerOrigin(window.location.origin)
+    const agentSetupPrompt = buildAgentSetupPrompt(room.code, serverUrl)
+    const agentPlayPrompt = buildAgentPlayPrompt(room.code, serverUrl)
+    const doCopy = async (kind: 'code' | 'link' | 'setup' | 'play', value: string) => {
+      const succeeded = await copyText(value)
+      if (succeeded) {
+        setCopied(kind)
+        if (kind === 'setup' || kind === 'play') setManualCopy(undefined)
+      } else if (kind === 'setup' || kind === 'play') {
+        setManualCopy(kind)
+      }
+    }
+    const openAgentInvite = () => { setManualCopy(undefined); setAgentInviteOpen(true) }
+    const closeAgentInvite = () => setAgentInviteOpen(false)
     return <section ref={stageRef} className="journey-layer configure-screen" aria-labelledby="lobby-title" tabIndex={-1}>
-      <div className="configuration-card lobby-card">
+      <div className="configuration-card lobby-card" inert={agentInviteOpen} aria-hidden={agentInviteOpen || undefined}>
         <header>
           <button className="journey-back" onClick={onBack} aria-label="Leave room">←</button>
           <div><span>Private room</span><h2 id="lobby-title">Gather the table</h2></div>
@@ -137,7 +198,7 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
         </header>
         <div className="room-invite">
           <div><span>Room code</span><strong data-testid="room-code">{room.code}</strong></div>
-          <div className="invite-actions"><button onClick={() => doCopy('code', room.code)}>{copied === 'code' ? 'Copied' : 'Copy code'}</button><button onClick={() => doCopy('link', shareUrl)}>{copied === 'link' ? 'Copied' : 'Copy human link'}</button><button onClick={() => doCopy('agent', agentPrompt)}>{copied === 'agent' ? 'Copied' : 'Copy agent prompt'}</button></div>
+          <div className="invite-actions"><button onClick={() => doCopy('code', room.code)}>{copied === 'code' ? 'Copied' : 'Copy code'}</button><button onClick={() => doCopy('link', shareUrl)}>{copied === 'link' ? 'Copied' : 'Copy human link'}</button><button ref={agentInviteTriggerRef} className="agent-invite-trigger" onClick={openAgentInvite}>Invite a Codex agent</button></div>
         </div>
         <div className="seat-grid lobby-seats">
           {room.seats.map((seat, index) => <article className={`seat-card seat-${index}`} key={seat.id}>
@@ -145,10 +206,33 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
             <div className="seat-heading"><strong>{seat.name}</strong><small>{seat.controller === 'agent' ? 'Local Codex agent' : seat.id === room.viewerPlayerId ? 'You · browser player' : 'Remote human'}</small></div>
             <div className="seat-meta"><span>{colorNames[colors[index]]}</span>{seat.isHost ? <b>Host</b> : <b>Ready</b>}</div>
           </article>)}
-          {emptySeats.map((_, emptyIndex) => { const index = room.seats.length + emptyIndex; return <article className={`seat-card seat-${index} empty-seat`} key={`empty-${index}`}><span className="seat-number">{index + 1}</span><div className="seat-heading"><strong>Open seat</strong><small>Share the code with a human or give it to a local Codex thread.</small></div><div className="seat-meta"><span>{colorNames[colors[index]]}</span><b>Waiting</b></div></article> })}
+          {emptySeats.map((_, emptyIndex) => { const index = room.seats.length + emptyIndex; return <article className={`seat-card seat-${index} empty-seat`} key={`empty-${index}`}><span className="seat-number">{index + 1}</span><div className="seat-heading"><strong>Open seat</strong><small>Share the human link, or use Invite a Codex agent for setup and play instructions.</small></div><div className="seat-meta"><span>{colorNames[colors[index]]}</span><b>Waiting</b></div></article> })}
         </div>
         <footer><p>{full ? room.isHost ? 'Everyone is here. Start whenever the table is ready.' : 'The table is full. Waiting for the host to start.' : `${room.seatsTotal - room.seats.length} seat${room.seatsTotal - room.seats.length === 1 ? '' : 's'} still open.`}</p>{room.isHost ? <button className="journey-primary" disabled={!full || connectionState !== 'connected'} onClick={onStart}>Start game</button> : <span className="waiting-copy">Waiting for host</span>}</footer>
       </div>
+      {agentInviteOpen ? <div className="agent-invite-backdrop" onMouseDown={closeAgentInvite}>
+        <div ref={agentInviteDialogRef} className="agent-invite-dialog" role="dialog" aria-modal="true" aria-labelledby="agent-invite-title" tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
+          <header><div><span>Agent invitation</span><h3 id="agent-invite-title">Bring a Codex player</h3></div><button className="agent-invite-close" onClick={closeAgentInvite} aria-label="Close agent invitation">×</button></header>
+          <p className="agent-invite-lede">The agent runs in its own Codex task and occupies a real seat. Pick the path that matches your friend's machine.</p>
+          <div className="agent-invite-steps">
+            <article>
+              <span className="agent-step-label">1 · Once per machine</span>
+              <h4>Install the connector</h4>
+              <p>Copy this into any Codex task. It checks the machine, installs a pinned connector revision, preserves existing settings, and tells your friend when to open a fresh task.</p>
+              <button autoFocus className="journey-secondary" onClick={() => doCopy('setup', agentSetupPrompt)}>{copied === 'setup' ? 'Setup prompt copied' : 'Copy first-time setup'}</button>
+              {manualCopy === 'setup' ? <div className="agent-manual-copy" role="status"><strong>Clipboard blocked</strong><span>Select and copy the setup prompt manually.</span><textarea readOnly aria-label="First-time Katan setup prompt" value={agentSetupPrompt} onFocus={(event) => event.currentTarget.select()} /></div> : null}
+            </article>
+            <article>
+              <span className="agent-step-label">2 · Every game</span>
+              <h4>Send the player in</h4>
+              <p>If Katan is already connected, paste this into a new Codex task. It includes the hosted server, room code, rules check, and autonomous play loop.</p>
+              <button className="journey-primary" onClick={() => doCopy('play', agentPlayPrompt)}>{copied === 'play' ? 'Play prompt copied' : 'Copy play prompt'}</button>
+              {manualCopy === 'play' ? <div className="agent-manual-copy" role="status"><strong>Clipboard blocked</strong><span>Select and copy the play prompt manually.</span><textarea readOnly aria-label="Katan play prompt" value={agentPlayPrompt} onFocus={(event) => event.currentTarget.select()} /></div> : null}
+            </article>
+          </div>
+          <footer><p>No model runs on the game server. The connector stays on the player's machine and receives only that seat's private view.</p><a href={KATAN_AGENT_GUIDE_URL} target="_blank" rel="noreferrer">Open the full setup manual ↗</a></footer>
+        </div>
+      </div> : null}
     </section>
   }
 
