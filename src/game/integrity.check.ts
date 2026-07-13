@@ -45,6 +45,7 @@ assert.equal(offeredTrade.ok, true, 'a valid domestic offer should enter respons
 if (!offeredTrade.ok) throw new Error('expected offer state')
 assert.equal(offeredTrade.state.phase, 'trade-response')
 assert.equal(offeredTrade.state.actingPlayerId, 'p1')
+assert.deepEqual(offeredTrade.events[0].trade, { fromPlayerId: 'p0', toPlayerId: 'p1', give: { brick: 1 }, receive: { grain: 1 } }, 'public trade events must retain exact terms for every player and spectator')
 assert.deepEqual(getPlayerView(offeredTrade.state, 'p1').legalActions.slice(0, 2), [{ type: 'respond-trade', accept: true }, { type: 'respond-trade', accept: false }])
 const acceptedTrade = applyAction(offeredTrade.state, { type: 'respond-trade', accept: true })
 assert.equal(acceptedTrade.ok, true, 'an affordable domestic offer should be accepted')
@@ -53,6 +54,7 @@ assert.equal(acceptedTrade.state.phase, 'action')
 assert.equal(acceptedTrade.state.actingPlayerId, 'p0')
 assert.equal(acceptedTrade.state.players[0].resources.grain, 1)
 assert.equal(acceptedTrade.state.players[1].resources.brick, 1)
+assert.deepEqual(acceptedTrade.events[0].trade, { fromPlayerId: 'p0', toPlayerId: 'p1', give: { brick: 1 }, receive: { grain: 1 } })
 
 const multiTradeGame = createGame({ seed: 46, controllers: ['human', 'agent', 'agent'] })
 multiTradeGame.phase = 'action'

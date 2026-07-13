@@ -203,10 +203,10 @@ export const legalActionsForPlayer = (state: GameState, playerId: string): GameA
   return actions
 }
 
-const addEvent = (state: GameState, type: string, message: string, playerId?: string, publicData?: GameEvent['publicData']) => {
+const addEvent = (state: GameState, type: string, message: string, playerId?: string, publicData?: GameEvent['publicData'], trade?: GameEvent['trade']) => {
   const revision = state.revision + 1
   const sequence = state.events.filter((event) => event.revision === revision).length
-  const event = { id: `ev-${revision}-${sequence}`, revision, type, message, playerId, publicData }
+  const event = { id: `ev-${revision}-${sequence}`, revision, type, message, playerId, publicData, trade: trade ? structuredClone(trade) : undefined }
   state.events.push(event)
   state.events = state.events.slice(-80)
   return event
@@ -685,7 +685,7 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
     state.pendingTrade = structuredClone(trade)
     state.phase = 'trade-response'
     state.actingPlayerId = other.id
-    events.push(addEvent(state, 'trade-offered', `${actor.name} offered a trade to ${other.name}.`, actor.id, { toPlayerId: other.id }))
+    events.push(addEvent(state, 'trade-offered', `${actor.name} offered a trade to ${other.name}.`, actor.id, { toPlayerId: other.id }, trade))
     return finish(state, events)
   }
 
@@ -706,7 +706,7 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
     state.pendingTrade = undefined
     state.phase = 'action'
     state.actingPlayerId = currentPlayer(state).id
-    events.push(addEvent(state, action.accept ? 'trade-accepted' : 'trade-rejected', `${actor.name} ${action.accept ? 'accepted' : 'declined'} ${initiator.name}'s trade.`, actor.id, { fromPlayerId: initiator.id }))
+    events.push(addEvent(state, action.accept ? 'trade-accepted' : 'trade-rejected', `${actor.name} ${action.accept ? 'accepted' : 'declined'} ${initiator.name}'s trade.`, actor.id, { fromPlayerId: initiator.id }, trade))
     return finish(state, events)
   }
 
@@ -722,7 +722,7 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
     if (!RESOURCES.every((resource) => !(trade.give[resource] && trade.receive[resource]))) return fail('A resource cannot be traded for itself')
     state.pendingTrade = structuredClone(trade)
     state.actingPlayerId = other.id
-    events.push(addEvent(state, 'trade-countered', `${actor.name} made a counteroffer to ${other.name}.`, actor.id, { toPlayerId: other.id }))
+    events.push(addEvent(state, 'trade-countered', `${actor.name} made a counteroffer to ${other.name}.`, actor.id, { toPlayerId: other.id }, trade))
     return finish(state, events)
   }
 

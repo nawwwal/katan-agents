@@ -29,11 +29,23 @@ const code = host.credentials.code as string
 assert.match(code, /^[A-Z2-9]{6}$/)
 
 const blueResponse = await post(`/api/rooms/${code}/seats`, { name: 'Mara', controller: 'human' })
-const amberResponse = await post(`/api/rooms/${code}/seats`, { name: 'Ivo', controller: 'agent' })
+const recoverableJoin = { name: 'Ivo', controller: 'agent', joinId: 'runner-idempotency-1234', playerKey: 'A'.repeat(43) }
+const amberResponse = await post(`/api/rooms/${code}/seats`, recoverableJoin)
 assert.equal(blueResponse.status, 201)
 assert.equal(amberResponse.status, 201)
 const blue = (await blueResponse.json()).data
 const amber = (await amberResponse.json()).data
+const repeated = await post(`/api/rooms/${code}/seats`, recoverableJoin)
+assert.equal(repeated.status, 201)
+const repeatedData = (await repeated.json()).data
+assert.equal(repeatedData.reused, true)
+assert.equal(repeatedData.credentials.playerId, amber.credentials.playerId)
+assert.equal(repeatedData.room.seats.length, 3)
+assert.equal(JSON.stringify(repeatedData.room).includes('tokenHash'), false)
+assert.equal(JSON.stringify(repeatedData.room).includes('joinIdHash'), false)
+const conflictingRecovery = await post(`/api/rooms/${code}/seats`, { ...recoverableJoin, playerKey: 'B'.repeat(43) })
+assert.equal(conflictingRecovery.status, 409)
+assert.equal((await conflictingRecovery.json()).error.code, 'join_id_conflict')
 const full = await post(`/api/rooms/${code}/seats`, { name: 'Overflow', controller: 'agent' })
 assert.equal(full.status, 409)
 assert.equal((await full.json()).error.code, 'room_full')
@@ -60,6 +72,10 @@ const connect = async (token: string) => {
 const clients = await Promise.all([host, blue, amber].map((entry) => connect(entry.credentials.token)))
 clients[0].socket.send(JSON.stringify({ type: 'start', requestId: 'start-1' }))
 while (!clients.every((client) => client.messages.some((message) => message.type === 'snapshot' && message.room.status === 'playing'))) await new Promise((resolve) => setTimeout(resolve, 5))
+
+const replayAfterStart = await post(`/api/rooms/${code}/seats`, recoverableJoin)
+assert.equal(replayAfterStart.status, 201)
+assert.equal((await replayAfterStart.json()).data.credentials.playerId, amber.credentials.playerId)
 
 const latest = (client: typeof clients[number]) => client.messages.filter((message): message is Extract<ServerRoomMessage, { type: 'snapshot' }> => message.type === 'snapshot').at(-1)!.room
 const views = clients.map(latest)

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import WebSocket from 'ws'
 import type { RoomCredentials, RoomView, ServerRoomMessage } from '../src/game/room'
 import type { PublicGameState } from '../src/game/types'
@@ -16,6 +16,7 @@ export class AgentRoomClient {
   private reconnectTimer?: NodeJS.Timeout
   private reconnectDelay = 250
   private stopped = false
+  private authenticated = false
   private connectPromise?: Promise<void>
   private readonly listeners = new Set<(room: RoomView) => void>()
   private readonly pendingActions = new Map<string, PendingAction>()
@@ -25,20 +26,33 @@ export class AgentRoomClient {
   }
 
   get view() { return this.room }
-  get connected() { return this.socket?.readyState === WebSocket.OPEN }
+  get connected() { return this.authenticated && this.socket?.readyState === WebSocket.OPEN }
 
   async join(code: string, name: string, serverUrl?: string) {
     if (serverUrl) this.serverUrl = normalizeServerUrl(serverUrl)
     this.stopSocket()
     this.stopped = false
     const normalizedCode = code.trim().toUpperCase().replace(/[^A-Z2-9]/g, '')
-    const response = await fetch(`${this.serverUrl}/api/rooms/${normalizedCode}/seats`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name, controller: 'agent' }),
-    })
-    const payload = await response.json() as JoinResponse
-    if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? 'Could not join that Katan room.')
+    const joinId = randomUUID()
+    const playerKey = randomBytes(32).toString('base64url')
+    let payload: JoinResponse | undefined
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const response = await fetch(`${this.serverUrl}/api/rooms/${normalizedCode}/seats`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name, controller: 'agent', joinId, playerKey }),
+          signal: AbortSignal.timeout(10_000),
+        })
+        payload = await response.json() as JoinResponse
+        if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? 'Could not join that Katan room.')
+        break
+      } catch (error) {
+        if (attempt === 2) throw error
+        await new Promise((resolve) => setTimeout(resolve, 200 * 2 ** attempt))
+      }
+    }
+    if (!payload?.data) throw new Error('Could not join that Katan room.')
     this.credentials = payload.data.credentials
     this.setRoom(payload.data.room)
     await this.connect()
@@ -117,30 +131,48 @@ export class AgentRoomClient {
   }
 
   private async connect() {
-    if (this.socket?.readyState === WebSocket.OPEN) return
+    if (this.connected) return
     if (!this.credentials) throw new Error('Join a room before connecting.')
     if (this.connectPromise) return this.connectPromise
     this.connectPromise = new Promise<void>((resolve, reject) => {
       const wsUrl = `${this.serverUrl.replace(/^http/, 'ws')}/api/ws`
       const socket = new WebSocket(wsUrl)
       this.socket = socket
-      const timeout = setTimeout(() => { socket.close(); reject(new Error('Timed out connecting to the Katan room.')) }, 8_000)
-      socket.once('open', () => {
+      this.authenticated = false
+      let settled = false
+      const fail = (error: Error) => {
+        if (settled) return
+        settled = true
         clearTimeout(timeout)
+        reject(error)
+      }
+      const timeout = setTimeout(() => {
+        socket.close()
+        fail(new Error('Timed out authenticating the Katan room.'))
+      }, 8_000)
+      socket.once('open', () => {
         this.reconnectDelay = 250
         socket.send(JSON.stringify({ type: 'hello', code: this.credentials!.code, token: this.credentials!.token }))
-        resolve()
       })
-      socket.on('message', (data) => this.handleMessage(data.toString()))
-      socket.once('error', (error) => {
-        if (socket.readyState !== WebSocket.OPEN) {
+      socket.on('message', (data) => {
+        const message = this.handleMessage(data.toString())
+        if (message?.type === 'snapshot' && !settled) {
+          settled = true
+          this.authenticated = true
           clearTimeout(timeout)
-          reject(error)
+          resolve()
         }
+      })
+      socket.once('error', (error) => {
+        if (!this.authenticated) fail(error)
       })
       socket.once('close', () => {
         clearTimeout(timeout)
-        if (this.socket === socket) this.socket = undefined
+        if (this.socket === socket) {
+          this.socket = undefined
+          this.authenticated = false
+        }
+        if (!settled) fail(new Error('The Katan room closed before authentication completed.'))
         if (!this.stopped && this.credentials) this.scheduleReconnect()
       })
     }).finally(() => { this.connectPromise = undefined })
@@ -152,7 +184,7 @@ export class AgentRoomClient {
     try {
       message = JSON.parse(raw) as ServerRoomMessage
     } catch {
-      return
+      return undefined
     }
     if (message.type === 'snapshot') this.setRoom(message.room)
     if (message.type === 'error' && message.requestId) {
@@ -162,6 +194,7 @@ export class AgentRoomClient {
       this.pendingActions.delete(message.requestId)
       pending.reject(new Error(message.error.message))
     }
+    return message
   }
 
   private scheduleReconnect() {
@@ -178,6 +211,7 @@ export class AgentRoomClient {
     this.reconnectTimer = undefined
     this.socket?.close()
     this.socket = undefined
+    this.authenticated = false
     this.connectPromise = undefined
   }
 }

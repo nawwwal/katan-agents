@@ -3,6 +3,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { createRoom, enforceRateLimit, getRoomView, joinRoom, onRoomChange, playRoomAction, RoomError, roomStoreHealth, startRoom } from './room-service.js'
 import { parseClientRoomMessage } from '../src/game/room.js'
 import type { ServerRoomMessage } from '../src/game/room.js'
+import { handleHostedMcp } from './hosted-mcp.js'
 
 const MAX_BODY_BYTES = 32 * 1024
 
@@ -79,6 +80,7 @@ export const createRealtimeServer = () => {
 
   const server = http.createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://local')
+    if (url.pathname === '/api/mcp') return handleHostedMcp(request, response)
     if (request.method === 'GET' && url.pathname === '/api/health') {
       const health = roomStoreHealth()
       return json(response, health.ok ? 200 : 503, health)
@@ -97,7 +99,13 @@ export const createRealtimeServer = () => {
       try {
         await enforceRateLimit('join', clientIdentity(request), 48, 60)
         const body = await readJson(request)
-        return json(response, 201, { data: await joinRoom({ code: joinMatch[1], name: body.name, controller: body.controller }) })
+        return json(response, 201, { data: await joinRoom({
+          code: joinMatch[1],
+          name: body.name,
+          controller: body.controller,
+          joinId: body.joinId,
+          playerKey: body.playerKey,
+        }) })
       } catch (error) {
         return fail(response, error)
       }

@@ -1,0 +1,16 @@
+{
+  "name": "@nawwwal/katan-live-agent",
+  "version": "0.2.0",
+  "description": "Event-driven local Codex and Claude players for Katan",
+  "type": "module",
+  "bin": {
+    "katan-agent": "bin/katan-agent.mjs"
+  },
+  "files": [
+    "bin/katan-agent.mjs"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "license": "MIT"
+}

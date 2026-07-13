@@ -63,7 +63,10 @@ const browsers: BrowserClient[] = []
 try {
   await mcp.connect(transport)
   const tools = await mcp.listTools()
-  assert.deepEqual(tools.tools.map((tool) => tool.name), ['join_room', 'read_rules', 'get_view', 'wait_for_turn', 'play_action'])
+  assert.deepEqual(tools.tools.map((tool) => tool.name), ['join_room', 'read_rules', 'get_playbook', 'get_view', 'wait_for_turn', 'wait_for_event', 'play_action'])
+  const resources = await mcp.listResources()
+  assert.deepEqual(resources.resources.map((resource) => resource.uri), ['katan://rules/base-game', 'katan://skill/autonomous-player'])
+  assert.match(mcp.getInstructions() ?? '', /live runner owns sleeping/i)
   const rules = await mcp.callTool({ name: 'read_rules', arguments: {} }) as TextToolResult
   assert.match(rules.content[0].text ?? '', /10 victory points/)
   const joined = await toolJson('join_room', { code, name: 'Atlas' })

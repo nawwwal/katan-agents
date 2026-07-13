@@ -10,12 +10,13 @@ const ROOM_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 const ROOM_EVENTS = 'katan:room-events'
 const INSTANCE_ID = randomUUID()
 const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL, {
-  maxRetriesPerRequest: null,
+  maxRetriesPerRequest: 1,
+  commandTimeout: 5_000,
   retryStrategy: (attempt) => Math.min(attempt * 200, 5_000),
 }) : null
 const redisRequired = Boolean(process.env.VERCEL) && !redis
 
-type StoredSeat = RoomSeat & { tokenHash: string }
+type StoredSeat = RoomSeat & { tokenHash: string; joinIdHash?: string }
 type StoredRoom = {
   v: 1
   code: string
@@ -51,6 +52,8 @@ const freshSeed = () => randomBytes(4).readUInt32BE(0)
 const secureRandom = () => randomInt(0x1_0000_0000) / 0x1_0000_0000
 const nextUpdatedAt = (room: StoredRoom) => Math.max(Date.now(), room.updatedAt + 1)
 const cleanName = (name: unknown) => typeof name === 'string' ? name.trim().replace(/\s+/g, ' ').slice(0, 22) : ''
+const cleanJoinId = (value: unknown) => typeof value === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(value) ? value : ''
+const cleanPlayerKey = (value: unknown) => typeof value === 'string' && /^[A-Za-z0-9_-]{43,128}$/.test(value) ? value : ''
 const cloneRoom = (room: StoredRoom) => structuredClone(room)
 const assertRoomStore = () => {
   if (redisRequired) throw new RoomError('redis_required', 'REDIS_URL is required when Katan runs on Vercel.', 503)
@@ -166,7 +169,7 @@ const roomView = (room: StoredRoom, token: string): RoomView => {
     code: room.code,
     status: room.status,
     seatsTotal: room.seatsTotal,
-    seats: room.seats.map(({ tokenHash: _tokenHash, ...seat }) => seat),
+    seats: room.seats.map(({ tokenHash: _tokenHash, joinIdHash: _joinIdHash, ...seat }) => seat),
     viewerPlayerId: viewer.id,
     isHost: viewer.isHost,
     updatedAt: room.updatedAt,
@@ -180,7 +183,7 @@ if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
 return count
 `
 
-export const enforceRateLimit = async (scope: 'create' | 'join' | 'socket', identity: string, limit: number, windowSeconds: number) => {
+export const enforceRateLimit = async (scope: 'create' | 'join' | 'socket' | 'mcp', identity: string, limit: number, windowSeconds: number) => {
   assertRoomStore()
   const identityHash = createHash('sha256').update(identity || 'unknown').digest('hex').slice(0, 24)
   const key = `katan:rate:${scope}:${identityHash}`
@@ -234,23 +237,56 @@ export const createRoom = async (input: { name: unknown; seatsTotal: unknown }) 
   throw new RoomError('room_code_unavailable', 'Could not reserve a room code. Try again.', 503)
 }
 
-export const joinRoom = async (input: { code: string; name: unknown; controller: unknown }) => {
+export const joinRoom = async (input: { code: string; name: unknown; controller: unknown; joinId?: unknown; playerKey?: unknown }) => {
   const name = cleanName(input.name)
   const controller = input.controller
   if (!name) throw new RoomError('invalid_name', 'Enter a player name.')
   if (controller !== 'human' && controller !== 'agent') throw new RoomError('invalid_controller', 'Choose a human or agent seat.')
-  const token = freshToken()
+  const suppliedJoinId = input.joinId !== undefined
+  const suppliedPlayerKey = input.playerKey !== undefined
+  if (suppliedJoinId !== suppliedPlayerKey) throw new RoomError('invalid_join_recovery', 'joinId and playerKey must be supplied together.', 400)
+  if ((suppliedJoinId || suppliedPlayerKey) && controller !== 'agent') throw new RoomError('invalid_join_recovery', 'Only a local agent runner may propose a recoverable seat credential.', 400)
+  const joinId = suppliedJoinId ? cleanJoinId(input.joinId) : ''
+  const proposedPlayerKey = suppliedPlayerKey ? cleanPlayerKey(input.playerKey) : ''
+  if (suppliedJoinId && !joinId) throw new RoomError('invalid_join_id', 'joinId must be a 16–128 character URL-safe identifier.', 400)
+  if (suppliedPlayerKey && !proposedPlayerKey) throw new RoomError('invalid_player_key', 'playerKey must be at least 32 random bytes encoded as base64url.', 400)
+  const token = proposedPlayerKey || freshToken()
+  const joinIdHash = joinId ? hashToken(`join:${joinId}`) : undefined
   let playerId = ''
+  let reused = false
+
+  const recoverSeat = (room: StoredRoom) => {
+    if (!joinIdHash) return false
+    const byJoinId = room.seats.find((seat) => seat.joinIdHash === joinIdHash)
+    const byToken = room.seats.find((seat) => tokenMatches(seat, token))
+    if (!byJoinId && !byToken) return false
+    if (!byJoinId || !byToken || byJoinId.id !== byToken.id) throw new RoomError('join_id_conflict', 'That recovery identity is already bound to another seat credential.', 409)
+    if (byJoinId.controller !== controller || byJoinId.name !== name) throw new RoomError('join_id_conflict', 'That recovery identity belongs to a different seat.', 409)
+    playerId = byJoinId.id
+    reused = true
+    return true
+  }
+
+  if (joinIdHash) {
+    const current = await getStoredRoom(input.code)
+    if (!current) throw new RoomError('room_not_found', 'That room does not exist or has expired.', 404)
+    if (recoverSeat(current)) {
+      const credentials: RoomCredentials = { code: current.code, token, playerId }
+      return { credentials, room: roomView(current, token), reused }
+    }
+  }
+
   await mutateRoom(input.code, (room) => {
+    if (recoverSeat(room)) return
     if (room.status !== 'lobby') throw new RoomError('room_started', 'That game has already started.', 409)
     if (room.seats.length >= room.seatsTotal) throw new RoomError('room_full', 'That room is full.', 409)
     playerId = `p${room.seats.length}`
-    room.seats.push({ id: playerId, name, controller: controller as Controller, isHost: false, tokenHash: hashToken(token) })
+    room.seats.push({ id: playerId, name, controller: controller as Controller, isHost: false, tokenHash: hashToken(token), joinIdHash })
   })
   const room = await getStoredRoom(input.code)
   if (!room) throw new RoomError('room_not_found', 'That room does not exist or has expired.', 404)
   const credentials: RoomCredentials = { code: room.code, token, playerId }
-  return { credentials, room: roomView(room, token) }
+  return { credentials, room: roomView(room, token), reused }
 }
 
 export const getRoomView = async (code: string, token: string) => {
@@ -295,7 +331,11 @@ const startStream = async () => {
   if (!redis || streaming) return
   streaming = true
   const generation = ++streamGeneration
-  const client = redis.duplicate()
+  const client = redis.duplicate({
+    maxRetriesPerRequest: null,
+    commandTimeout: undefined,
+    blockingTimeout: 6_000,
+  })
   streamClient = client
   let cursor: string | undefined
   let resyncAfterError = false
@@ -352,6 +392,51 @@ export const onRoomChange = (listener: (code?: string) => void) => {
     listeners.delete(listener)
     if (!listeners.size) stopStream()
   }
+}
+
+export const waitForRoomChange = async (code: string, token: string, afterUpdatedAt: number, timeoutMs: number) => {
+  const current = await getRoomView(code, token)
+  if (current.updatedAt > afterUpdatedAt) return { room: current, timedOut: false }
+
+  return new Promise<{ room: RoomView; timedOut: boolean }>((resolve, reject) => {
+    let settled = false
+    let reading = false
+    const finish = (room: RoomView, timedOut: boolean) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      unsubscribe()
+      resolve({ room, timedOut })
+    }
+    const fail = (error: unknown) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      unsubscribe()
+      reject(error)
+    }
+    const read = async () => {
+      if (settled || reading) return
+      reading = true
+      try {
+        const room = await getRoomView(code, token)
+        if (room.updatedAt > afterUpdatedAt) finish(room, false)
+      } catch (error) {
+        fail(error)
+      } finally {
+        reading = false
+      }
+    }
+    const unsubscribe = onRoomChange((changedCode) => {
+      if (!changedCode || changedCode === current.code) void read()
+    })
+    const timeout = setTimeout(() => {
+      void getRoomView(code, token)
+        .then((room) => finish(room, room.updatedAt <= afterUpdatedAt))
+        .catch(fail)
+    }, Math.max(1, timeoutMs))
+    void read()
+  })
 }
 
 export const closeRoomStore = async () => {

@@ -128,6 +128,7 @@ export type GameEvent = {
   message: string
   playerId?: string
   publicData?: Record<string, string | number | boolean>
+  trade?: DomesticTrade
 }
 
 export type GameState = {
