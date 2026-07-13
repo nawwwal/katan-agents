@@ -408,22 +408,71 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px s
 
 @media (max-width: 520px) {
   .modal-backdrop { padding: 8px; }
-  .player-rail { top: 183px; width: 186px; }
-  .turn-panel:has(.setup-suggest) ~ .player-rail { top: 218px; }
-  .turn-panel { width: calc(100vw - 16px); }
-  .context-coach { top: 108px; width: calc(100vw - 16px); }
-  .turn-owner { padding-right: 8px; }
-  .player-row { grid-template-columns: 18px 27px 1fr auto; }
-  .player-stats { display: flex; font-size: 9px; }
+  .turn-panel {
+    right: 8px;
+    width: auto;
+    display: grid;
+    grid-template-columns: 86px minmax(0, 1fr);
+    border-radius: 9px;
+  }
+  .brand-lockup {
+    height: auto;
+    min-height: 52px;
+    border-right: 1px solid rgba(255, 218, 125, .28);
+    border-bottom: 0;
+    font-size: 14px;
+    letter-spacing: .08em;
+  }
+  .brand-lockup span { margin-right: 0; font-size: 18px; }
+  .turn-owner { min-height: 52px; gap: 8px; padding: 5px 8px; }
+  .turn-owner .player-crest { width: 28px; height: 28px; flex-basis: 28px; }
+  .turn-owner strong { font-size: 13px; }
+  .turn-owner small { margin-top: 2px; font-size: 8px; }
+  .turn-panel .setup-suggest { grid-column: 1 / -1; min-height: 38px; }
+  .player-rail,
+  .turn-panel:has(.setup-suggest) ~ .player-rail {
+    top: 67px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .turn-panel:has(.setup-suggest) ~ .player-rail { top: 109px; }
+  .player-row {
+    height: 40px;
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    gap: 4px;
+    padding: 3px 5px;
+    border-radius: 8px;
+  }
+  .player-row.active { transform: translateY(3px); }
+  .player-row .rank { display: none; }
+  .player-row .player-crest { width: 26px; height: 26px; flex-basis: 26px; }
+  .player-identity strong { font-size: 10px; }
+  .player-stats { display: flex; font-size: 8px; }
   .player-stats span:not(:first-child) { display: none; }
+  .context-coach,
+  .turn-panel:has(.setup-suggest) + .context-coach,
+  .turn-panel:has(.dice-result):has(.setup-suggest) + .context-coach {
+    top: 113px;
+    width: calc(100vw - 16px);
+    grid-template-columns: auto 1fr;
+    align-items: baseline;
+    gap: 8px;
+    padding: 6px 8px;
+  }
+  .turn-panel:has(.setup-suggest) + .context-coach,
+  .turn-panel:has(.dice-result):has(.setup-suggest) + .context-coach { top: 155px; }
+  .context-coach strong { white-space: nowrap; }
   .utility-controls { right: 9px; bottom: 164px; max-width: calc(100vw - 18px); justify-content: flex-end; }
   .resource-wallet { gap: 2px; }
   .resource-card { width: min(15vw, 54px); }
   .resource-card.development { display: none; }
   .action-preview { bottom: 220px; grid-template-columns: 1fr auto auto; padding-left: 10px; }.action-preview span { display: none; }.action-preview button { padding: 0 9px; }
   .transition-moment { bottom: 220px; }
-  .dice-moment { top: 370px; }.dice-moment span { width: 44px; height: 44px; font-size: 23px; }.production-summary { min-width: 210px; }
-  .agent-decision-preview { top: 370px; width: calc(100vw - 16px); padding: 8px 9px; }.agent-decision-preview .player-crest { width: 29px; height: 29px; flex-basis: 29px; }.agent-decision-preview ol { margin-top: 6px; }
+  .dice-moment { top: 120px; }.dice-moment span { width: 44px; height: 44px; font-size: 23px; }.production-summary { min-width: 210px; }
+  .agent-decision-preview { top: 116px; width: calc(100vw - 16px); padding: 8px 9px; }.agent-decision-preview .player-crest { width: 29px; height: 29px; flex-basis: 29px; }.agent-decision-preview ol { margin-top: 6px; }
   .build-grid { grid-template-columns: 1fr; }
   .card-list article { grid-template-columns: 46px 1fr 26px; }
   .card-list article > button { grid-column: 2 / 4; }

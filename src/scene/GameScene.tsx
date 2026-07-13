@@ -1,10 +1,12 @@
 import { ContactShadows, useCursor } from '@react-three/drei'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { Suspense, useMemo, useRef, useState } from 'react'
+import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import type { BoardEdge, GameAction, GameDisplayState, PlayerColor } from '../game/types'
 import type { GamePresentation } from '../game/useGame'
 import { ActionEffects } from './ActionEffects'
+import { AssetMesh } from './AssetKit'
 import { CameraRig } from './CameraRig'
 import { Island } from './Island'
 import { useReducedMotion } from './useReducedMotion'
@@ -34,7 +36,7 @@ const edgeTransform = (game: GameDisplayState, edge: BoardEdge) => {
   const dx = b.x - a.x
   const dz = b.z - a.z
   return {
-    position: [(a.x + b.x) / 2, 0.43, (a.z + b.z) / 2] as [number, number, number],
+    position: [(a.x + b.x) / 2, 0.5, (a.z + b.z) / 2] as [number, number, number],
     length: Math.hypot(dx, dz),
     rotation: [0, -Math.atan2(dz, dx), 0] as [number, number, number],
   }
@@ -52,19 +54,14 @@ function Road({ game, edgeId, color, legal, pending, reducedMotion, touchTarget,
   })
   useCursor(Boolean(legal && hovered))
   return <group ref={group} position={transform.position} rotation={transform.rotation} scale={legal || reducedMotion ? 1 : 0.08} onClick={(event) => { event.stopPropagation(); if (legal) onSelect?.() }} onPointerOver={(event) => { event.stopPropagation(); setHovered(true) }} onPointerOut={() => setHovered(false)}>
-    <mesh castShadow receiveShadow>
-      <boxGeometry args={[transform.length * (pending ? 0.9 : 0.86), legal ? (pending ? 0.13 : 0.07) : 0.15, legal ? (pending ? 0.18 : 0.11) : 0.2]} />
-      <meshStandardMaterial color={pending ? '#77efff' : legal ? '#ffd65f' : color ?? '#67503d'} emissive={pending ? '#087e98' : legal ? '#8d5a00' : '#000000'} emissiveIntensity={pending ? 1.2 : hovered ? 1.2 : legal ? 0.55 : 0} roughness={0.68} metalness={legal ? 0.25 : 0.08} transparent={legal} opacity={legal ? 0.9 : 1} />
-    </mesh>
+    {legal ? <mesh castShadow receiveShadow position={[0, pending ? 0.065 : 0.035, 0]}>
+      <boxGeometry args={[transform.length * (pending ? 0.9 : 0.86), pending ? 0.13 : 0.07, pending ? 0.18 : 0.11]} />
+      <meshStandardMaterial color={pending ? '#77efff' : '#ffd65f'} emissive={pending ? '#087e98' : '#8d5a00'} emissiveIntensity={pending ? 1.2 : hovered ? 1.2 : 0.55} roughness={0.68} metalness={0.25} transparent opacity={0.9} />
+    </mesh> : <AssetMesh asset="Road" color={color ?? '#67503d'} scale={[transform.length / 0.92, 1, 1]} />}
     {legal ? <mesh position={[0, 0.08, 0]}>
       <boxGeometry args={[transform.length * 0.74, 0.22, touchTarget ? 0.68 : 0.34]} />
       <meshBasicMaterial visible={false} />
     </mesh> : null}
-    {!legal ? <mesh castShadow position={[0, 0.08, 0]}>
-      <boxGeometry args={[transform.length * 0.74, 0.04, 0.12]} />
-      <meshStandardMaterial color="#f2d49a" roughness={0.8} />
-    </mesh> : null}
-    {!legal ? [-1, 1].map((side) => <mesh key={side} castShadow position={[0, 0.01, side * 0.1]}><boxGeometry args={[transform.length * 0.8, 0.045, 0.035]} /><meshStandardMaterial color="#61432f" roughness={0.9} /></mesh>) : null}
   </group>
 }
 
@@ -82,35 +79,91 @@ function Building({ game, vertexId, playerId, type, legalCity, pendingCity, redu
   useCursor(legalCity && hovered)
   const color = player ? PLAYER_COLORS[player.color] : '#ddd'
   return <group ref={group} position={[vertex.x, 0.49, vertex.z]} onClick={(event) => { event.stopPropagation(); if (legalCity) onCity?.() }} onPointerOver={(event) => { event.stopPropagation(); setHovered(true) }} onPointerOut={() => setHovered(false)} scale={reducedMotion ? 1 : 0.08}>
-    <mesh receiveShadow position={[0, -0.01, 0]}><cylinderGeometry args={[type === 'city' ? 0.34 : 0.27, type === 'city' ? 0.38 : 0.31, 0.1, 8]} /><meshStandardMaterial color="#86745e" roughness={0.92} /></mesh>
-    {type === 'city' ? <>
-      <mesh castShadow position={[-0.1, 0.15, 0]}><boxGeometry args={[0.38, 0.4, 0.34]} /><meshStandardMaterial color={color} roughness={0.58} /></mesh>
-      <mesh castShadow position={[0.18, 0.22, 0]}><boxGeometry args={[0.29, 0.54, 0.3]} /><meshStandardMaterial color={color} roughness={0.58} /></mesh>
-      <mesh castShadow position={[0.17, 0.48, 0]} rotation={[0, Math.PI / 4, 0]}><coneGeometry args={[0.23, 0.25, 4]} /><meshStandardMaterial color="#40271d" roughness={0.82} /></mesh>
-      <mesh position={[-0.1, 0.18, 0.165]}><boxGeometry args={[0.1, 0.13, 0.02]} /><meshStandardMaterial color="#f3c56e" emissive="#9c5c21" emissiveIntensity={0.28} /></mesh>
-      <mesh position={[0.18, 0.23, 0.155]}><boxGeometry args={[0.08, 0.11, 0.02]} /><meshStandardMaterial color="#ffd880" emissive="#b26724" emissiveIntensity={0.42} /></mesh>
-      {[-0.24, 0.29].map((x) => <mesh key={x} castShadow position={[x, 0.31, -0.1]}><cylinderGeometry args={[0.045, 0.055, 0.42, 8]} /><meshStandardMaterial color={color} roughness={0.62} /></mesh>)}
-    </> : <>
-      <mesh castShadow position={[0, 0.1, 0]}><boxGeometry args={[0.31, 0.28, 0.29]} /><meshStandardMaterial color={color} roughness={0.58} /></mesh>
-      <mesh castShadow position={[0, 0.3, 0]} rotation={[0, Math.PI / 4, 0]}><coneGeometry args={[0.25, 0.23, 4]} /><meshStandardMaterial color="#40271d" roughness={0.82} /></mesh>
-      <mesh position={[0, 0.11, 0.155]}><boxGeometry args={[0.085, 0.15, 0.02]} /><meshStandardMaterial color="#382017" roughness={0.9} /></mesh>
-      <mesh position={[-0.09, 0.14, 0.157]}><boxGeometry args={[0.055, 0.065, 0.018]} /><meshStandardMaterial color="#ffd880" emissive="#b26724" emissiveIntensity={0.36} /></mesh>
-    </>}
-    <mesh castShadow position={[type === 'city' ? 0.27 : 0.2, type === 'city' ? 0.55 : 0.42, 0]}><cylinderGeometry args={[0.012, 0.016, type === 'city' ? 0.52 : 0.38, 6]} /><meshStandardMaterial color="#34231b" roughness={0.9} /></mesh>
-    <mesh position={[type === 'city' ? 0.34 : 0.27, type === 'city' ? 0.66 : 0.5, 0]}><planeGeometry args={[0.18, 0.1]} /><meshStandardMaterial color={color} side={THREE.DoubleSide} /></mesh>
+    <AssetMesh asset={type === 'city' ? 'City' : 'Settlement'} color={color} />
     {legalCity ? <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[0.29, pendingCity ? 0.43 : 0.38, 24]} /><meshBasicMaterial color={pendingCity ? '#78efff' : '#ffd45b'} transparent opacity={0.9} /></mesh> : null}
   </group>
 }
 
-function VertexTarget({ game, vertexId, action, pending, touchTarget, onAction }: { game: GameDisplayState; vertexId: string; action: GameAction; pending?: boolean; touchTarget?: boolean; onAction: (action: GameAction) => void }) {
-  const vertex = game.board.vertices[vertexId]
-  const [hovered, setHovered] = useState(false)
-  useCursor(hovered)
-  return <group position={[vertex.x, 0.48, vertex.z]} onClick={(event) => { event.stopPropagation(); onAction(action) }} onPointerOver={(event) => { event.stopPropagation(); setHovered(true) }} onPointerOut={() => setHovered(false)} scale={pending ? 1.35 : hovered ? 1.18 : 1}>
-    <mesh position={[0, 0.06, 0]}><cylinderGeometry args={[touchTarget ? 0.38 : 0.24, touchTarget ? 0.38 : 0.24, 0.16, 16]} /><meshBasicMaterial visible={false} /></mesh>
-    <mesh castShadow><cylinderGeometry args={[0.075, 0.095, pending ? 0.13 : 0.05, 8]} /><meshStandardMaterial color={pending ? '#79efff' : '#ffd45b'} emissive={pending ? '#087e98' : '#9b5c00'} emissiveIntensity={pending ? 1.4 : hovered ? 1.25 : 0.08} metalness={0.3} roughness={0.45} /></mesh>
-    <mesh position={[0, pending ? 0.1 : 0.052, 0]} rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[0.09, pending ? 0.19 : 0.125, 20]} /><meshBasicMaterial color={pending ? '#d2fbff' : '#fff2a8'} transparent opacity={pending ? 0.9 : hovered ? 0.8 : 0.17} /></mesh>
+type VertexAction = Extract<GameAction, { type: 'place-settlement' | 'build-settlement' }>
+
+function VertexTargets({ game, actions, pendingAction, touchTarget, onAction }: { game: GameDisplayState; actions: VertexAction[]; pendingAction?: GameAction; touchTarget: boolean; onAction: (action: GameAction) => void }) {
+  const peg = useRef<THREE.InstancedMesh>(null)
+  const ring = useRef<THREE.InstancedMesh>(null)
+  const hit = useRef<THREE.InstancedMesh>(null)
+  const dummy = useMemo(() => new THREE.Object3D(), [])
+  const [hovered, setHovered] = useState<number | null>(null)
+  useCursor(hovered !== null)
+
+  useEffect(() => {
+    actions.forEach((action, index) => {
+      const vertex = game.board.vertices[action.vertexId]
+      const pending = (pendingAction?.type === 'place-settlement' || pendingAction?.type === 'build-settlement') && pendingAction.vertexId === action.vertexId
+      const active = hovered === index
+      const scale = pending ? 1.35 : active ? 1.18 : 1
+      const height = pending ? 0.13 : 0.05
+
+      dummy.position.set(vertex.x, 0.48 + height / 2, vertex.z)
+      dummy.rotation.set(0, 0, 0)
+      dummy.scale.set(scale, height / 0.05, scale)
+      dummy.updateMatrix()
+      peg.current?.setMatrixAt(index, dummy.matrix)
+      dummy.position.set(vertex.x, 0.48 + height + 0.012, vertex.z)
+      dummy.rotation.set(-Math.PI / 2, 0, 0)
+      dummy.scale.setScalar(pending ? 1.5 : active ? 1.22 : 1)
+      dummy.updateMatrix()
+      ring.current?.setMatrixAt(index, dummy.matrix)
+      dummy.position.set(vertex.x, 0.56, vertex.z)
+      dummy.rotation.set(0, 0, 0)
+      dummy.scale.setScalar(touchTarget ? 1.55 : 1)
+      dummy.updateMatrix()
+      hit.current?.setMatrixAt(index, dummy.matrix)
+    })
+    for (const mesh of [peg.current, ring.current, hit.current]) {
+      if (!mesh) continue
+      mesh.instanceMatrix.needsUpdate = true
+      mesh.computeBoundingSphere()
+    }
+  }, [actions, dummy, game.board.vertices, hovered, pendingAction, touchTarget])
+
+  const instanceId = (event: ThreeEvent<MouseEvent>) => event.instanceId ?? -1
+  return <group>
+    <instancedMesh ref={peg} args={[undefined, undefined, actions.length]} castShadow>
+      <cylinderGeometry args={[0.075, 0.095, 0.05, 8]} />
+      <meshBasicMaterial color="#ffd45b" toneMapped={false} />
+    </instancedMesh>
+    <instancedMesh ref={ring} args={[undefined, undefined, actions.length]}>
+      <ringGeometry args={[0.09, 0.125, 20]} />
+      <meshBasicMaterial color="#fff0af" transparent opacity={0.78} side={THREE.DoubleSide} toneMapped={false} />
+    </instancedMesh>
+    <instancedMesh
+      ref={hit}
+      args={[undefined, undefined, actions.length]}
+      onClick={(event) => { event.stopPropagation(); const index = instanceId(event); if (actions[index]) onAction(actions[index]) }}
+      onPointerMove={(event) => { event.stopPropagation(); setHovered(instanceId(event)) }}
+      onPointerOut={() => setHovered(null)}
+    >
+      <cylinderGeometry args={[0.24, 0.24, 0.16, 10]} />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+    </instancedMesh>
   </group>
+}
+
+function SceneEnvironment() {
+  const { gl, scene } = useThree()
+  useEffect(() => {
+    const room = new RoomEnvironment()
+    const generator = new THREE.PMREMGenerator(gl)
+    const target = generator.fromScene(room, 0.04)
+    scene.environment = target.texture
+    scene.environmentIntensity = 0.34
+    return () => {
+      scene.environment = null
+      target.dispose()
+      generator.dispose()
+      room.dispose()
+    }
+  }, [gl, scene])
+  return null
 }
 
 function SceneContent({ game, placementMode, pendingAction, presentation, cinematic, onAction, interactive, reducedMotion }: SceneProps & { reducedMotion: boolean }) {
@@ -146,23 +199,25 @@ function SceneContent({ game, placementMode, pendingAction, presentation, cinema
   }, [game.board, presentation])
 
   return <>
-    <fog attach="fog" args={['#0c6470', 14, 32]} />
-    <ambientLight intensity={0.3} />
-    <hemisphereLight color="#fff0cd" groundColor="#0b3943" intensity={0.62} />
-    <directionalLight castShadow={!mobile} position={[-7, 11, 6]} intensity={3.35} color="#ffe0ab" shadow-mapSize-width={1024} shadow-mapSize-height={1024} shadow-camera-near={1} shadow-camera-far={32} shadow-camera-left={-10} shadow-camera-right={10} shadow-camera-top={10} shadow-camera-bottom={-10} shadow-radius={3} shadow-bias={-0.00035} />
+    <fog attach="fog" args={['#075467', 16, 36]} />
+    <SceneEnvironment />
+    <ambientLight intensity={0.12} />
+    <hemisphereLight color="#ffe5b1" groundColor="#063949" intensity={0.38} />
+    <directionalLight castShadow={!mobile} position={[-8, 12, 5]} intensity={1.75} color="#ffd08e" shadow-mapSize-width={mobile ? 1024 : 2048} shadow-mapSize-height={mobile ? 1024 : 2048} shadow-camera-near={1} shadow-camera-far={32} shadow-camera-left={-10} shadow-camera-right={10} shadow-camera-top={10} shadow-camera-bottom={-10} shadow-bias={-0.00028} />
+    <directionalLight position={[6, 7, -5]} intensity={0.32} color="#78c9df" />
     <Water reducedMotion={reducedMotion} />
     <group rotation={[0, -0.04, 0]}>
-      <Island game={game} robberActions={robberActions} onAction={onAction} reducedMotion={reducedMotion} />
+      <Island game={game} robberActions={robberActions} onAction={onAction} />
       {Object.entries(game.roadOwners).map(([edgeId, playerId]) => {
         const player = game.players.find((candidate) => candidate.id === playerId)
         return <Road key={edgeId} game={game} edgeId={edgeId} color={player ? PLAYER_COLORS[player.color] : undefined} reducedMotion={reducedMotion} />
       })}
       {roadActions.map((action) => <Road key={`legal-${action.edgeId}`} game={game} edgeId={action.edgeId} legal pending={(pendingAction?.type === 'place-road' || pendingAction?.type === 'build-road') && pendingAction.edgeId === action.edgeId} reducedMotion={reducedMotion} touchTarget={mobile} onSelect={() => onAction(action)} />)}
       {Object.entries(game.buildings).map(([vertexId, building]) => <Building key={vertexId} game={game} vertexId={vertexId} playerId={building.playerId} type={building.type} legalCity={cityActions.has(vertexId)} pendingCity={pendingAction?.type === 'build-city' && pendingAction.vertexId === vertexId} reducedMotion={reducedMotion} onCity={() => onAction(cityActions.get(vertexId)!)} />)}
-      {vertexActions.map((action) => <VertexTarget key={`legal-${action.vertexId}`} game={game} vertexId={action.vertexId} action={action} pending={(pendingAction?.type === 'place-settlement' || pendingAction?.type === 'build-settlement') && pendingAction.vertexId === action.vertexId} touchTarget={mobile} onAction={onAction} />)}
+      {vertexActions.length ? <VertexTargets game={game} actions={vertexActions} pendingAction={pendingAction} touchTarget={mobile} onAction={onAction} /> : null}
       <ActionEffects game={game} presentation={presentation} reducedMotion={reducedMotion} />
     </group>
-    <ContactShadows position={[0, -0.18, 0]} scale={16} opacity={0.38} blur={2.2} far={3.5} frames={1} />
+    <ContactShadows position={[0, -0.18, 0]} scale={16} opacity={0.42} blur={2.3} far={3.8} frames={1} />
     <CameraRig cinematic={cinematic} reducedMotion={reducedMotion} focus={cameraFocus} focusRevision={presentation?.revision} />
   </>
 }
@@ -172,11 +227,16 @@ export function GameScene(props: SceneProps) {
   return <Canvas
     className="game-canvas"
     aria-hidden="true"
-    dpr={[1, 1.55]}
+    dpr={[1, 2]}
     shadows
     camera={{ position: [8.4, 12.8, 10.5], fov: 32, near: 0.1, far: 100 }}
     gl={{ alpha: true, antialias: true, powerPreference: 'high-performance' }}
-    onCreated={({ gl }) => { gl.toneMapping = THREE.ACESFilmicToneMapping; gl.toneMappingExposure = 1.08 }}
+    onCreated={({ gl }) => {
+      gl.toneMapping = THREE.ACESFilmicToneMapping
+      gl.toneMappingExposure = 1.03
+      gl.outputColorSpace = THREE.SRGBColorSpace
+      gl.shadowMap.type = THREE.PCFSoftShadowMap
+    }}
     fallback={<div className="webgl-fallback">This board needs WebGL. Your game state is safe; try a browser with hardware acceleration.</div>}
   >
     <Suspense fallback={null}><SceneContent {...props} reducedMotion={reducedMotion} /></Suspense>
