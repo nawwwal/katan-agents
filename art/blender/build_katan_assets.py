@@ -19,7 +19,6 @@ from mathutils import Vector
 
 ROOT = Path(__file__).resolve().parents[2]
 TEXTURE_DIR = ROOT / "art/blender/textures"
-SAM_SOURCE_DIR = ROOT / "art/source/sam3d"
 GLB_PATH = ROOT / "public/assets/3d/katan-kit.glb"
 BLEND_PATH = ROOT / "art/blender/katan-kit.blend"
 PREVIEW_PATH = ROOT / "art/blender/katan-kit-preview.png"
@@ -32,15 +31,15 @@ PALETTE = {
     "forest_dark": "#0B331E",
     "forest_mid": "#1B5A2E",
     "forest_light": "#4B7E39",
-    "pasture_dark": "#416A39",
-    "pasture_mid": "#6F9548",
-    "pasture_light": "#A7B96B",
-    "grain_dark": "#7B4E18",
-    "grain_mid": "#B77C22",
-    "grain_light": "#DAB94A",
-    "clay_dark": "#6B3022",
-    "clay_mid": "#A44B30",
-    "clay_light": "#CF7444",
+    "pasture_dark": "#3F6240",
+    "pasture_mid": "#5F7D4C",
+    "pasture_light": "#83945F",
+    "grain_dark": "#5F4526",
+    "grain_mid": "#9B7A2B",
+    "grain_light": "#D8C26A",
+    "clay_dark": "#63382D",
+    "clay_mid": "#965943",
+    "clay_light": "#BE7658",
     "ore_dark": "#33434A",
     "ore_mid": "#5D7077",
     "ore_light": "#A4ADAA",
@@ -107,6 +106,7 @@ def make_pbr_material(
 ) -> bpy.types.Material:
     material = bpy.data.materials.new(name)
     material.use_nodes = True
+    material.use_backface_culling = True
     material.diffuse_color = (1, 1, 1, 1)
     nodes = material.node_tree.nodes
     links = material.node_tree.links
@@ -153,6 +153,7 @@ def make_material(name: str, color: str, roughness: float = 0.76, noise: float =
     material = bpy.data.materials.new(name)
     material.diffuse_color = rgba(color)
     material.use_nodes = True
+    material.use_backface_culling = True
     principled = material.node_tree.nodes.get("Principled BSDF")
     principled.inputs["Base Color"].default_value = rgba(color)
     principled.inputs["Roughness"].default_value = roughness
@@ -178,6 +179,7 @@ def make_vertex_material(name: str, roughness: float) -> bpy.types.Material:
     material = bpy.data.materials.new(name)
     material.diffuse_color = (1, 1, 1, 1)
     material.use_nodes = True
+    material.use_backface_culling = True
     nodes = material.node_tree.nodes
     links = material.node_tree.links
     nodes.clear()
@@ -200,9 +202,20 @@ def apply_bevel(obj: bpy.types.Object, width: float, segments: int = 3) -> None:
     modifier.width = width
     modifier.segments = segments
     modifier.limit_method = "ANGLE"
+    active = bpy.context.view_layer.objects.active
+    if active and active.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="DESELECT")
+    bpy.context.view_layer.update()
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
-    bpy.ops.object.modifier_apply(modifier=modifier.name)
+    with bpy.context.temp_override(
+        object=obj,
+        active_object=obj,
+        selected_objects=[obj],
+        selected_editable_objects=[obj],
+    ):
+        bpy.ops.object.modifier_apply(modifier=modifier.name)
     obj.select_set(False)
 
 
@@ -218,6 +231,14 @@ def uv_project(obj: bpy.types.Object) -> None:
     obj.select_set(False)
 
 
+def scale_uv(obj: bpy.types.Object, factor: float) -> None:
+    layer = obj.data.uv_layers.active if obj.type == "MESH" else None
+    if not layer:
+        return
+    for coordinate in layer.data:
+        coordinate.uv *= factor
+
+
 def finish_mesh(obj: bpy.types.Object, collection: bpy.types.Collection) -> bpy.types.Object:
     move_to(obj, collection)
     bpy.ops.object.select_all(action="DESELECT")
@@ -231,72 +252,6 @@ def finish_mesh(obj: bpy.types.Object, collection: bpy.types.Collection) -> bpy.
     obj["unit"] = "meter"
     obj["pivot"] = "gameplay_contact"
     return obj
-
-
-def import_sam_asset(
-    source_path: Path,
-    name: str,
-    collection: bpy.types.Collection,
-    footprint: float,
-    height_scale: float,
-    decimate_ratio: float = 1.0,
-) -> bpy.types.Object:
-    """Prepare an image-reconstructed hero mesh for the deterministic kit.
-
-    SAM is only a source-mesh accelerator. Blender still owns cleanup,
-    topology reduction, texture sizing, material response, scale, pivot, and
-    the final glTF contract.
-    """
-    existing = set(bpy.data.objects)
-    bpy.ops.import_scene.gltf(filepath=str(source_path))
-    imported = [obj for obj in bpy.data.objects if obj not in existing and obj.type == "MESH"]
-    if not imported:
-        raise RuntimeError(f"SAM source contains no mesh: {source_path}")
-    obj = imported[0] if len(imported) == 1 else join(imported, name)
-    obj.name = name
-    bpy.context.view_layer.objects.active = obj
-    obj.select_set(True)
-    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-    obj.select_set(False)
-
-    coordinates = [vertex.co.copy() for vertex in obj.data.vertices]
-    minimum = Vector((min(point.x for point in coordinates), min(point.y for point in coordinates), min(point.z for point in coordinates)))
-    maximum = Vector((max(point.x for point in coordinates), max(point.y for point in coordinates), max(point.z for point in coordinates)))
-    origin = Vector(((minimum.x + maximum.x) / 2, (minimum.y + maximum.y) / 2, minimum.z))
-    base_scale = footprint / max(maximum.x - minimum.x, maximum.y - minimum.y)
-    for vertex in obj.data.vertices:
-        vertex.co -= origin
-        vertex.co.x *= base_scale
-        vertex.co.y *= base_scale
-        vertex.co.z *= base_scale * height_scale
-
-    if decimate_ratio < 1.0:
-        modifier = obj.modifiers.new("Web topology", "DECIMATE")
-        modifier.ratio = decimate_ratio
-        modifier.use_collapse_triangulate = True
-        bpy.context.view_layer.objects.active = obj
-        obj.select_set(True)
-        bpy.ops.object.modifier_apply(modifier=modifier.name)
-        obj.select_set(False)
-
-    for index, material in enumerate(obj.data.materials):
-        material.name = f"SAM_{name}_{index}"
-        material.diffuse_color = (1, 1, 1, 1)
-        if not material.use_nodes:
-            continue
-        principled = material.node_tree.nodes.get("Principled BSDF")
-        if principled:
-            principled.inputs["Base Color"].default_value = (1, 1, 1, 1)
-            principled.inputs["Metallic"].default_value = 0.0
-            principled.inputs["Roughness"].default_value = 0.78
-            if "Specular IOR Level" in principled.inputs:
-                principled.inputs["Specular IOR Level"].default_value = 0.28
-        for image_node in (node for node in material.node_tree.nodes if node.type == "TEX_IMAGE" and node.image):
-            image_node.image.name = f"SAM_{name}_Albedo"
-            if tuple(image_node.image.size) != (512, 512):
-                image_node.image.scale(512, 512)
-
-    return finish_mesh(obj, collection)
 
 
 def add_box(name: str, dimensions: tuple[float, float, float], location: tuple[float, float, float], material: bpy.types.Material, bevel: float = 0.025, rotation: tuple[float, float, float] = (0, 0, 0)) -> bpy.types.Object:
@@ -388,6 +343,47 @@ def add_gable(name: str, width: float, depth: float, height: float, location: tu
     obj.location = location
     obj.data.materials.append(material)
     apply_bevel(obj, bevel)
+    uv_project(obj)
+    return obj
+
+
+def add_gable_roof(
+    name: str,
+    width: float,
+    depth: float,
+    ridge_height: float,
+    location: tuple[float, float, float],
+    material: bpy.types.Material,
+    overhang: float = 0.045,
+) -> bpy.types.Object:
+    """Create a thick two-plane roof with one readable ridge silhouette."""
+    x, y, z = location
+    half_width = width / 2 + overhang
+    half_depth = depth / 2 + overhang
+    vertices = [
+        (x - half_width, y - half_depth, z),
+        (x + half_width, y - half_depth, z),
+        (x - half_width, y + half_depth, z),
+        (x + half_width, y + half_depth, z),
+        (x, y - half_depth, z + ridge_height),
+        (x, y + half_depth, z + ridge_height),
+    ]
+    faces = [(0, 4, 5, 2), (1, 3, 5, 4), (0, 1, 4), (2, 5, 3)]
+    mesh = bpy.data.meshes.new(f"{name}Mesh")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.materials.append(material)
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    solidify = obj.modifiers.new("Roof thickness", "SOLIDIFY")
+    solidify.thickness = 0.030
+    bevel = obj.modifiers.new("Roof edge relief", "BEVEL")
+    bevel.width = 0.014
+    bevel.segments = 3
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.modifier_apply(modifier=solidify.name)
+    bpy.ops.object.modifier_apply(modifier=bevel.name)
+    obj.select_set(False)
     uv_project(obj)
     return obj
 
@@ -521,8 +517,10 @@ def polygon_prism(name: str, points: list[tuple[float, float]], bottom: float, t
 
 
 def hex_ground(name: str, material: bpy.types.Material, collection: bpy.types.Collection) -> bpy.types.Object:
-    # 0.997 is the canonical fitted footprint. Bevel remains inside the boundary.
-    ground = add_cylinder(name, 0.997, 0.16, (0, 0, 0.08), material, vertices=6, rotation=math.radians(30), bevel=0.014, smooth=False)
+    # Blender's six-cylinder is already pointy-top. Rotating it 30 degrees made
+    # the shipped mesh flat-top and caused overlap against the canonical board.
+    ground = add_cylinder(name, 0.997, 0.16, (0, 0, 0.08), material, vertices=6, rotation=0, bevel=0.012, smooth=False)
+    scale_uv(ground, 1.25)
     return finish_mesh(ground, collection)
 
 
@@ -532,6 +530,8 @@ def build_board_frame(materials, collection) -> list[bpy.types.Object]:
         finish_mesh(polygon_prism("BoardFrameBeach", coastal_outline(1.035), 0.28, 0.41, materials["sand"], 0.035), collection),
         finish_mesh(polygon_prism("BoardFrameTurf", coastal_outline(1.012), 0.36, 0.46, materials["grass"], 0.026), collection),
     ]
+    for obj in objects:
+        scale_uv(obj, 3.0 if obj.name == "BoardFrameTurf" else 2.4)
     rocks = []
     # Keep the shoreline rocks embedded in the beach/cliff transition. The
     # earlier outward ring read as detached pebbles floating beside the board.
@@ -554,34 +554,34 @@ def build_board_frame(materials, collection) -> list[bpy.types.Object]:
 
 
 def add_tiered_tree(parts: list[bpy.types.Object], materials, x: float, y: float, scale: float, seed: int) -> None:
-    parts.append(add_cone(f"TreeTrunk{seed}", 0.040 * scale, 0.018 * scale, 0.58 * scale, (x, y, 0.16 + 0.29 * scale), materials["bark_solid"], 12, bevel=0.005))
+    parts.append(add_cone(f"TreeTrunk{seed}", 0.046 * scale, 0.024 * scale, 0.62 * scale, (x, y, 0.16 + 0.31 * scale), materials["bark_solid"], 12, bevel=0.006))
     colors = [materials["forest_dark"], materials["forest_mid"], materials["forest_light"]]
-    for level in range(6):
-        z = 0.27 + level * 0.085 * scale
-        radius = (0.26 - level * 0.030) * scale
-        count = 4 if level < 4 else 3
+    for level in range(4):
+        z = 0.30 + level * 0.135 * scale
+        radius = (0.31 - level * 0.052) * scale
+        count = 3
         for branch in range(count):
             angle = branch / count * math.tau + level * 0.67 + seed * 0.31
-            offset = radius * 0.42
+            offset = radius * 0.30
             crown = add_ico(
                 f"TreeCrown{seed}_{level}_{branch}",
-                (radius * 1.55, radius * 0.56, (0.060 + (5 - level) * 0.006) * scale),
+                (radius * 1.58, radius * 0.64, (0.095 + (3 - level) * 0.010) * scale),
                 (x + math.cos(angle) * offset, y + math.sin(angle) * offset, z),
-                colors[(level + branch + seed) % 3],
+                colors[min(2, level // 2 + (1 if branch == (seed + level) % count else 0))],
                 seed * 2.3 + level * 1.7 + branch,
                 subdivisions=2,
             )
             crown.rotation_euler = (math.radians(4), math.radians(10), angle)
             parts.append(crown)
-    parts.append(add_ico(f"TreeCrownTop{seed}", (0.16 * scale, 0.14 * scale, 0.25 * scale), (x, y, 0.31 + 0.54 * scale), materials["forest_light"], seed * 3.8, subdivisions=2))
+    parts.append(add_ico(f"TreeCrownTop{seed}", (0.17 * scale, 0.15 * scale, 0.29 * scale), (x, y, 0.33 + 0.62 * scale), materials["forest_light"], seed * 3.8, subdivisions=2))
 
 
 def build_forest(materials, collection) -> list[bpy.types.Object]:
     ground = hex_ground("TerrainForestGround", materials["forest"], collection)
     parts: list[bpy.types.Object] = []
     for index, (x, y, scale) in enumerate([
-        (-0.58, -0.27, 0.62), (-0.25, -0.54, 0.56), (0.26, -0.52, 0.64),
-        (0.58, -0.20, 0.57), (0.51, 0.32, 0.66), (0.06, 0.59, 0.61), (-0.50, 0.33, 0.64),
+        (-0.50, -0.34, 0.78), (0.26, -0.45, 0.70),
+        (0.43, 0.30, 0.82), (-0.38, 0.38, 0.74),
     ]):
         add_tiered_tree(parts, materials, x, y, scale, index)
     details = merge_colored(parts, "TerrainForestDetails", materials["terrain_vertex"], collection)
@@ -590,11 +590,10 @@ def build_forest(materials, collection) -> list[bpy.types.Object]:
 
 def build_pasture(materials, collection) -> list[bpy.types.Object]:
     ground = hex_ground("TerrainPastureGround", materials["pasture_ground"], collection)
-    parts = [
-        add_uv_sphere("PastureRiseA", (0.82, 0.56, 0.12), (-0.40, -0.28, 0.16), materials["pasture_dark"], -0.2),
-        add_uv_sphere("PastureRiseB", (0.76, 0.52, 0.11), (0.44, -0.22, 0.16), materials["pasture_mid"], 0.25),
-        add_uv_sphere("PastureRiseC", (0.68, 0.46, 0.10), (0.15, 0.48, 0.16), materials["pasture_light"], -0.1),
-    ]
+    # The rejected pass used three flattened spheres as hills. At gameplay
+    # distance they read as glossy green puddles, so the final pasture lets the
+    # PBR ground carry the landform and spends its silhouette budget on sheep.
+    parts: list[bpy.types.Object] = []
 
     def sheep(index: int, x: float, y: float, scale: float, facing: float) -> None:
         forward = Vector((math.cos(facing), math.sin(facing)))
@@ -638,22 +637,19 @@ def build_pasture(materials, collection) -> list[bpy.types.Object]:
 def build_fields(materials, collection) -> list[bpy.types.Object]:
     ground = hex_ground("TerrainFieldsGround", materials["field_ground"], collection)
     parts: list[bpy.types.Object] = []
-    patches = [(-0.44, -0.28, -0.10), (0.43, -0.24, 0.11), (0.22, 0.47, -0.08), (-0.45, 0.35, 0.09)]
+    patches = [(-0.42, -0.27, -0.10), (0.39, -0.19, 0.12), (0.05, 0.46, -0.05)]
     for patch, (x, y, angle) in enumerate(patches):
-        # A low golden canopy carries the resource color while dense, varied
-        # stalks provide the readable harvest silhouette. The rejected passes
-        # used isolated pins and then oversized cones; this middle density is
-        # still inexpensive after joining but reads as a crop instead of a toy.
-        parts.append(add_box(f"FieldBed{patch}", (0.64, 0.32, 0.075), (x, y, 0.195), materials["grain_dark"], 0.065, (0, 0, angle)))
-        for stalk in range(18):
-            along = ((stalk % 6) - 2.5) * 0.085 + 0.012 * math.sin(stalk * 2.3 + patch)
-            across = ((stalk // 6) - 1) * 0.085 + 0.010 * math.cos(stalk * 1.9 + patch)
+        # The ground already carries the field color. Freestanding clustered
+        # rows read as crops; the old beveled orange beds read as toy furniture.
+        for stalk in range(12):
+            along = ((stalk % 6) - 2.5) * 0.095 + 0.012 * math.sin(stalk * 2.3 + patch)
+            across = ((stalk // 6) - 0.5) * 0.12 + 0.010 * math.cos(stalk * 1.9 + patch)
             stalk_x = x + math.cos(angle) * along - math.sin(angle) * across
             stalk_y = y + math.sin(angle) * along + math.cos(angle) * across
-            height = 0.16 + (stalk % 4) * 0.018
+            height = 0.19 + (stalk % 4) * 0.020
             parts.append(add_cylinder(
                 f"WheatStem{patch}_{stalk}",
-                0.0085,
+                0.011,
                 height,
                 (stalk_x, stalk_y, 0.23 + height / 2),
                 materials["grain_mid"],
@@ -663,9 +659,9 @@ def build_fields(materials, collection) -> list[bpy.types.Object]:
             ))
             parts.append(add_cone(
                 f"WheatHead{patch}_{stalk}",
-                0.026,
-                0.010,
-                0.082,
+                0.032,
+                0.012,
+                0.095,
                 (stalk_x, stalk_y, 0.23 + height + 0.028),
                 materials["grain_light"],
                 7,
@@ -775,9 +771,6 @@ def build_mountains(materials, collection) -> list[bpy.types.Object]:
 def build_desert(materials, collection) -> list[bpy.types.Object]:
     ground = hex_ground("TerrainDesertGround", materials["desert_ground"], collection)
     parts = [
-        add_uv_sphere("DuneA", (0.72, 0.34, 0.18), (-0.40, -0.20, 0.17), materials["desert_mid"], 0.42),
-        add_uv_sphere("DuneB", (0.64, 0.31, 0.16), (0.42, -0.22, 0.17), materials["desert_light"], -0.50),
-        add_uv_sphere("DuneC", (0.58, 0.29, 0.14), (0.12, 0.46, 0.17), materials["desert_mid"], 0.22),
         add_ico("DesertStoneA", (0.18, 0.13, 0.12), (-0.60, 0.33, 0.22), materials["desert_dark"], 1.2, 1, False),
         add_ico("DesertStoneB", (0.13, 0.10, 0.09), (0.57, 0.34, 0.21), materials["ore_mid"], 2.8, 1, False),
     ]
@@ -785,60 +778,108 @@ def build_desert(materials, collection) -> list[bpy.types.Object]:
 
 
 def build_road(materials, collection) -> list[bpy.types.Object]:
-    surface_parts = [add_box("RoadGravel", (0.92, 0.29, 0.06), (0, 0, 0.03), materials["gravel"], 0.085)]
-    for index, x in enumerate((-0.34, -0.17, 0, 0.17, 0.34)):
-        surface_parts.append(add_ico(f"RoadGravelLump{index}", (0.15, 0.22, 0.045), (x, (index % 2 - 0.5) * 0.03, 0.06), materials["gravel"], index * 1.8, 1))
-    surface = merge_same(surface_parts, "RoadSurface", collection)
+    surface = finish_mesh(add_box("RoadSurface", (0.86, 0.22, 0.050), (0, 0, 0.025), materials["gravel"], 0.060), collection)
     stones = []
     for side in (-1, 1):
-        for index in range(6):
-            x = -0.39 + index * 0.156
-            stones.append(add_box(
+        for index in range(3):
+            x = -0.30 + index * 0.30
+            stones.append(add_ico(
                 f"RoadCurb{side}_{index}",
-                (0.135, 0.075, 0.055),
-                (x, side * (0.15 + (index % 2) * 0.006), 0.068 + (index % 3) * 0.003),
+                (0.20, 0.055, 0.040),
+                (x, side * (0.126 + (index % 2) * 0.004), 0.046 + (index % 2) * 0.003),
                 materials["stone"],
-                0.014,
-                (0, 0, (index - 2.5) * 0.012 * side),
+                index + (4 if side > 0 else 0),
+                subdivisions=1,
+                smooth=False,
             ))
     stone_mesh = merge_same(stones, "RoadStones", collection)
     player = finish_mesh(join([
-        add_box(f"RoadInlay{index}", (0.16, 0.055, 0.024), (x, 0, 0.083), materials["player"], 0.010)
-        for index, x in enumerate((-0.30, 0, 0.30))
+        add_box("RoadMarkerLeft", (0.045, 0.045, 0.17), (-0.14, -0.13, 0.085), materials["player"], 0),
+        add_box("RoadMarkerRight", (0.045, 0.045, 0.17), (0.14, 0.13, 0.085), materials["player"], 0),
     ], "RoadPlayer"), collection)
     return [surface, stone_mesh, player]
 
 
 def build_settlement(materials, collection) -> list[bpy.types.Object]:
-    base = import_sam_asset(
-        SAM_SOURCE_DIR / "settlement-source.glb",
-        "SettlementBase",
-        collection,
-        footprint=0.70,
-        height_scale=1.0,
-    )
+    stone = merge_same([
+        add_box("SettlementFoundation", (0.58, 0.44, 0.12), (0, 0, 0.06), materials["stone"], 0.025),
+        add_box("SettlementStep", (0.24, 0.14, 0.055), (0, -0.28, 0.028), materials["stone"], 0.018),
+        add_cylinder("SettlementChimney", 0.047, 0.30, (0.17, 0.10, 0.52), materials["stone"], 8, bevel=0.007),
+    ], "SettlementStone", collection)
+    plaster = merge_same([
+        add_box("SettlementHouse", (0.49, 0.36, 0.31), (0, 0, 0.275), materials["plaster_light"], 0.026),
+        add_gable("SettlementGable", 0.49, 0.36, 0.16, (0, 0, 0.43), materials["plaster"], 0.018),
+    ], "SettlementPlaster", collection)
+    timber = merge_same([
+        add_box("SettlementDoor", (0.10, 0.026, 0.19), (0, -0.194, 0.215), materials["wood"], 0.006),
+        *[
+            add_box(f"SettlementBeam{index}", dimensions, location, materials["wood"], 0.004)
+            for index, (dimensions, location) in enumerate([
+                ((0.035, 0.027, 0.28), (-0.19, -0.195, 0.30)),
+                ((0.035, 0.027, 0.28), (0.19, -0.195, 0.30)),
+                ((0.43, 0.027, 0.035), (0, -0.195, 0.39)),
+                ((0.43, 0.027, 0.030), (0, -0.195, 0.18)),
+            ])
+        ],
+    ], "SettlementTimber", collection)
+    roof = merge_same([
+        add_gable_roof("SettlementRoofMain", 0.56, 0.41, 0.22, (0, 0, 0.44), materials["roof"]),
+        add_box("SettlementRoofRidge", (0.030, 0.47, 0.030), (0, 0, 0.665), materials["roof"], 0.008),
+    ], "SettlementRoof", collection)
+    windows = merge_same([
+        add_box("SettlementWindowLeft", (0.070, 0.018, 0.082), (-0.12, -0.205, 0.31), materials["window_warm"], 0),
+        add_box("SettlementWindowRight", (0.070, 0.018, 0.082), (0.12, -0.205, 0.31), materials["window_warm"], 0),
+    ], "SettlementWindows", collection)
     player = finish_mesh(join([
-        add_cylinder("SettlementOwnershipPlinth", 0.39, 0.035, (0, 0, 0.017), materials["player"], 8, bevel=0.010),
-        add_box("SettlementBanner", (0.055, 0.024, 0.22), (-0.22, -0.31, 0.36), materials["player"], 0.008),
+        add_box("SettlementBannerPost", (0.036, 0.036, 0.31), (-0.28, -0.12, 0.30), materials["player"], 0.007),
+        add_box("SettlementBannerCloth", (0.13, 0.022, 0.11), (-0.22, -0.12, 0.42), materials["player"], 0.009),
     ], "SettlementPlayer"), collection)
-    return [base, player]
+    return [stone, plaster, timber, roof, windows, player]
 
 
 def build_city(materials, collection) -> list[bpy.types.Object]:
-    base = import_sam_asset(
-        SAM_SOURCE_DIR / "city-source.glb",
-        "CityBase",
-        collection,
-        footprint=0.92,
-        height_scale=1.55,
-        decimate_ratio=0.50,
-    )
+    stone = merge_same([
+        add_box("CityFoundation", (0.78, 0.58, 0.15), (0, 0, 0.075), materials["stone"], 0.030),
+        add_box("CityLowerHall", (0.62, 0.46, 0.23), (0.04, 0, 0.255), materials["stone"], 0.026),
+        add_cylinder("CityTower", 0.145, 0.58, (-0.28, 0.06, 0.37), materials["stone"], 12, bevel=0.018),
+        add_box("CityStep", (0.27, 0.16, 0.06), (0.10, -0.32, 0.03), materials["stone"], 0.016),
+    ], "CityStone", collection)
+    plaster = merge_same([
+        add_box("CityUpperHall", (0.55, 0.41, 0.29), (0.07, 0, 0.51), materials["plaster_light"], 0.024),
+        add_gable("CityUpperGable", 0.55, 0.41, 0.18, (0.07, 0, 0.655), materials["plaster"], 0.017),
+        add_box("CityWing", (0.26, 0.31, 0.24), (0.31, 0.08, 0.38), materials["plaster"], 0.021),
+    ], "CityPlaster", collection)
+    timber = merge_same([
+        add_box("CityDoor", (0.11, 0.028, 0.20), (0.10, -0.251, 0.22), materials["wood"], 0.006),
+        *[
+            add_box(f"CityBeam{index}", dimensions, location, materials["wood"], 0.004)
+            for index, (dimensions, location) in enumerate([
+                ((0.035, 0.027, 0.27), (-0.12, -0.221, 0.54)),
+                ((0.035, 0.027, 0.27), (0.07, -0.221, 0.54)),
+                ((0.035, 0.027, 0.27), (0.26, -0.221, 0.54)),
+                ((0.50, 0.027, 0.032), (0.07, -0.221, 0.63)),
+                ((0.50, 0.027, 0.030), (0.07, -0.221, 0.43)),
+            ])
+        ],
+    ], "CityTimber", collection)
+    tower_roof = add_cone("CityTowerRoof", 0.19, 0.018, 0.24, (-0.28, 0.06, 0.78), materials["roof"], 14, bevel=0.012)
+    roof = merge_same([
+        add_gable_roof("CityHallRoof", 0.63, 0.47, 0.25, (0.07, 0, 0.67), materials["roof"]),
+        add_gable_roof("CityWingRoof", 0.32, 0.36, 0.15, (0.31, 0.08, 0.50), materials["roof"]),
+        tower_roof,
+    ], "CityRoof", collection)
+    windows = merge_same([
+        *[
+            add_box(f"CityWindow{index}", (0.065, 0.018, 0.080), (x, -0.229, z), materials["window_warm"], 0)
+            for index, (x, z) in enumerate([(-0.03, 0.54), (0.17, 0.54), (0.34, 0.38)])
+        ],
+    ], "CityWindows", collection)
     player = finish_mesh(join([
-        add_cylinder("CityOwnershipPlinth", 0.51, 0.04, (0, 0, 0.02), materials["player"], 10, bevel=0.012),
-        add_box("CityBannerTower", (0.065, 0.026, 0.30), (-0.31, -0.42, 0.47), materials["player"], 0.009),
-        add_box("CityBannerHall", (0.065, 0.026, 0.24), (0.20, -0.43, 0.40), materials["player"], 0.009),
+        add_box("CityBannerTowerPost", (0.038, 0.038, 0.36), (-0.28, 0.06, 0.98), materials["player"], 0.007),
+        add_box("CityBannerTowerCloth", (0.15, 0.024, 0.12), (-0.21, 0.06, 1.10), materials["player"], 0.009),
+        add_box("CityBannerHallPost", (0.036, 0.036, 0.30), (0.34, -0.08, 0.77), materials["player"], 0.007),
     ], "CityPlayer"), collection)
-    return [base, player]
+    return [stone, plaster, timber, roof, windows, player]
 
 
 def build_port(materials, collection) -> list[bpy.types.Object]:
@@ -887,6 +928,62 @@ def arrange_preview(objects: list[bpy.types.Object]) -> None:
             continue
         match = next((prefix for prefix in groups if obj.name.startswith(prefix)), None)
         obj.location = groups.get(match, (0, 0, 0))
+
+
+def validate_assets(objects: list[bpy.types.Object]) -> None:
+    by_name = {obj.name: obj for obj in objects}
+    required = {
+        "BoardFrameCliff", "BoardFrameBeach", "BoardFrameTurf", "BoardFrameRocks",
+        "TerrainForestGround", "TerrainForestDetails",
+        "TerrainPastureGround", "TerrainPastureDetails",
+        "TerrainFieldsGround", "TerrainFieldsDetails",
+        "TerrainHillsGround", "TerrainHillsDetails",
+        "TerrainMountainsGround", "TerrainMountainsRocks", "TerrainMountainsDetails",
+        "TerrainDesertGround", "TerrainDesertDetails",
+        "RoadSurface", "RoadStones", "RoadPlayer",
+        "SettlementStone", "SettlementPlaster", "SettlementTimber", "SettlementRoof", "SettlementWindows", "SettlementPlayer",
+        "CityStone", "CityPlaster", "CityTimber", "CityRoof", "CityWindows", "CityPlayer",
+        "Port", "Robber", "NumberToken", "NumberTokenRim",
+    }
+    missing = required.difference(by_name)
+    if missing:
+        raise RuntimeError(f"Missing runtime nodes: {sorted(missing)}")
+
+    expected_width = math.sqrt(3) * 0.997
+    expected_depth = 2 * 0.997
+    for name in (
+        "TerrainForestGround", "TerrainPastureGround", "TerrainFieldsGround",
+        "TerrainHillsGround", "TerrainMountainsGround", "TerrainDesertGround",
+    ):
+        dimensions = by_name[name].dimensions
+        if abs(dimensions.x - expected_width) > 0.012 or abs(dimensions.y - expected_depth) > 0.012:
+            raise RuntimeError(f"{name} is not canonical pointy-top: {tuple(round(value, 5) for value in dimensions)}")
+
+    triangle_counts = {
+        name: sum(len(polygon.vertices) - 2 for polygon in obj.data.polygons)
+        for name, obj in by_name.items()
+        if obj.type == "MESH"
+    }
+    budgets = {
+        "TerrainForestDetails": 8000,
+        "RoadSurface": 350,
+        "RoadStones": 500,
+        "RoadPlayer": 250,
+        "SettlementStone": 1200,
+        "SettlementPlaster": 900,
+        "SettlementTimber": 1000,
+        "SettlementRoof": 900,
+        "SettlementWindows": 250,
+        "CityStone": 2200,
+        "CityPlaster": 1400,
+        "CityTimber": 1400,
+        "CityRoof": 1400,
+        "CityWindows": 350,
+    }
+    over_budget = {name: (triangle_counts[name], limit) for name, limit in budgets.items() if triangle_counts[name] > limit}
+    if over_budget:
+        raise RuntimeError(f"Web triangle budget exceeded: {over_budget}")
+    print("KATAN_VALIDATION", {"nodes": len(objects), "triangles": sum(triangle_counts.values()), "tracked": triangle_counts})
 
 
 def point_camera(camera: bpy.types.Object, target: tuple[float, float, float]) -> None:
@@ -1004,8 +1101,8 @@ def main() -> None:
     world = make_collection("30_WORLD")
 
     materials = {
-        "forest": make_pbr_material("PBR_ForestFloor", "forest"),
-        "grass": make_pbr_material("PBR_GrassRock", "grass"),
+        "forest": make_pbr_material("PBR_ForestFloor", "forest", color_prefix="forest-ground"),
+        "grass": make_pbr_material("PBR_GrassRock", "grass", color_prefix="island-ground"),
         "rock": make_pbr_material("PBR_CliffRock", "rock"),
         "sand": make_pbr_material("PBR_CoastSand", "sand"),
         "gravel": make_pbr_material("PBR_SandyGravel", "gravel"),
@@ -1013,12 +1110,12 @@ def main() -> None:
         "wood": make_pbr_material("PBR_FineWood", "wood"),
         "roof": make_pbr_material("PBR_ClayRoof", "roof"),
         "bark": make_pbr_material("PBR_PineBark", "bark", use_rough_map=True),
-        "pasture_ground": make_pbr_material("PBR_PastureGround", "grass"),
-        "field_ground": make_pbr_material("PBR_FieldEarth", "forest"),
-        "hill_ground": make_pbr_material("PBR_ClayGround", "gravel"),
-        "mountain_ground": make_pbr_material("PBR_MountainGround", "rock", color_prefix="mountain"),
-        "desert_ground": make_pbr_material("PBR_DesertGround", "sand"),
-        "mountain_rock": make_pbr_material("PBR_MountainRock", "rock", color_prefix="mountain"),
+        "pasture_ground": make_pbr_material("PBR_PastureGround", "grass", color_prefix="pasture-ground"),
+        "field_ground": make_pbr_material("PBR_FieldEarth", "forest", color_prefix="field-ground"),
+        "hill_ground": make_pbr_material("PBR_ClayGround", "gravel", color_prefix="clay-ground"),
+        "mountain_ground": make_pbr_material("PBR_MountainGround", "rock", color_prefix="mountain-ground"),
+        "desert_ground": make_pbr_material("PBR_DesertGround", "sand", color_prefix="desert-ground"),
+        "mountain_rock": make_pbr_material("PBR_MountainRock", "rock", color_prefix="mountain-ground"),
     }
     materials.update({key: make_material(f"Mat_{key}", color, 0.74, 0.12 if key in {"forest_dark", "forest_mid", "forest_light", "plaster", "plaster_light"} else 0.0) for key, color in PALETTE.items()})
     materials["bark_solid"] = make_material("Mat_BarkReadable", "#3A2317", 0.88, 0.18)
@@ -1040,6 +1137,7 @@ def main() -> None:
     objects.extend(build_robber(materials, world))
     objects.extend(build_number_token(materials, world))
 
+    validate_assets(objects)
     arrange_preview(objects)
     render_preview(guides)
     export_glb(objects)

@@ -1,6 +1,6 @@
 # Poly Haven texture provenance
 
-The final Blender kit uses curated 512 px derivatives of these [Poly Haven](https://polyhaven.com/) CC0 assets. The large original downloads are intentionally excluded after the material pass; the web-ready maps live in `art/blender/textures/` and are embedded into the production GLB.
+The final Blender kit uses curated 512 px derivatives of these [Poly Haven](https://polyhaven.com/) CC0 assets. Resource-specific albedos are deterministic color grades of the sources below; normal and ARM maps remain shared where the physical surface is the same. Large original downloads are excluded after the material pass, and the web-ready maps are embedded into the production GLB.
 
 - [Brown Mud Leaves 01](https://polyhaven.com/a/brown_mud_leaves_01) — forest and field soil
 - [Aerial Grass Rock](https://polyhaven.com/a/aerial_grass_rock) — pasture and turf

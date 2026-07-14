@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import type { MapControls as MapControlsImpl } from 'three-stdlib'
 
-const TARGET = new THREE.Vector3(0, 0.25, 0)
+const TARGET = new THREE.Vector3(0, 0, 0)
 
 export function CameraRig({ cinematic = false, reducedMotion = false, focus, focusRevision }: { cinematic?: boolean; reducedMotion?: boolean; focus?: [number, number]; focusRevision?: number }) {
   const { camera, size, invalidate } = useThree()
@@ -15,9 +15,9 @@ export function CameraRig({ cinematic = false, reducedMotion = false, focus, foc
   useEffect(() => {
     if (!(camera instanceof THREE.PerspectiveCamera)) return
     const narrow = size.width / size.height < 0.72
-    camera.fov = narrow ? 42 : 32
-    if (narrow) camera.position.set(10.5, 14.2, 12.9)
-    else camera.position.set(8.4, 12.8, 10.5)
+    camera.fov = narrow ? 43 : 31
+    if (narrow) camera.position.set(13.2, 16.4, 16.0)
+    else camera.position.set(7.7, 10.3, 9.8)
     camera.lookAt(TARGET)
     camera.updateProjectionMatrix()
     invalidate()

@@ -7,12 +7,16 @@ const vertexShader = /* glsl */`
   varying vec3 vWorldPosition;
   varying float vWave;
 
+  float waterHeight(vec2 p, float time) {
+    float a = sin(dot(p, vec2(0.78, 0.31)) + time * 0.46) * 0.052;
+    float b = sin(dot(p, vec2(-0.34, 1.12)) - time * 0.38) * 0.031;
+    float c = sin(dot(p, vec2(1.61, -0.58)) + time * 0.24) * 0.014;
+    return a + b + c;
+  }
+
   void main() {
     vec3 p = position;
-    float waveA = sin(p.x * 0.70 + p.y * 0.16 + uTime * 0.42) * 0.046;
-    float waveB = cos(p.y * 0.84 - p.x * 0.14 - uTime * 0.34) * 0.032;
-    float waveC = sin((p.x + p.y) * 0.40 + uTime * 0.19) * 0.022;
-    vWave = waveA + waveB + waveC;
+    vWave = waterHeight(p.xy, uTime);
     p.z += vWave;
     vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
@@ -24,37 +28,47 @@ const fragmentShader = /* glsl */`
   varying vec3 vWorldPosition;
   varying float vWave;
 
+  float hash21(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+
+  float noise2(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x), mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x), f.y);
+  }
+
   void main() {
-    vec3 deep = vec3(0.006, 0.165, 0.245);
-    vec3 midWater = vec3(0.020, 0.390, 0.485);
-    vec3 sky = vec3(0.18, 0.63, 0.70);
+    vec3 deep = vec3(0.010, 0.105, 0.155);
+    vec3 midWater = vec3(0.015, 0.305, 0.385);
+    vec3 shoal = vec3(0.055, 0.555, 0.565);
+    vec3 sky = vec3(0.285, 0.665, 0.720);
     vec2 p = vWorldPosition.xz;
-    float broad = 0.5 + 0.5 * sin(p.x * 0.92 + p.y * 0.53 + uTime * 0.22);
-    float crossWave = 0.5 + 0.5 * cos(p.y * 1.25 - p.x * 0.41 - uTime * 0.18);
-    float phaseA = p.x * 0.70 + p.y * 0.16 + uTime * 0.42;
-    float phaseB = p.y * 0.84 - p.x * 0.14 - uTime * 0.34;
-    float phaseC = (p.x + p.y) * 0.40 + uTime * 0.19;
-    float dhdx = cos(phaseA) * 0.0322 + sin(phaseB) * 0.0045 + cos(phaseC) * 0.0088;
-    float dhdz = cos(phaseA) * 0.0074 - sin(phaseB) * 0.0269 + cos(phaseC) * 0.0088;
+    float phaseA = dot(p, vec2(0.78, 0.31)) + uTime * 0.46;
+    float phaseB = dot(p, vec2(-0.34, 1.12)) - uTime * 0.38;
+    float phaseC = dot(p, vec2(1.61, -0.58)) + uTime * 0.24;
+    float dhdx = cos(phaseA) * 0.0406 - cos(phaseB) * 0.0105 + cos(phaseC) * 0.0225;
+    float dhdz = cos(phaseA) * 0.0161 + cos(phaseB) * 0.0347 - cos(phaseC) * 0.0081;
     vec3 normal = normalize(vec3(-dhdx, 1.0, -dhdz));
     vec3 viewDir = normalize(cameraPosition - vWorldPosition);
-    float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 3.0);
-    vec3 sunDir = normalize(vec3(-0.45, 0.84, 0.30));
-    float sunGlint = pow(max(dot(reflect(-sunDir, normal), viewDir), 0.0), 72.0);
-    float crestA = sin((p.x - p.y * 0.66) * 3.20 + uTime * 0.40) * 0.5 + 0.5;
-    float crestB = sin((p.y + p.x * 0.34) * 4.70 - uTime * 0.31) * 0.5 + 0.5;
-    float aaA = max(fwidth(crestA), 0.008);
-    float aaB = max(fwidth(crestB), 0.008);
-    float softLines = smoothstep(0.965 - aaA, 0.965 + aaA, crestA) * 0.64
-      + smoothstep(0.978 - aaB, 0.978 + aaB, crestB) * 0.36;
-    vec3 color = mix(deep, midWater, 0.39 + broad * 0.10 + crossWave * 0.05 + vWave * 0.55);
-    color = mix(color, sky, fresnel * 0.46);
-    color += vec3(1.0, 0.78, 0.48) * sunGlint * 0.34;
-    color += vec3(0.24, 0.72, 0.75) * softLines * 0.032;
-    // A restrained surface pass over the authored ocean image. The image
-    // supplies high-frequency detail; this layer supplies depth, glints, and
-    // subtle motion without replacing it with a flat opaque shader.
-    gl_FragColor = vec4(color, 0.30);
+    float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 4.0);
+    vec3 sunDir = normalize(vec3(-0.50, 0.78, 0.36));
+    float sunGlint = pow(max(dot(reflect(-sunDir, normal), viewDir), 0.0), 92.0);
+    float radius = length(p);
+    float nearIsland = 1.0 - smoothstep(5.0, 8.5, radius);
+    float broad = noise2(p * 0.34 + vec2(uTime * 0.025, -uTime * 0.018));
+    float fine = noise2(p * 2.4 + vec2(-uTime * 0.06, uTime * 0.045));
+    float crest = smoothstep(0.060, 0.083, vWave + fine * 0.018);
+    vec3 color = mix(deep, midWater, 0.44 + broad * 0.24);
+    color = mix(color, shoal, nearIsland * 0.20);
+    color = mix(color, sky, fresnel * 0.42);
+    color += vec3(1.0, 0.76, 0.48) * sunGlint * 0.78;
+    color += vec3(0.56, 0.88, 0.87) * crest * 0.055;
+    color *= 0.92 + fine * 0.13;
+    gl_FragColor = vec4(color, 1.0);
   }
 `
 
@@ -67,14 +81,13 @@ export function Water({ reducedMotion = false }: { reducedMotion?: boolean }) {
   })
 
   return <mesh position={[0, -0.42, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow renderOrder={-5}>
-    <planeGeometry args={[160, 160, 96, 96]} />
+    <planeGeometry args={[160, 160, 160, 160]} />
     <shaderMaterial
       ref={material}
       uniforms={uniforms}
       vertexShader={vertexShader}
       fragmentShader={fragmentShader}
-      transparent
-      depthWrite={false}
+      depthWrite
     />
   </mesh>
 }

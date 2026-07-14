@@ -39,15 +39,19 @@ function TerrainTile({ tile, robber, action, onAction }: { tile: HexTile; robber
     event.stopPropagation()
     if (action) onAction(action)
   }
-  const tileHeight = 0.285
+  // The board-frame turf tops out at Y 0.46. Keep the authored hex surface
+  // just above it so every resource material remains visible without floating
+  // props or changing the canonical X/Z topology.
+  const tileHeight = 0.315
+  const variation = (Number(tile.id.slice(1)) % 6) * Math.PI / 3
   return <group position={[tile.x, tileHeight + (hovered && legal ? 0.012 : 0), tile.z]}>
-    <AssetMesh asset={TERRAIN_ASSET[tile.terrain]} onClick={click} onPointerOver={(event) => { event.stopPropagation(); setHovered(true) }} onPointerOut={() => setHovered(false)} />
-    {tile.number ? <NumberToken number={tile.number} height={0.215} /> : null}
-    {legal ? <mesh position={[0, 0.235, 0]} rotation={[-Math.PI / 2, 0, 0]} onClick={click} renderOrder={2}>
+    <AssetMesh asset={TERRAIN_ASSET[tile.terrain]} rotation={[0, variation, 0]} onClick={click} onPointerOver={(event) => { event.stopPropagation(); setHovered(true) }} onPointerOut={() => setHovered(false)} />
+    {tile.number ? <NumberToken number={tile.number} height={0.17} /> : null}
+    {legal ? <mesh position={[0, 0.185, 0]} rotation={[-Math.PI / 2, 0, 0]} onClick={click} renderOrder={2}>
       <ringGeometry args={[0.84, 0.97, 6, 1, Math.PI / 6]} />
       <meshBasicMaterial color="#ffd66a" transparent opacity={hovered ? 0.92 : 0.38} side={THREE.DoubleSide} toneMapped={false} />
     </mesh> : null}
-    {robber ? <Robber height={0.235} /> : null}
+    {robber ? <Robber height={0.17} /> : null}
   </group>
 }
 
@@ -82,16 +86,22 @@ function IslandBase() {
 }
 
 function ShallowWater({ board }: { board: Board }) {
-  const geometry = useMemo(() => new THREE.ShapeGeometry(makeRing(coastalVertices(board, 1.3), coastalVertices(board, 1.18))), [board])
-  const foam = useMemo(() => new THREE.ShapeGeometry(makeRing(coastalVertices(board, 1.205), coastalVertices(board, 1.165))), [board])
+  const geometry = useMemo(() => new THREE.ShapeGeometry(makeRing(coastalVertices(board, 1.22), coastalVertices(board, 1.045))), [board])
+  const foam = useMemo(() => new THREE.ShapeGeometry(makeRing(coastalVertices(board, 1.115), coastalVertices(board, 1.055))), [board])
   useEffect(() => () => geometry.dispose(), [geometry])
   useEffect(() => () => foam.dispose(), [foam])
   return <group position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]}>
     <mesh geometry={geometry} renderOrder={-2}>
-      <meshStandardMaterial color="#31b9bf" emissive="#075b70" emissiveIntensity={0.18} transparent opacity={0.38} roughness={0.28} depthWrite={false} />
+      <meshStandardMaterial color="#54c6bc" transparent opacity={0.24} roughness={0.22} depthWrite={false} />
     </mesh>
     <mesh geometry={foam} position={[0, 0, 0.006]} renderOrder={-1}>
-      <meshBasicMaterial color="#b7f4e7" transparent opacity={0.52} depthWrite={false} toneMapped={false} />
+      <shaderMaterial
+        transparent
+        depthWrite={false}
+        toneMapped={false}
+        vertexShader={`varying vec3 vWorld; void main() { vWorld = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`}
+        fragmentShader={`varying vec3 vWorld; void main() { float a = sin(vWorld.x * 4.1 + vWorld.z * 1.7); float b = sin(vWorld.z * 5.3 - vWorld.x * 1.2); float broken = smoothstep(0.12, 0.88, a * 0.52 + b * 0.48); gl_FragColor = vec4(0.84, 0.97, 0.92, broken * 0.62); }`}
+      />
     </mesh>
   </group>
 }

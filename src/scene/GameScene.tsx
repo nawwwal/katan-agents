@@ -1,4 +1,4 @@
-import { ContactShadows, useCursor } from '@react-three/drei'
+import { useCursor } from '@react-three/drei'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
@@ -36,7 +36,7 @@ const edgeTransform = (game: GameDisplayState, edge: BoardEdge) => {
   const dx = b.x - a.x
   const dz = b.z - a.z
   return {
-    position: [(a.x + b.x) / 2, 0.5, (a.z + b.z) / 2] as [number, number, number],
+    position: [(a.x + b.x) / 2, 0.478, (a.z + b.z) / 2] as [number, number, number],
     length: Math.hypot(dx, dz),
     rotation: [0, -Math.atan2(dz, dx), 0] as [number, number, number],
   }
@@ -78,7 +78,7 @@ function Building({ game, vertexId, playerId, type, legalCity, pendingCity, redu
   })
   useCursor(legalCity && hovered)
   const color = player ? PLAYER_COLORS[player.color] : '#ddd'
-  return <group ref={group} position={[vertex.x, 0.49, vertex.z]} onClick={(event) => { event.stopPropagation(); if (legalCity) onCity?.() }} onPointerOver={(event) => { event.stopPropagation(); setHovered(true) }} onPointerOut={() => setHovered(false)} scale={reducedMotion ? 1 : 0.08}>
+  return <group ref={group} position={[vertex.x, 0.478, vertex.z]} onClick={(event) => { event.stopPropagation(); if (legalCity) onCity?.() }} onPointerOver={(event) => { event.stopPropagation(); setHovered(true) }} onPointerOut={() => setHovered(false)} scale={reducedMotion ? 1 : 0.08}>
     <AssetMesh asset={type === 'city' ? 'City' : 'Settlement'} color={color} />
     {legalCity ? <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[0.29, pendingCity ? 0.43 : 0.38, 24]} /><meshBasicMaterial color={pendingCity ? '#78efff' : '#ffd45b'} transparent opacity={0.9} /></mesh> : null}
   </group>
@@ -102,17 +102,17 @@ function VertexTargets({ game, actions, pendingAction, touchTarget, onAction }: 
       const scale = pending ? 1.35 : active ? 1.18 : 1
       const height = pending ? 0.13 : 0.05
 
-      dummy.position.set(vertex.x, 0.48 + height / 2, vertex.z)
+      dummy.position.set(vertex.x, 0.478 + height / 2, vertex.z)
       dummy.rotation.set(0, 0, 0)
       dummy.scale.set(scale, height / 0.05, scale)
       dummy.updateMatrix()
       peg.current?.setMatrixAt(index, dummy.matrix)
-      dummy.position.set(vertex.x, 0.48 + height + 0.012, vertex.z)
+      dummy.position.set(vertex.x, 0.478 + height + 0.012, vertex.z)
       dummy.rotation.set(-Math.PI / 2, 0, 0)
       dummy.scale.setScalar(pending ? 1.5 : active ? 1.22 : 1)
       dummy.updateMatrix()
       ring.current?.setMatrixAt(index, dummy.matrix)
-      dummy.position.set(vertex.x, 0.56, vertex.z)
+      dummy.position.set(vertex.x, 0.558, vertex.z)
       dummy.rotation.set(0, 0, 0)
       dummy.scale.setScalar(touchTarget ? 1.55 : 1)
       dummy.updateMatrix()
@@ -155,7 +155,7 @@ function SceneEnvironment() {
     const generator = new THREE.PMREMGenerator(gl)
     const target = generator.fromScene(room, 0.04)
     scene.environment = target.texture
-    scene.environmentIntensity = 0.34
+    scene.environmentIntensity = 0.18
     return () => {
       scene.environment = null
       target.dispose()
@@ -199,12 +199,12 @@ function SceneContent({ game, placementMode, pendingAction, presentation, cinema
   }, [game.board, presentation])
 
   return <>
-    <fog attach="fog" args={['#075467', 16, 36]} />
+    <fog attach="fog" args={['#123e54', 18, 39]} />
     <SceneEnvironment />
-    <ambientLight intensity={0.12} />
-    <hemisphereLight color="#ffe5b1" groundColor="#063949" intensity={0.38} />
-    <directionalLight castShadow={!mobile} position={[-8, 12, 5]} intensity={1.75} color="#ffd08e" shadow-mapSize-width={mobile ? 1024 : 2048} shadow-mapSize-height={mobile ? 1024 : 2048} shadow-camera-near={1} shadow-camera-far={32} shadow-camera-left={-10} shadow-camera-right={10} shadow-camera-top={10} shadow-camera-bottom={-10} shadow-bias={-0.00028} />
-    <directionalLight position={[6, 7, -5]} intensity={0.32} color="#78c9df" />
+    <ambientLight intensity={0.08} />
+    <hemisphereLight color="#fff0ca" groundColor="#0a4250" intensity={0.52} />
+    <directionalLight castShadow={!mobile} position={[-8, 12, 5]} intensity={2.35} color="#ffd39d" shadow-mapSize-width={mobile ? 1024 : 2048} shadow-mapSize-height={mobile ? 1024 : 2048} shadow-camera-near={1} shadow-camera-far={32} shadow-camera-left={-10} shadow-camera-right={10} shadow-camera-top={10} shadow-camera-bottom={-10} shadow-bias={-0.00022} shadow-normalBias={0.025} />
+    <directionalLight position={[6, 7, -5]} intensity={0.44} color="#84c9dc" />
     <Water reducedMotion={reducedMotion} />
     <group rotation={[0, -0.04, 0]}>
       <Island game={game} robberActions={robberActions} onAction={onAction} />
@@ -217,7 +217,6 @@ function SceneContent({ game, placementMode, pendingAction, presentation, cinema
       {vertexActions.length ? <VertexTargets game={game} actions={vertexActions} pendingAction={pendingAction} touchTarget={mobile} onAction={onAction} /> : null}
       <ActionEffects game={game} presentation={presentation} reducedMotion={reducedMotion} />
     </group>
-    <ContactShadows position={[0, -0.18, 0]} scale={16} opacity={0.42} blur={2.3} far={3.8} frames={1} />
     <CameraRig cinematic={cinematic} reducedMotion={reducedMotion} focus={cameraFocus} focusRevision={presentation?.revision} />
   </>
 }
@@ -229,11 +228,11 @@ export function GameScene(props: SceneProps) {
     aria-hidden="true"
     dpr={[1, 2]}
     shadows
-    camera={{ position: [8.4, 12.8, 10.5], fov: 32, near: 0.1, far: 100 }}
+    camera={{ position: [7.7, 10.3, 9.8], fov: 31, near: 0.1, far: 100 }}
     gl={{ alpha: true, antialias: true, powerPreference: 'high-performance' }}
     onCreated={({ gl }) => {
       gl.toneMapping = THREE.ACESFilmicToneMapping
-      gl.toneMappingExposure = 1.03
+      gl.toneMappingExposure = 1.12
       gl.outputColorSpace = THREE.SRGBColorSpace
       gl.shadowMap.type = THREE.PCFSoftShadowMap
     }}
