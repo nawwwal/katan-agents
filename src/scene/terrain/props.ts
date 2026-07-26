@@ -482,8 +482,11 @@ export const fenceGeometry = () => {
  */
 export const cactusGeometry = (variant: number) => {
   const rng = makeRng(2207 + variant * 53)
-  const FLESH = '#6f8a72'
-  const LIT = '#8aa189'
+  // Scorched sage, not pasture green. The client read the old flesh as too
+  // green against the sand, and it was: a saguaro in full sun is a dusty
+  // grey-olive with almost no chroma left in it.
+  const FLESH = '#77826a'
+  const LIT = '#8e9679'
   const parts: Part[] = []
   const h = 0.2 + (variant % 3) * 0.055
 

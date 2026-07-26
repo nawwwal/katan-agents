@@ -282,31 +282,58 @@ const pasture = (ctx: Ctx) => {
 }
 
 const fields = (ctx: Ctx) => {
-  // Crop rows run along +x, matching the furrow direction baked into the relief
-  // and the albedo, so texture and geometry agree.
-  const rows = 20
+  /**
+   * A standing crop, not a sprinkle of yellow spikes.
+   *
+   * The old field placed one wheat clump every 0.082 along twenty rows, which
+   * is about 380 clumps with visible bare soil between every one of them: at
+   * board distance that is confetti, and the critic said so three rounds
+   * running. Real wheat at harvest is a *continuous surface* -- you cannot see
+   * the ground through it, and the only structure you can read is the drill
+   * lines and the headlands.
+   *
+   * So the rows are half the pitch apart, each row is two staggered passes, and
+   * the clumps overlap by design. The furrow texture stays visible where it is
+   * supposed to be visible -- in the headland strips and along the tramlines
+   * the sprayer drives down, which is exactly where a real field shows soil.
+   */
+  // Where the post-and-rail runs. The crop is cut back off these lines so the
+  // fence has something to be the edge *of* -- the previous pair sat at 0.7,
+  // which `addLine` silently dropped for being outside the road clearance, so
+  // the field had had no visible fence at all for several rounds.
+  const fenceZ = [-0.66, 0.66]
+  const rows = 34
   for (let row = 0; row < rows; row += 1) {
-    const z = -0.8 + (row / (rows - 1)) * 1.6
-    // Rows alternate crop and headland so the furrow texture stays visible.
-    const gap = row % 5 === 2
-    const step = gap ? 0.16 : 0.082
-    for (let x = -0.84; x <= 0.84; x += step) {
-      const jx = x + (ctx.rng() - 0.5) * 0.03
-      const jz = z + (ctx.rng() - 0.5) * 0.028
-      if (hexNorm(jx, jz) > ROAD_CLEARANCE) continue
-      if (jx * jx + jz * jz < TOKEN_CLEARANCE * TOKEN_CLEARANCE) continue
-      if (gap && ctx.rng() > 0.35) continue
-      const s = range(ctx.rng, 0.6, 0.95)
-      ctx.out.push({
-        family: 'wheat', x: jx, y: ctx.height(jx, jz) - 0.012, z: jz,
-        ry: (ctx.rng() - 0.5) * 0.5, rx: jitter(ctx.rng) * 0.07, rz: jitter(ctx.rng) * 0.07,
-        s, sy: s * range(ctx.rng, 0.85, 1.2),
-        tint: 1 + jitter(ctx.rng) * 0.16, warm: jitter(ctx.rng) * 0.06,
-      })
+    const z = -0.86 + (row / (rows - 1)) * 1.72
+    if (fenceZ.some((fz) => Math.abs(z - fz) < 0.06)) continue
+    // Headland: one strip in six is left short so the tilled ground reads.
+    const headland = row % 6 === 3
+    // Two passes at half this pitch, so the effective spacing is 0.045 -- just
+    // under a clump's own width, which is what makes the crop close up.
+    const step = headland ? 0.15 : 0.09
+    for (let x = -0.9; x <= 0.9; x += step) {
+      // Tramlines: the wheel ruts a sprayer leaves, two bare strips per field.
+      if (!headland && Math.abs(Math.abs(x) - 0.46) < 0.035) continue
+      for (let pass = 0; pass < (headland ? 1 : 2); pass += 1) {
+        const jx = x + pass * step * 0.5 + (ctx.rng() - 0.5) * 0.026
+        const jz = z + (pass ? 0.022 : 0) + (ctx.rng() - 0.5) * 0.024
+        if (hexNorm(jx, jz) > ROAD_CLEARANCE) continue
+        if (jx * jx + jz * jz < TOKEN_CLEARANCE * TOKEN_CLEARANCE) continue
+        if (headland && ctx.rng() > 0.4) continue
+        const s = range(ctx.rng, 0.72, 1.08)
+        ctx.out.push({
+          family: 'wheat', x: jx, y: ctx.height(jx, jz) - 0.014, z: jz,
+          ry: (ctx.rng() - 0.5) * 0.5, rx: jitter(ctx.rng) * 0.07, rz: jitter(ctx.rng) * 0.07,
+          s, sy: s * range(ctx.rng, 0.9, 1.28),
+          tint: 1 + jitter(ctx.rng) * 0.2, warm: jitter(ctx.rng) * 0.08,
+        })
+      }
     }
   }
-  addLine(ctx, 'fence', [-0.78, -0.5], [0.78, -0.5], 10)
-  addLine(ctx, 'fence', [-0.78, 0.62], [0.78, 0.62], 10)
+  // Post-and-rail on three sides, not two thin dashes. The old fence ran two
+  // lines at ten segments and read as a dotted black rule; more segments and a
+  // heavier scale is what turns it into a boundary you can see.
+  for (const fz of fenceZ) addLine(ctx, 'fence', [-0.72, fz], [0.72, fz], 15, 1.35)
   addProps(ctx, {
     variants: [{ family: 'haystack' }], count: 4, minDist: 0.3, inset: 0.72, clear: 0.44,
     scale: [0.8, 1.25], tilt: 0.03, sink: 0.02,
@@ -384,24 +411,44 @@ const hills = (ctx: Ctx) => {
 }
 
 const mountains = (ctx: Ctx) => {
-  // Spires ride the crest of the relief ring rather than scattering at random,
-  // so the tile reads as one massif with a quarry floor cut into it.
-  const start = ctx.rng() * Math.PI * 2
-  const peaks = 10
+  /**
+   * A cirque, not a ring.
+   *
+   * A spire is over a metre across at board scale -- wider than the token's
+   * bench -- so a ring of them around the tile centre puts a rock flank
+   * directly over the disc however far out the axes are pushed. Arranging them
+   * as a horseshoe that opens toward the viewer is the only version of this
+   * tile where the peaks get to be full height *and* the number is readable:
+   * the rig cannot orbit past +-1.25rad, so the back of the tile is permanently
+   * out of the sight line and the massif can pile up there without limit.
+   *
+   * Local +Z is the camera side, so `bearing` is measured off it and the peaks
+   * are dealt into the far arc. It reads as an amphitheatre of rock with the
+   * workings on the open floor, which is a better tile than the old even ring
+   * was even before you count being able to see the number.
+   */
+  const peaks = 13
   for (let i = 0; i < peaks; i += 1) {
-    const angle = start + (i / peaks) * Math.PI * 2 + (ctx.rng() - 0.5) * 0.42
-    const radius = 0.4 + ctx.rng() * 0.26
-    const x = Math.cos(angle) * radius
-    const z = Math.sin(angle) * radius
+    const t = (i + 0.5) / peaks
+    // Fan across the far arc, alternating sides so consecutive draws do not
+    // walk round the horseshoe in order and clump.
+    const side = i % 2 ? 1 : -1
+    // 1.5rad is just past the widest the rig can swing plus the parallax a
+    // rim tile adds, so the fan starts where the camera can no longer get
+    // between a peak and the disc.
+    const bearing = side * (1.5 + t * 1.6 + (ctx.rng() - 0.5) * 0.24)
+    const radius = 0.44 + ctx.rng() * 0.34
+    const x = Math.sin(bearing) * radius
+    const z = Math.cos(bearing) * radius
     if (hexNorm(x, z) > ROAD_CLEARANCE) continue
     const crest = ctx.height(x, z)
-    if (crest < 0.1) continue
+    if (crest < 0.08) continue
     // Six forms across two families and a scale range better than 3:1. The
     // repeating silhouette was the loudest defect on this tile and it came from
     // three near-identical props at near-identical size, not from the count.
     const crag = ctx.rng() > 0.38
     const pick = Math.floor(ctx.rng() * 3)
-    const s = (crag ? 0.42 : 0.36) + crest * 0.95 + ctx.rng() * 0.3
+    const s = (crag ? 0.62 : 0.54) + crest * 0.9 + ctx.rng() * 0.34
     ctx.out.push({
       family: `${crag ? 'crag' : 'spire'}${pick}`,
       x, y: crest - 0.14 * s, z,
@@ -412,10 +459,10 @@ const mountains = (ctx: Ctx) => {
       tint: 1 + jitter(ctx.rng) * 0.18, warm: jitter(ctx.rng) * 0.05,
     })
   }
-  addProps(ctx, { variants: [{ family: 'mineHead' }], count: 1, minDist: 1, inset: 0.6, clear: 0.42, scale: [0.95, 1.05], tilt: 0.02, sink: 0.02 })
+  addProps(ctx, { variants: [{ family: 'mineHead' }], count: 1, minDist: 1, inset: 0.7, clear: 0.52, scale: [0.95, 1.05], tilt: 0.02, sink: 0.02 })
   addProps(ctx, {
     variants: [{ family: 'shard0' }, { family: 'shard1' }, { family: 'shard2' }],
-    count: 44, minDist: 0.095, inset: 0.92, clear: 0.18, scale: [0.3, 0.85], stretch: [0.7, 1.5], tilt: 0.35, tintRange: 0.24,
+    count: 44, minDist: 0.095, inset: 0.92, clear: 0.24, scale: [0.3, 0.85], stretch: [0.7, 1.5], tilt: 0.35, tintRange: 0.24,
   })
   addProps(ctx, {
     variants: [{ family: 'pebble0' }, { family: 'pebble1' }, { family: 'pebble2' }],
@@ -429,11 +476,21 @@ const mountains = (ctx: Ctx) => {
 }
 
 const desert = (ctx: Ctx) => {
+  // Five saguaro in two stands, not fifteen evenly spaced.
+  //
+  // A cactus is the one object on this tile with a vertical silhouette, so every
+  // one you add is another thing competing with the emptiness that is supposed
+  // to be the subject. Fifteen of them at even spacing read as an orchard, and
+  // in a green the sand has nowhere near -- hence the warm bias, which drags the
+  // flesh from pasture green toward the grey-olive of a sun-scorched succulent.
   addProps(ctx, {
     variants: [{ family: 'cactus0' }, { family: 'cactus1' }, { family: 'cactus2' }],
-    count: 15, minDist: 0.2, inset: 0.87, clear: TOKEN_CLEARANCE, scale: [0.6, 1.35], tilt: 0.05, sink: 0.02, tintRange: 0.18,
+    count: 5, minDist: 0.26, inset: 0.84, clear: 0.44,
+    clumps: { count: 2, spread: 0.22 },
+    scale: [0.7, 1.4], tilt: 0.05, sink: 0.02,
+    tintRange: 0.16, warmRange: 0.06, tintBias: -0.06, warmBias: 0.13,
   })
-  addProps(ctx, { variants: [{ family: 'dryBrush' }], count: 52, minDist: 0.088, inset: 0.94, clear: 0.2, scale: [0.5, 1.25], tilt: 0.22, tintBias: 0.08 })
+  addProps(ctx, { variants: [{ family: 'dryBrush' }], count: 24, minDist: 0.13, inset: 0.94, clear: 0.28, rimBias: 0.5, scale: [0.5, 1.25], tilt: 0.22, tintBias: 0.08 })
   // Desert grass is bleached straw, not pasture green: the tussock geometry is
   // shared with the wool tile, so the difference has to come out of the instance
   // tint, and on a green base a heavy warm bias is what turns it to hay.
@@ -448,8 +505,8 @@ const desert = (ctx: Ctx) => {
   // subject. What is left is pushed to the rim where drift piles against rock.
   addProps(ctx, {
     variants: [{ family: 'boulder0' }, { family: 'boulder1' }, { family: 'boulder2' }],
-    count: 10, minDist: 0.2, inset: 0.91, clear: 0.34, rimBias: 1, scale: [0.5, 1.4], tilt: 0.26,
-    tintRange: 0.14, warmRange: 0.03, tintBias: 0.2, warmBias: 0.16,
+    count: 7, minDist: 0.26, inset: 0.91, clear: 0.4, rimBias: 1, scale: [0.5, 1.4], tilt: 0.26,
+    tintRange: 0.14, warmRange: 0.03, tintBias: 0.3, warmBias: 0.18,
   })
   addProps(ctx, {
     variants: [{ family: 'pebble0' }, { family: 'pebble1' }, { family: 'pebble2' }],

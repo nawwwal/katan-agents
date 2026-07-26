@@ -22,6 +22,94 @@ export const hexNorm = (x: number, z: number) => {
 }
 
 /**
+ * The number token's sight line, as a hard contract every tile obeys.
+ *
+ * A number is game state, not scenery, and it was being buried: on all three
+ * ore tiles the massif rose in front of the disc and the token was invisible
+ * from every legal camera position. Clearing props out of the middle never
+ * fixed that, because the thing doing the occluding was the ground itself.
+ *
+ * So the rule is stated once, here, and both the relief and the scatter are
+ * clamped against it. Draw a cone from the top of the token disc, opening
+ * upward and outward at `SIGHT_TAN`; nothing on the tile may poke through it on
+ * the side the camera can be. That is a *geometric* guarantee rather than a
+ * tuned one -- if a peak is under the cone it cannot be between the eye and the
+ * token, whatever the rig does inside its limits.
+ *
+ * `SIGHT_ARC` is why the mountains still get to be mountains. The rig clamps
+ * azimuth to +-1.25rad about +Z, so the camera can never get behind the board;
+ * the far third of every tile is out of the sight line no matter what and is
+ * left completely unconstrained. The massifs now open toward the viewer and
+ * pile up at the back, which is both the fix and a better composition than the
+ * old ring of even peaks around a hidden disc.
+ *
+ * `SIGHT_TAN` corresponds to about 30 degrees of elevation, measured at the
+ * *far* rim of the board where the grazing angle is worst: at the rig's shallow
+ * polar limit the camera sits 8.9 units up and 15.9 out from the furthest tile.
+ */
+/** Local Y of the token group above the tile origin: the plinth's cap. */
+export const TOKEN_LIFT = 0.34
+/** Top of the painted face, plus a little margin. */
+const SIGHT_BASE = TOKEN_LIFT + 0.1
+/**
+ * Measured, not guessed. The rig's shallowest polar is 1.05rad at distance
+ * 15.3, which puts the camera 7.66 up and 13.26 out from the target; the
+ * furthest tile centre is another 3.47 out, and the token top sits 0.86 above
+ * the target plane. That worst case is 7.12 over 16.73, or tan 0.426.
+ */
+const SIGHT_TAN = 0.42
+const SIGHT_ARC = 1.45
+
+/**
+ * Every token a tile's own geometry can reach: its own, and the six neighbours
+ * one hex-step away. A tile's back wall is on the near side of the tile behind
+ * it, so protecting only the local token just moves the problem one hex north.
+ */
+const TOKEN_SITES: Array<[number, number]> = [
+  [0, 0],
+  [2 * HEX_APOTHEM, 0], [-2 * HEX_APOTHEM, 0],
+  [HEX_APOTHEM, 1.5], [-HEX_APOTHEM, 1.5],
+  [HEX_APOTHEM, -1.5], [-HEX_APOTHEM, -1.5],
+]
+
+/**
+ * The cone from one token. `radius` is the horizontal reach of whatever is
+ * standing at (x, z): a spire is more than a metre wide, and testing only its
+ * axis let one sit with its flank directly over the disc.
+ */
+const coneFrom = (x: number, z: number, radius: number) => {
+  const d = Math.sqrt(x * x + z * z)
+  // A wide object occupies a wedge of azimuth, so it counts as "in front" if
+  // any part of that wedge is.
+  const spread = radius >= d ? Math.PI / 2 : Math.asin(radius / Math.max(d, 1e-4))
+  const facing = Math.max(0, Math.abs(Math.atan2(x, z)) - spread)
+  const behind = smoothstep(SIGHT_ARC, SIGHT_ARC + 0.5, facing)
+  return SIGHT_BASE + Math.max(0, d - radius) * SIGHT_TAN + behind * 4
+}
+
+/** Highest a tile-local point may be, in relief units above GROUND_Y. */
+export const sightCeiling = (x: number, z: number, radius = 0) => {
+  let limit = Infinity
+  // The board is laid out with a slight rotation, so the ideal lattice above is
+  // a few hundredths out from where the neighbouring tokens actually sit.
+  // Padding the footprint absorbs that without pinning this module to whatever
+  // orientation the board generator happens to use this week.
+  const slack = radius + 0.09
+  for (const [sx, sz] of TOKEN_SITES) limit = Math.min(limit, coneFrom(x - sx, z - sz, slack))
+  return limit
+}
+
+/**
+ * Rounded minimum. A hard `min` against the ceiling would shave the massif off
+ * along a perfect cone and read as a machined bevel; blending over 0.12 keeps
+ * the shoulder organic and still lands strictly below the limit.
+ */
+const smoothMin = (a: number, b: number, k: number) => {
+  const t = Math.max(0, Math.min(1, 0.5 + (0.5 * (b - a)) / k))
+  return a * t + b * (1 - t) - k * t * (1 - t)
+}
+
+/**
  * The clay pit's bench field, without the micro-relief on top.
  *
  * The old version stepped a clean function of radius, which produced concentric
@@ -104,13 +192,47 @@ export const tileRelief = (terrain: Terrain, x: number, z: number, seed: number)
       break
     }
     case 'ore': {
-      // A massif wrapping a working quarry floor, so the peaks read as one
-      // mountain and number tokens still sit on flat ground in the middle.
-      const ring = Math.exp(-Math.pow((radial - 0.62) / 0.34, 2))
+      // A massif standing off a genuinely flat quarry bench.
+      //
+      // The old ring peaked at radius 0.62 with a wide sigma, which meant it
+      // still carried about 40% of its height at radius 0.3 -- directly under
+      // the number token. That, not the props, is what buried the numbers. The
+      // ring is now pushed out to 0.78 and tightened, and a bench mask holds
+      // the inner third of the tile at zero, so the disc sits on a cut shelf
+      // with the peaks out at the rim and corners where they belong.
+      const ring = Math.exp(-Math.pow((radial - 0.64) / 0.30, 2))
       const crest = ridge(x * 1.7 + s, z * 1.7, 4, s)
       const lobes = 0.4 + 0.6 * Math.pow(Math.sin(Math.atan2(z, x) * 2.5 + s * 0.001) * 0.5 + 0.5, 0.7)
-      h = ring * (0.5 + crest * 0.95) * lobes - Math.exp(-Math.pow(radial / 0.36, 2)) * 0.1
-      h += (fbm(x * 5 + s, z * 5, 3, s + 5) - 0.5) * 0.06
+      const bench = smoothstep(0.34, 0.64, radial)
+      // The massif is a cirque: low where it faces the camera, piling up round
+      // the back. Without this the sight-line clamp would do the same job by
+      // shaving the front off flat, and a shaved cone reads as a plateau. Doing
+      // it in the relief means the shape is authored rather than trimmed.
+      const back = radial > 1e-4 ? (1 - z / radial) * 0.5 : 0.5
+      const cirque = 0.46 + 0.54 * Math.pow(back, 0.7)
+      // Authored well above the sight ceiling on purpose. Tokens sit 1.73 apart,
+      // so the tallest anything can be halfway between two of them is about
+      // 0.94 -- and the previous pass fell so far short of that the massif read
+      // as a grey plate. Over-driving the amplitude and letting the smooth clamp
+      // take the top off puts the ridge line *at* its allowance instead of under
+      // it, and the noise underneath means only the peaks actually clip.
+      // Deliberately *not* saturating the sight ceiling. The tile only has about
+      // 0.8 of headroom between the token and the cone, and if the ground eats
+      // all of it there is nothing left for the crags to stand in -- which is
+      // what turned this tile into a smooth grey dome. The relief is an apron;
+      // the rock props are the mountain, and they have far better silhouettes.
+      h = ring * (0.30 + crest * 0.5) * lobes * cirque
+      // The cone takes the summits off, so the tile's ruggedness has to live in
+      // the flanks instead. A second ridged octave under the clamp gives the
+      // massif gullies and buttresses that survive being topped out.
+      h += ridge(x * 4.3 + s, z * 4.3, 2, s + 21) * 0.10 * ring
+      h += (fbm(x * 7 + s, z * 7, 3, s + 5) - 0.5) * 0.06
+      // Flat means flat. Multiplying the micro-noise by the same mask is what
+      // stops the shelf being a bench with gravel modelled into it.
+      h *= bench
+      // The working floor is scraped a little below the plateau, so the bench
+      // reads as excavated rather than as a plug of untouched ground.
+      h -= Math.exp(-Math.pow(radial / 0.44, 2)) * 0.05
       break
     }
     case 'desert': {
@@ -123,7 +245,10 @@ export const tileRelief = (terrain: Terrain, x: number, z: number, seed: number)
       break
     }
   }
-  return h * fade
+  // Every biome, not just the mountains: a wool hummock will never reach the
+  // cone, but stating the rule once means no future relief can quietly bury a
+  // number again.
+  return smoothMin(h * fade, sightCeiling(x, z), 0.12)
 }
 
 export const tileSeed = (tileId: string) => hashString(`katan-tile-${tileId}`)
@@ -262,10 +387,13 @@ export const createTileSurface = (terrain: Terrain, tileId: string, divisions = 
       // The pan is *dust*, not slate: at cool 1.26 it went pale blue and read as
       // a puddle under the token. Dried clay loses chroma but keeps its warm
       // bias, so most of the lift belongs in the overall value, not in blue.
-      // Riser darkening is deliberately light. It exists to say "this face was
-      // cut and is still damp", not to draw the shadow -- the sun does that now,
-      // and at 0.3 the two stacked up and the pit interior went to mud.
-      tint *= 0.88 * (1 + pan * 0.34) * (1 - riser * 0.15)
+      // Riser darkening is back at full strength. It was cut to 0.15 while the
+      // render was double-counting the baked ARH occlusion against a screen
+      // space pass at 1.35 and the pit interior was going to mud. That is
+      // fixed -- SSAO is down to 0.32 and the fill is up -- so the risers get to
+      // carry the "cut, still damp" read again, which is the thing that makes
+      // the eye count the terracing.
+      tint *= 0.88 * (1 + pan * 0.34) * (1 - riser * 0.28)
       warm = (1 - pan * 0.03) * (1 + riser * 0.2)
       cool = (1 + pan * 0.12) * (1 - riser * 0.34)
     }
@@ -274,8 +402,8 @@ export const createTileSurface = (terrain: Terrain, tileId: string, divisions = 
       // somewhere to go. Left alone at this exposure the tile clips to a white
       // plate, so the vertex pass carries the warmth back into it.
       tint *= 0.86
-      warm = 1.07
-      cool = 0.9
+      warm = 1.1
+      cool = 0.87
     }
     colors[i * 3] = tint * warm
     colors[i * 3 + 1] = tint * (0.985 + macro * 0.03)

@@ -3,7 +3,7 @@ import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import type { Board } from '../../game/types'
 import { useReducedMotion } from '../useReducedMotion'
-import { GROUND_Y, createTileSurface, tileSeed } from './hex'
+import { GROUND_Y, createTileSurface, sightCeiling, tileSeed } from './hex'
 import { fbm, makeRng, valueNoise } from './noise'
 import * as props from './props'
 import { scatterTile, type PropInstance } from './scatter'
@@ -323,6 +323,71 @@ const applyInstances = (mesh: THREE.InstancedMesh, instances: PropInstance[], ca
 
 export type TileSurfaceEntry = { id: string; geometry: THREE.BufferGeometry; material: THREE.MeshStandardMaterial }
 
+/**
+ * The other half of the number token's sight-line contract.
+ *
+ * `tileRelief` clamps the *ground*; this clamps everything standing on it. A
+ * prop's own bounding box gives its height in local units, so the biome authors
+ * never have to know how tall their spire happens to be -- they place it, and
+ * anything that would poke through the cone in front of the token is scaled
+ * down until it does not. Uniform scale, not a squash: a shortened mountain
+ * still has to look like a mountain.
+ *
+ * Coordinates here are tile-local, which is why this runs before `collect`
+ * offsets the instance onto the board.
+ */
+/**
+ * Rock can be buried; a tree cannot. Settling an outcrop deeper into the massif
+ * is how a too-tall crag gets under the sight line without becoming a pebble,
+ * and it is what real rock riding a ridge looks like anyway. Anything rooted and
+ * growing has to keep its footing on the surface, so it can only be scaled.
+ */
+const SINKABLE = /^(spire|crag|boulder|shard|pebble|clayBlock|clayRubble|wall|kerb)/
+
+/**
+ * Unit offsets across a prop's footprint, as fractions of its base radius. A
+ * prop is tested as a cone rather than as a box: its flank is much lower than
+ * its axis, and treating a spire as a full-height cylinder of its own width
+ * threw away four fifths of every mountain to protect airspace nothing was
+ * occupying.
+ */
+const CONE_SAMPLES: Array<[number, number, number]> = (() => {
+  const out: Array<[number, number, number]> = [[0, 0, 1]]
+  for (let i = 0; i < 8; i += 1) {
+    const a = (i / 8) * Math.PI * 2
+    // The taper is deliberately shallower than a true cone. A spire carries
+    // buttresses and bedding ledges well out from its axis, so assuming the
+    // silhouette falls off as fast as a clean cone let a flank graze a token at
+    // the extreme corner of the rig's travel.
+    for (const r of [0.45, 0.85]) out.push([Math.cos(a) * r, Math.sin(a) * r, Math.max(0.18, 1 - 0.85 * r)])
+  }
+  return out
+})()
+
+const clampToSightLine = (instance: PropInstance, top: number, width: number): PropInstance => {
+  if (top <= 0) return instance
+  const radius = width * instance.s
+  const reach = top * instance.sy
+  let allowed = Infinity
+  for (const [ux, uz, profile] of CONE_SAMPLES) {
+    const ceiling = sightCeiling(instance.x + ux * radius, instance.z + uz * radius)
+    allowed = Math.min(allowed, (ceiling - instance.y) / profile)
+  }
+  if (reach <= allowed) return instance
+  let y = instance.y
+  if (SINKABLE.test(instance.family)) {
+    // Settling rock deeper into the massif buys height back without turning a
+    // crag into a pebble, and an outcrop half-buried in its own mountain is
+    // what rock on a ridge actually looks like.
+    const sink = Math.min(reach - allowed, reach * 0.45)
+    y -= sink
+    allowed += sink
+  }
+  if (reach <= allowed) return { ...instance, y }
+  const factor = Math.max(0.1, allowed / reach)
+  return { ...instance, y, s: instance.s * factor, sy: instance.sy * factor }
+}
+
 export const useTerrainField = (board: Board) => {
   // Suspends until the baked maps are decoded. React holds the loading screen
   // up rather than the board showing a frame of untextured hexes.
@@ -331,6 +396,26 @@ export const useTerrainField = (board: Board) => {
   const built = useMemo(() => {
     const tiles: TileSurfaceEntry[] = []
     const byFamily = new Map<string, PropInstance[]>()
+    // Built once and handed to the instanced mesh later, so measuring a family's
+    // height for the sight-line clamp costs nothing extra.
+    const geometries = new Map<string, THREE.BufferGeometry>()
+    const geometryFor = (family: string) => {
+      let geometry = geometries.get(family)
+      if (!geometry) {
+        const definition = FAMILIES[family]
+        if (!definition) throw new Error(`Unknown terrain prop family: ${family}`)
+        geometry = definition.make()
+        geometry.computeBoundingBox()
+        geometries.set(family, geometry)
+      }
+      return geometry
+    }
+    const familyTop = (family: string) => geometryFor(family).boundingBox?.max.y ?? 0
+    const familyWidth = (family: string) => {
+      const box = geometryFor(family).boundingBox
+      if (!box) return 0
+      return Math.max(Math.abs(box.min.x), box.max.x, Math.abs(box.min.z), box.max.z)
+    }
     const collect = (instance: PropInstance, ox: number, oz: number) => {
       let list = byFamily.get(instance.family)
       if (!list) {
@@ -344,7 +429,9 @@ export const useTerrainField = (board: Board) => {
       const seed = tileSeed(tile.id)
       const surface = createTileSurface(tile.terrain, tile.id)
       tiles.push({ id: tile.id, geometry: surface.geometry, material: terrainMaterial(tile.terrain) })
-      for (const instance of scatterTile(tile.terrain, seed, surface.height)) collect(instance, tile.x, tile.z)
+      for (const instance of scatterTile(tile.terrain, seed, surface.height)) {
+        collect(clampToSightLine(instance, familyTop(instance.family), familyWidth(instance.family)), tile.x, tile.z)
+      }
     }
 
     const borders = buildBorders(board)
@@ -360,8 +447,7 @@ export const useTerrainField = (board: Board) => {
         material = SURFACE_MATERIAL[definition.surface]()
         materials.set(definition.surface, material)
       }
-      const geometry = definition.make()
-      const mesh = new THREE.InstancedMesh(geometry, material, instances.length)
+      const mesh = new THREE.InstancedMesh(geometryFor(family), material, instances.length)
       mesh.name = `terrain-${family}`
       applyInstances(mesh, instances, !NON_CASTING.has(family))
       meshes.push(mesh)
