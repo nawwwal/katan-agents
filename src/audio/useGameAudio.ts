@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GamePresentation } from '../game/useGame'
-import { CONTACT, DICE_BOUNCES, DICE_SETTLE, PRODUCTION_DELAY } from '../scene/motion/timing'
-import { placementSound, soundBank, type BedId, type SoundId } from './soundbank'
+import { diceThrowPlan } from '../scene/motion/diceThrow'
+import { CONTACT, PRODUCTION_DELAY } from '../scene/motion/timing'
+import { placementSound, settleSound, soundBank, type BedId, type SoundId } from './soundbank'
 
 // Audio is scheduled against the same timing constants the animation uses, so
 // a knock lands on the frame the die hits the desert and a thud lands on the
@@ -20,7 +21,7 @@ const OFFER_ACTIONS = new Set(['offer-trade', 'counter-trade'])
  * Beats that currently ship silent on purpose. Each needs a real recorded or
  * properly designed cue; a generic sine would be worse than nothing.
  */
-const SILENT = new Set(['end-turn', 'discard', 'finish-road-building'])
+const SILENT = new Set(['discard', 'finish-road-building'])
 
 /** Beats that raise the tense bed. A roll that is not a seven lowers it again. */
 const TENSE_ACTIONS = new Set(['move-robber', 'steal-from', 'discard'])
@@ -91,7 +92,7 @@ export function useGameAudio(
     void bank.setBeds(muted ? [] : bedsFor(stage, tense))
   }, [bank, muted, stage, tense])
 
-  const play = useCallback((id: SoundId, delay = 0, options: { pan?: number; gain?: number } = {}) => {
+  const play = useCallback((id: SoundId, delay = 0, options: { pan?: number; gain?: number; rate?: number } = {}) => {
     bank.play(id, { ...options, delay })
   }, [bank])
 
@@ -101,18 +102,44 @@ export function useGameAudio(
     const awards = presentation.awardChanges
 
     if (type === 'roll-dice') {
-      // Throw, the dice hopping, then the number lands.
+      // The dice are simulated, so their knocks are not on a fixed beat. The
+      // same plan the renderer plays back hands us the real contact times, and
+      // the plan is memoised on the roll, so the two cannot drift.
       const dice = presentation.events.find((event) => event.type === 'dice')?.publicData
       const total = typeof dice?.total === 'number' ? dice.total : undefined
-      const settles: SoundId[] = ['dice-settle', 'dice-settle-b', 'dice-settle-c']
       const one = typeof dice?.one === 'number' ? dice.one : 0
       const two = typeof dice?.two === 'number' ? dice.two : 1
+      const plan = diceThrowPlan([one, two], presentation.revision, 0)
+
       play('dice-shake')
-      play('dice-tumble', Math.max(DICE_BOUNCES[0] - 0.06, 0))
-      play(settles[one % 3], DICE_BOUNCES[1], { pan: -0.25 })
-      play(settles[(two + 1) % 3], DICE_BOUNCES[2], { pan: 0.25 })
+      const first = plan.contacts[0]?.time ?? 0.4
+      play('dice-tumble', Math.max(first - 0.08, 0))
+
+      // Loudest knocks only, in time order. Every micro-contact would be a
+      // machine gun; the ones a person would actually hear are the ones with
+      // energy behind them.
+      const knocks = plan.contacts
+        .slice()
+        .sort((a, b) => b.strength - a.strength)
+        .slice(0, 6)
+        .sort((a, b) => a.time - b.time)
+      knocks.forEach((contact, order) => {
+        const value = contact.die === 0 ? one : two
+        // Impact energy now picks the *sample*, not just the level. The settle
+        // family is nine recordings ordered by weight, so a corner clip and a
+        // flat landing are different events rather than the same one at two
+        // volumes. Gain and pitch still move, but far less than they used to:
+        // they were carrying the whole illusion when there were three sources,
+        // and a sample stretched that far starts to sound synthetic.
+        play(settleSound(contact.strength, value + order), contact.time, {
+          pan: contact.die === 0 ? -0.28 : 0.28,
+          gain: 0.55 + contact.strength * 0.5,
+          rate: 1.06 - contact.strength * 0.12,
+        })
+      })
+
       setTense(total === 7)
-      if (total === 7) play('roll-seven', DICE_SETTLE)
+      if (total === 7) play('roll-seven', plan.duration + 0.06)
       else if (Object.keys(presentation.resourceDeltas).length > 0) play('resource-gain', PRODUCTION_DELAY + 0.2)
     } else if (type === 'build-city') {
       play(placementSound('city', presentation.revision), CONTACT)
@@ -121,6 +148,16 @@ export function useGameAudio(
     } else if (ROAD_ACTIONS.has(type)) {
       // Alternate the two bodies so a road-building burst does not machine-gun.
       play(placementSound('road', presentation.revision), CONTACT)
+    } else if (type === 'end-turn') {
+      // The baton pass. `turn-start` is the honest sample for it — a turn
+      // ending is the next one beginning — but it fires sixty times a match,
+      // so it goes out at under half level. The playback rate is keyed to who
+      // just finished, which means a handoff is audibly a *different* handoff
+      // from the last one without anyone having to say a name.
+      const seat = presentation.events.findLast((event) => event.playerId)?.playerId ?? ''
+      let hash = 0
+      for (let index = 0; index < seat.length; index += 1) hash = (hash * 31 + seat.charCodeAt(index)) >>> 0
+      play('turn-start', 0.06, { gain: 0.42, rate: 0.93 + (hash % 5) * 0.045 })
     } else if (type === 'move-robber') {
       play('robber-move')
     } else if (type === 'steal-from') {

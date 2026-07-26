@@ -17,7 +17,9 @@ const BASE = '/assets/audio'
 export type SoundBus = 'sfx' | 'ambience' | 'music'
 
 export type SoundId =
-  | 'dice-shake' | 'dice-tumble' | 'dice-settle' | 'dice-settle-b' | 'dice-settle-c'
+  | 'dice-shake' | 'dice-tumble'
+  | 'dice-settle' | 'dice-settle-b' | 'dice-settle-c' | 'dice-settle-d'
+  | 'dice-settle-e' | 'dice-settle-f' | 'dice-settle-g' | 'dice-settle-h' | 'dice-settle-i'
   | 'place-settlement' | 'place-settlement-alt' | 'place-city' | 'place-city-alt'
   | 'place-road' | 'place-road-alt'
   | 'resource-gain' | 'trade-accept' | 'card-draw' | 'dev-card-play'
@@ -52,9 +54,16 @@ const spec = (id: SoundId, bus: SoundBus, gain: number, loop = false, startle = 
 export const SOUNDS: Readonly<Record<SoundId, SoundSpec>> = {
   'dice-shake': spec('dice-shake', 'sfx', 0.85),
   'dice-tumble': spec('dice-tumble', 'sfx', 0.95),
-  'dice-settle': spec('dice-settle', 'sfx', 0.7),
-  'dice-settle-b': spec('dice-settle-b', 'sfx', 0.7),
-  'dice-settle-c': spec('dice-settle-c', 'sfx', 0.7),
+  // Gains are not a taste judgement, they are measured. See DICE_SETTLES.
+  'dice-settle': spec('dice-settle', 'sfx', 0.82),
+  'dice-settle-b': spec('dice-settle-b', 'sfx', 0.78),
+  'dice-settle-c': spec('dice-settle-c', 'sfx', 0.9),
+  'dice-settle-d': spec('dice-settle-d', 'sfx', 0.4),
+  'dice-settle-e': spec('dice-settle-e', 'sfx', 0.29),
+  'dice-settle-f': spec('dice-settle-f', 'sfx', 0.31),
+  'dice-settle-g': spec('dice-settle-g', 'sfx', 0.3),
+  'dice-settle-h': spec('dice-settle-h', 'sfx', 0.57),
+  'dice-settle-i': spec('dice-settle-i', 'sfx', 0.48),
   'place-settlement': spec('place-settlement', 'sfx', 0.9),
   'place-settlement-alt': spec('place-settlement-alt', 'sfx', 0.9),
   'place-city': spec('place-city', 'sfx', 0.9),
@@ -97,7 +106,9 @@ export const BED_IDS = SOUND_IDS.filter((id): id is BedId => SOUNDS[id].loop)
 /** Everything a first turn can reach. Beds and fanfares load lazily. */
 export const ESSENTIAL_SOUNDS: readonly SoundId[] = [
   'ui-hover', 'ui-click', 'ui-click-deep', 'ui-open', 'ui-close', 'ui-error',
-  'dice-shake', 'dice-tumble', 'dice-settle', 'dice-settle-b', 'dice-settle-c',
+  'dice-shake', 'dice-tumble',
+  'dice-settle', 'dice-settle-b', 'dice-settle-c', 'dice-settle-d', 'dice-settle-e',
+  'dice-settle-f', 'dice-settle-g', 'dice-settle-h', 'dice-settle-i',
   'place-settlement', 'place-settlement-alt', 'place-road', 'place-road-alt',
   'place-city', 'place-city-alt', 'resource-gain', 'turn-start',
 ]
@@ -391,10 +402,58 @@ export const placementSound = (
   return options[Math.abs(Math.trunc(seed)) % options.length]
 }
 
+/**
+ * The dice settle family, ordered lightest contact to heaviest.
+ *
+ * Nine samples rather than three because the throw is simulated: the roll plan
+ * hands the audio layer the six loudest contacts of a roll at their real times,
+ * and three sources means hearing the same one twice inside 200 ms, which the
+ * ear reads as a flam rather than as a die. Five of the nine are their own
+ * generation — a bone tick, a deep oak knock, a knock on a cardboard board, a
+ * die-on-die crack, and the original — because pitch-shifting one clip nine
+ * ways is still one event, and the playback layer already varies pitch.
+ *
+ * The order is by weight, and it is measured, not guessed. Every file's energy
+ * over its first 200 ms was measured and the gains above were solved so that
+ * the nine sit on an even six-decibel ramp from `dice-settle-d` at the light
+ * end to `dice-settle-f` at the heavy end. Without that the ramp was 12.6 dB
+ * and pointing the wrong way in places, because a bright three-millisecond tick
+ * runs into the peak ceiling long before it gets as loud as a deep knock.
+ * Re-solve the gains if any of these files is regenerated; `E200` in the
+ * verification pass is the number to match.
+ */
+export const DICE_SETTLES: readonly SoundId[] = [
+  'dice-settle-d',   // bone tick, brightest and shortest
+  'dice-settle-i',   // glancing die-on-die clip
+  'dice-settle-b',   // brighter, faster die
+  'dice-settle',     // the original sharp knock on oak
+  'dice-settle-h',   // square die-on-die crack
+  'dice-settle-c',   // heavier, duller die
+  'dice-settle-g',   // blunt knock on the cardboard board
+  'dice-settle-e',   // flat face slapping oak
+  'dice-settle-f',   // deep resonant oak knock, heaviest
+]
+
+/**
+ * Pick the settle whose weight matches a contact's energy.
+ *
+ * `strength` is the contact's normalised impact energy from the roll plan, so a
+ * die clipping a corner gets the bone tick and a die dropping flat gets the
+ * deep knock. `nonce` shifts the choice by one step either way, which keeps two
+ * contacts of the same energy inside one roll from firing the same file twice;
+ * pass the contact's index. Deterministic, so a given roll always sounds the
+ * same as itself.
+ */
+export const settleSound = (strength: number, nonce: number): SoundId => {
+  const span = DICE_SETTLES.length - 1
+  const centre = Math.round(Math.max(0, Math.min(1, strength)) * span)
+  const jitter = (Math.abs(Math.trunc(nonce)) % 3) - 1
+  return DICE_SETTLES[Math.max(0, Math.min(span, centre + jitter))]
+}
+
 export const diceSequence = (bank: SoundBank, dice: readonly [number, number]) => {
-  const settles: SoundId[] = ['dice-settle', 'dice-settle-b', 'dice-settle-c']
   bank.play('dice-shake')
   bank.play('dice-tumble', { delay: 0.5 })
-  bank.play(settles[dice[0] % settles.length], { delay: 1.15, pan: -0.25 })
-  bank.play(settles[(dice[1] + 1) % settles.length], { delay: 1.32, pan: 0.25 })
+  bank.play(settleSound(0.75, dice[0]), { delay: 1.15, pan: -0.25 })
+  bank.play(settleSound(0.4, dice[1] + 1), { delay: 1.32, pan: 0.25 })
 }
