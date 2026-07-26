@@ -492,7 +492,7 @@ const produce = (state: GameState, roll: number) => {
   }
 }
 
-const beginRobber = (state: GameState, discard: boolean) => {
+const beginRobber = (state: GameState, discard: boolean, events?: GameEvent[]) => {
   state.robberVictims = []
   if (!discard) {
     state.phase = 'move-robber'
@@ -511,6 +511,9 @@ const beginRobber = (state: GameState, discard: boolean) => {
   if (state.discardQueue.length) {
     state.phase = 'discard'
     state.actingPlayerId = state.discardQueue[0]
+    // Said once for the roll, not once per player. Without it the log jumps from
+    // the seven straight to a stack of discards and reads like a robber penalty.
+    events?.push(addEvent(state, 'hand-limit', 'A seven. Every hand above seven discards half.'))
   } else {
     state.phase = 'move-robber'
     state.actingPlayerId = currentPlayer(state).id
@@ -647,7 +650,7 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
     state.lastRoll = dice
     const total = dice[0] + dice[1]
     events.push(addEvent(state, 'dice', `${actor.name} rolled ${total}.`, actor.id, { total, one: dice[0], two: dice[1] }))
-    if (total === 7) beginRobber(state, true)
+    if (total === 7) beginRobber(state, true, events)
     else {
       produce(state, total)
       state.phase = 'action'

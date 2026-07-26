@@ -155,6 +155,35 @@ assert.equal(emptyRobbery.ok, true)
 if (!emptyRobbery.ok) throw new Error('zero-card robbery failed')
 assert.equal(emptyRobbery.events.at(-1)?.message, 'Marlow had nothing to take.')
 
+// A seven says why once, for the roll, before the stack of discards. Without it
+// the log reads as though the robber were taking the cards.
+const sevenGame = createGame({ seed: 78, controllers: ['human', 'agent', 'agent'] })
+setActionTurn(sevenGame, 0)
+sevenGame.phase = 'pre-roll'
+for (const seat of [0, 1]) sevenGame.players[seat].resources = { brick: 3, lumber: 3, ore: 3, grain: 0, wool: 0 }
+let sevenRoll = 0
+const rolledSeven = applyAction(sevenGame, { type: 'roll-dice' }, () => (sevenRoll += 1) === 1 ? 0.35 : 0.55)
+assert.equal(rolledSeven.ok, true)
+if (!rolledSeven.ok) throw new Error('seven roll failed')
+assert.equal(rolledSeven.state.lastRoll![0] + rolledSeven.state.lastRoll![1], 7)
+assert.equal(rolledSeven.state.phase, 'discard')
+assert.deepEqual(rolledSeven.events.map((event) => event.message), [
+  'You rolled 7.',
+  'A seven. Every hand above seven discards half.',
+], 'the hand limit is explained once for the roll, not once per player')
+
+// A Knight moves the robber without touching anyone's hand, so it must stay quiet
+// about the hand limit.
+const knightGame = createGame({ seed: 79, controllers: ['human', 'agent', 'agent'] })
+setActionTurn(knightGame, 0)
+knightGame.players[0].development = ['knight']
+knightGame.players[1].resources = { brick: 4, lumber: 4, ore: 4, grain: 0, wool: 0 }
+const playedKnight = applyAction(knightGame, { type: 'play-development', card: 'knight' })
+assert.equal(playedKnight.ok, true)
+if (!playedKnight.ok) throw new Error('knight failed')
+assert.equal(playedKnight.state.phase, 'move-robber')
+assert.equal(playedKnight.events.some((event) => event.type === 'hand-limit'), false, 'a Knight triggers no discards, so it says nothing about the hand limit')
+
 const roadBuildingGame = createGame({ seed: 76, controllers: ['human', 'agent', 'agent'] })
 setActionTurn(roadBuildingGame, 0)
 const roadOrigin = Object.values(roadBuildingGame.board.vertices).find((vertex) => vertex.edges.length >= 2)!
@@ -178,4 +207,4 @@ const brickForGrain = legalActionsForPlayer(harborTradeGame, 'p0')
 assert.deepEqual(brickForGrain.map((action) => action.ratio), [3, 4], 'harbor rates supplement the baseline 4:1 rate')
 assert.equal(applyAction(harborTradeGame, { type: 'maritime-trade', give: 'brick', receive: 'grain', ratio: 4 }).ok, true)
 
-console.log('rules check passed: supply, development timing, road interruption, robber victims, Road Building, maritime rates, active-turn victory')
+console.log('rules check passed: supply, development timing, road interruption, robber victims, the hand limit on a seven, Road Building, maritime rates, active-turn victory')
