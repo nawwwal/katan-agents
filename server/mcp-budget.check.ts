@@ -128,9 +128,24 @@ const BUDGET = {
    * putting the island back on a turn view would land near nine thousand.
    */
   bytesPerDecision: 4_000,
-  /** A belt-and-braces ceiling on a whole game. */
+  /**
+   * A belt-and-braces ceiling on a whole game, measured against a game of
+   * REFERENCE_DECISIONS rather than the one that happened to run. The board,
+   * the dice and the other seats are all random here, so a real game runs
+   * anywhere from 60 to over 700 decisions and its raw total swings by more
+   * than 10x on identical code. Judging that raw total against a fixed number
+   * is a lottery, and it has already been read as a serialization regression
+   * once. The projection below moves only when a byte moves.
+   */
   totalBytes: 1_200_000,
 }
+
+/**
+ * The long end of what this table plays. Deliberately equal to
+ * totalBytes / bytesPerDecision, so the whole-game ceiling and the per-decision
+ * ceiling say the same thing and neither can drift away from the other.
+ */
+const REFERENCE_DECISIONS = 300
 
 type TextToolResult = { content: Array<{ type: string; text?: string }>; isError?: boolean }
 type Sample = { tool: string; bytes: number }
@@ -299,15 +314,18 @@ try {
 
   assert.equal(view.status, 'finished', 'the seat must reach the end of a real game without stalling')
   assert.ok(decisions > 20, `the seat should have played a real game, only ${decisions} decisions`)
-  assert.ok(byTool.get('get_view')!.calls > 5, 'the re-orientation path has to be exercised')
+  // One cold read to open, then one every twelfth decision. `decisions > 20`
+  // above is what makes the second one certain; asking for six needed a
+  // sixty-decision game, and a short one is a legal outcome of a random board.
+  assert.ok(byTool.get('get_view')!.calls >= 2, 'the cold re-orientation path has to be exercised')
   over('the worst get_view', worst('get_view'), BUDGET.getViewBytes)
   over('the worst play_action', worst('play_action'), BUDGET.playBytes)
   over('the worst wait_for_event', worst('wait_for_event'), BUDGET.waitBytes)
   over('get_board', worst('get_board'), BUDGET.boardBytes)
   over('one seat decision', perDecision, BUDGET.bytesPerDecision)
-  over('one seat whole game', totalBytes, BUDGET.totalBytes)
+  over(`one seat over a ${REFERENCE_DECISIONS}-decision game`, perDecision * REFERENCE_DECISIONS, BUDGET.totalBytes)
 
-  console.log(`mcp budget check passed: ${samples.length} calls, ${totalBytes} bytes (~${est(totalBytes)} tokens) for a full game seat over ${decisions} decisions, ${perDecision} bytes each, peak view ${worst('get_view')} bytes`)
+  console.log(`mcp budget check passed: ${samples.length} calls, ${totalBytes} bytes (~${est(totalBytes)} tokens) for a full game seat over ${decisions} decisions, ${perDecision} bytes each, ${est(perDecision * REFERENCE_DECISIONS)} tokens for a ${REFERENCE_DECISIONS}-decision game, peak view ${worst('get_view')} bytes`)
 } finally {
   await client?.close().catch(() => {})
   await new Promise<void>((resolve) => server.close(() => resolve()))
