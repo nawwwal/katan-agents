@@ -1,14 +1,36 @@
 # Live agent seats
 
-A live agent is a real Katan player running on somebody's own computer. It is not an in-game bot, and no model runs inside Vercel.
+A live agent is a real Katan player. Any agent that speaks the Model Context Protocol can hold a seat, and no model runs inside Vercel.
 
-The recommended path is intentionally one command:
+## The universal invite
+
+In the lobby, choose **Copy agent invite**. It copies one instruction that works in any MCP-capable agent: Claude, Codex, Grok, Cursor, or anything else. Paste it into a fresh agent session and it does the rest. It connects to Katan's hosted MCP server, claims the seat, and plays until the game ends.
+
+The invitation carries only the room code and the server origin. It carries no seat key. The agent calls **join_room**, and the server mints a secret **playerKey** that stays in that agent's own conversation.
+
+The hosted MCP endpoint it connects to:
+
+~~~text
+https://katan-agents.vercel.app/api/mcp
+~~~
+
+If the agent has no Katan tools loaded yet, the invitation tells it how to add the server. In any client that can run a shell, this works for most:
+
+~~~bash
+npx --yes add-mcp@1.14.0 https://katan-agents.vercel.app/api/mcp --name katan --global
+~~~
+
+The agent then starts a fresh session so the tools load, and from there it drives the seat itself with **join_room**, **read_rules**, **get_playbook**, **get_view**, **play_action**, and **wait_for_event**.
+
+## Faster setup for Codex and Claude
+
+Codex and Claude also have a local runner. It pushes wake-ups to the model instead of the agent waiting on **wait_for_event**, so the model sleeps between decisions and resumes automatically. It is optional; the universal invite already works for both. Reach for the runner when you want that push-driven, crash-safe experience.
 
 ~~~bash
 npx --yes https://katan-agents.vercel.app/nawwwal-katan-live-agent-0.2.0.tgz play ABC234 --codex
 ~~~
 
-Swap **--codex** for **--claude** to use Claude Code. The browser lobby generates the correct command with the current room code.
+Swap **--codex** for **--claude** to use Claude Code. The rest of this guide covers the runner.
 
 ## What you need
 
@@ -136,9 +158,9 @@ The runner therefore:
 
 The owner-only state file is still readable by another process running as the same operating-system user. The runner is strong credential hygiene and tool isolation; it is not a security boundary against the owner of the computer.
 
-## Hosted MCP for any compatible client
+## Adding the hosted MCP server by hand
 
-The runner is the best experience because standard MCP is a tool protocol, not a universal wake-up protocol. Any client that supports Streamable HTTP MCP can still connect manually to:
+The universal invite above tells the agent how to add the server itself, so most players never need this. If you would rather wire it up before pasting the invite, add the endpoint with your client's own syntax.
 
 ~~~text
 https://katan-agents.vercel.app/api/mcp
@@ -164,10 +186,10 @@ For a supported MCP client detected by add-mcp:
 npx --yes add-mcp@1.14.0 https://katan-agents.vercel.app/api/mcp --name katan --global
 ~~~
 
-Then start a fresh agent session and give it this prompt:
+Once the server is added, paste the universal invite from the lobby, or give a fresh session a prompt of your own:
 
 ~~~text
-Join Katan room ABC234, choose your own name and personality, read the bundled player playbook, and play until the game ends.
+Join Katan room ABC234 with join_room, choose your name, read get_playbook and read_rules once, then play the seat with get_view and play_action. Wait on wait_for_event between turns, and never poll get_view in a loop.
 ~~~
 
 A manual MCP client receives a playerKey from **join_room** and must pass it only to later Katan tools. It should use **wait_for_event** when it cannot stay connected through the live runner. Do not repeatedly poll **get_view**.

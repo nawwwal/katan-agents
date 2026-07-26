@@ -696,34 +696,6 @@ button { -webkit-tap-highlight-color: transparent; }
 .lobby-seats .seat-card { min-height: 152px; }
 .waiting-copy { align-self: center; color: var(--fg-2); font-size: var(--t-ui); font-weight: 600; }
 
-.agent-invite-backdrop { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; padding: 20px; background: var(--scrim); animation: veil-in var(--dur-2) ease both; }
-.agent-invite-dialog {
-  width: min(790px, calc(100vw - 28px)); max-height: calc(100dvh - 28px); overflow: auto;
-  border: 1px solid var(--edge-brass-strong); border-radius: var(--r-panel); color: var(--fg);
-  background: var(--panel-solid); box-shadow: var(--rim-light), var(--lift-3);
-  animation: card-arrive var(--dur-3) var(--ease-out) both;
-}
-.agent-invite-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 22px 24px 18px; border-bottom: 1px solid rgba(216, 177, 104, .18); }
-.agent-invite-dialog header span, .agent-step-label { display: block; color: var(--brass); font-size: var(--t-micro); font-weight: 650; letter-spacing: .18em; text-transform: uppercase; }
-.agent-invite-dialog h3 { margin: 5px 0 0; font-family: var(--display); font-size: var(--t-h2); font-weight: 600; color: var(--fg); }
-.agent-invite-close { width: 40px; height: 40px; flex: 0 0 40px; display: grid; place-items: center; border: 1px solid rgba(216, 177, 104, .24); border-radius: var(--r-ctl); color: var(--fg-2); background: rgba(255, 255, 255, .05); cursor: pointer; }
-.agent-invite-close:hover { color: var(--brass-hi); background: rgba(255, 255, 255, .1); }
-.agent-invite-close svg { width: 15px; height: 15px; }
-.agent-invite-lede { margin: 0; padding: 18px 24px 0; color: var(--fg-2); font-size: var(--t-body); line-height: 1.6; }
-.agent-invite-steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 20px 24px 24px; }
-.agent-invite-steps article { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; padding: 20px; border: 1px solid rgba(216, 177, 104, .2); border-radius: var(--r-card); background: rgba(255, 255, 255, .028); }
-.agent-invite-steps h4 { margin: 9px 0 7px; font-family: var(--display); font-size: var(--t-h3); font-weight: 600; color: var(--fg); }
-.agent-invite-steps p { flex: 1; margin: 0 0 20px; color: var(--fg-muted); font-size: var(--t-ui); line-height: 1.6; }
-.agent-invite-steps button { width: 100%; min-height: 46px; padding: 0 14px; font-size: var(--t-ui); }
-.agent-manual-copy { width: 100%; display: grid; gap: 6px; margin-top: 14px; padding: 12px; border: 1px solid rgba(216, 177, 104, .3); border-radius: var(--r-ctl); background: rgba(1, 6, 9, .6); }
-.agent-manual-copy strong { color: var(--brass-hi); font-size: var(--t-ui); font-weight: 650; }
-.agent-manual-copy span { color: var(--fg-muted); font-size: var(--t-label); line-height: 1.45; }
-.agent-manual-copy textarea { width: 100%; min-height: 116px; resize: vertical; padding: 10px; border: 1px solid rgba(216, 177, 104, .22); border-radius: 7px; color: var(--fg); background: #060b0e; font: 11px/1.5 var(--mono); }
-.agent-invite-dialog > footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 24px 20px; border-top: 1px solid rgba(216, 177, 104, .16); }
-.agent-invite-dialog > footer p { max-width: 520px; margin: 0; color: var(--fg-muted); font-size: var(--t-label); line-height: 1.55; }
-.agent-invite-dialog > footer a { flex: 0 0 auto; color: var(--brass); font-size: var(--t-ui); font-weight: 650; text-decoration: none; text-underline-offset: 3px; }
-.agent-invite-dialog > footer a:hover { text-decoration: underline; }
-
 .introduction-card { width: min(660px, 94vw); padding: clamp(28px, 4vw, 44px); text-align: center; }
 .introduction-card > p { color: var(--fg-2); font-size: var(--t-body); line-height: 1.6; text-wrap: balance; }
 .turn-order { list-style: none; display: grid; gap: 8px; margin: 24px 0; padding: 0; }
@@ -1303,14 +1275,6 @@ button.table-card:hover, button.table-card:focus-visible { z-index: 5; transform
   .room-invite { align-items: flex-start; flex-direction: column; margin: 16px 14px 0; }
   .invite-actions { justify-content: flex-start; }
   .room-invite strong { font-size: 28px; }
-  .agent-invite-backdrop { align-items: end; padding: 10px; }
-  .agent-invite-dialog { width: 100%; max-height: calc(100dvh - 20px); }
-  .agent-invite-dialog > header { padding: 16px 15px 14px; }
-  .agent-invite-dialog h3 { font-size: 22px; }
-  .agent-invite-lede { padding: 14px 15px 0; font-size: var(--t-ui); }
-  .agent-invite-steps { grid-template-columns: 1fr; padding: 14px 15px 16px; }
-  .agent-invite-steps article { padding: 16px; }
-  .agent-invite-dialog > footer { align-items: flex-start; flex-direction: column; padding: 14px 15px 16px; }
   .seat-grid { grid-template-columns: 1fr; padding: 14px; }
   .seat-card { grid-template-columns: 1fr 1fr; }
   .seat-heading { grid-column: 1 / 3; min-height: 0; }
