@@ -113,9 +113,52 @@ assert.equal(stale?.error.code, 'stale_revision')
 const invalid = await fetch(`${baseUrl}/api/rooms/${code}`, { headers: { authorization: 'Bearer wrong-token' } })
 assert.equal(invalid.status, 403)
 
+// A live socket answers its heartbeat for the seat, not for the socket, so a
+// client can tell a quiet room from one that is no longer there.
+clients[0].socket.send(JSON.stringify({ type: 'ping' }))
+while (!clients[0].messages.some((message) => message.type === 'pong')) await new Promise((resolve) => setTimeout(resolve, 5))
+
+/**
+ * The intended way to play is a human host plus several agent seats on one
+ * machine, so every seat shares one address. Charging the address for every
+ * connection meant those seats spent each other's budget and locked the host
+ * out of their own room after forty reconnects between them. A seat that proves
+ * it holds a credential this server minted stops being charged to the address,
+ * so the whole table can reconnect well past that ceiling.
+ */
+const reconnect = async (token: string) => {
+  const socket = new WebSocket(`ws://127.0.0.1:${port}/api/ws`)
+  // Listen before opening. A refusal can arrive in the same batch as the
+  // handshake, and a listener attached after `open` misses it.
+  const messages: ServerRoomMessage[] = []
+  socket.on('message', (data) => messages.push(JSON.parse(data.toString()) as ServerRoomMessage))
+  await once(socket, 'open')
+  socket.send(JSON.stringify({ type: 'hello', code, token }))
+  while (!messages.some((message) => message.type === 'snapshot' || message.type === 'error')) await new Promise((resolve) => setTimeout(resolve, 2))
+  socket.close()
+  // A refused socket is already gone by now, and `once` on a closed socket waits forever.
+  while (socket.readyState !== WebSocket.CLOSED) await new Promise((resolve) => setTimeout(resolve, 2))
+  return messages.findLast((message): message is Extract<ServerRoomMessage, { type: 'error' }> => message.type === 'error')?.error.code
+}
+
+const seats = [host, blue, amber].map((entry) => entry.credentials.token as string)
+const refusals: (string | undefined)[] = []
+for (let round = 0; round < 14; round += 1) {
+  for (const token of seats) refusals.push(await reconnect(token))
+}
+assert.deepEqual(refusals.filter(Boolean), [], `forty-two seated reconnects from one address must all land, refused: ${refusals.filter(Boolean).join(', ')}`)
+
+// One seat's storm is charged to that seat and reaches no further. The host has
+// spent fourteen of its thirty, so sixteen more puts it over on its own.
+const stormed: (string | undefined)[] = []
+for (let attempt = 0; attempt < 20; attempt += 1) stormed.push(await reconnect(seats[0]))
+assert.equal(stormed.at(-1), 'rate_limited', 'a seat that storms the socket must be throttled on its own credential')
+assert.equal(await reconnect(seats[1]), undefined, 'a throttled seat must not cost the seat beside it its connection')
+assert.equal(await reconnect(seats[2]), undefined, 'a throttled seat must not cost the seat beside it its connection')
+
 for (const client of clients) client.socket.close()
 await Promise.all(clients.map((client) => once(client.socket, 'close')))
 await new Promise<void>((resolve) => server.close(() => resolve()))
 await closeRoomStore()
 
-console.log('room server check passed: health, create, join, board seed and options plumbed into the played island, no bots, pre-auth rejection, private views, realtime action fanout, stale revision, seat auth')
+console.log('room server check passed: health, create, join, board seed and options plumbed into the played island, no bots, pre-auth rejection, private views, realtime action fanout, stale revision, seat auth, seat heartbeat, seats sharing one address, per-seat throttling')

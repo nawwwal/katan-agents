@@ -192,10 +192,26 @@ if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
 return count
 `
 
-export const enforceRateLimit = async (scope: 'create' | 'join' | 'socket' | 'mcp', identity: string, limit: number, windowSeconds: number) => {
+const RATE_RELEASE = `
+local count = redis.call('DECR', KEYS[1])
+if count <= 0 then redis.call('DEL', KEYS[1]) end
+return 1
+`
+
+/**
+ * `seat` is keyed on a credential this server minted rather than on where the
+ * caller sits, because the intended way to play is a human plus several agent
+ * seats on one machine, all sharing one address. Keyed on the address, those
+ * seats spend each other's budget and the host is locked out of their own room.
+ */
+type RateScope = 'create' | 'join' | 'socket' | 'seat' | 'mcp'
+
+const rateKey = (scope: RateScope, identity: string) =>
+  `katan:rate:${scope}:${createHash('sha256').update(identity || 'unknown').digest('hex').slice(0, 24)}`
+
+export const enforceRateLimit = async (scope: RateScope, identity: string, limit: number, windowSeconds: number) => {
   assertRoomStore()
-  const identityHash = createHash('sha256').update(identity || 'unknown').digest('hex').slice(0, 24)
-  const key = `katan:rate:${scope}:${identityHash}`
+  const key = rateKey(scope, identity)
   let count: number
   if (redis) count = Number(await redis.eval(RATE_LIMIT, 1, key, String(windowSeconds)))
   else {
@@ -210,7 +226,51 @@ export const enforceRateLimit = async (scope: 'create' | 'join' | 'socket' | 'mc
       for (const [candidate, value] of localRateLimits) if (value.expiresAt <= now) localRateLimits.delete(candidate)
     }
   }
-  if (count > limit) throw new RoomError('rate_limited', 'Too many requests. Wait a few seconds and try again.', 429)
+  if (count > limit) throw new RoomError('rate_limited', `Too many attempts from this device. This clears itself within ${windowSeconds} seconds.`, 429)
+}
+
+/**
+ * Hands one unit of a budget back. A connection that turns out to belong to a
+ * real seat was never the anonymous traffic the address budget exists to stop,
+ * so it stops paying for it and answers to its own seat budget instead.
+ */
+export const releaseRateLimit = async (scope: RateScope, identity: string) => {
+  if (redisRequired) return
+  const key = rateKey(scope, identity)
+  if (redis) {
+    await redis.eval(RATE_RELEASE, 1, key).catch(() => undefined)
+    return
+  }
+  const current = localRateLimits.get(key)
+  if (!current) return
+  if (current.count <= 1) localRateLimits.delete(key)
+  else localRateLimits.set(key, { ...current, count: current.count - 1 })
+}
+
+/**
+ * The cheapest honest answer to "is this seat still real": no player view, no
+ * board clone. A live socket asks this on every heartbeat, which is how a client
+ * tells a quiet room from one that is gone.
+ */
+export const assertSeatLive = async (code: string, token: string) => {
+  const room = await getStoredRoom(code)
+  if (!room) throw new RoomError('room_not_found', 'No room with that code. Check the six characters, or ask the host for a fresh code.', 404)
+  if (!seatForToken(room, token)) throw new RoomError('invalid_seat_token', 'This seat is no longer yours. Rejoin with the room code.', 403)
+}
+
+/**
+ * Who a request is from, for rate limiting only. A forwarding header is only
+ * believed behind a proxy that sets one, because anywhere else it is a header
+ * any caller can write, and one header would hand them a fresh budget.
+ */
+const trustsProxy = () => Boolean(process.env.VERCEL) || process.env.KATAN_TRUST_PROXY === '1'
+
+export const clientIdentity = (request: { headers: Record<string, string | string[] | undefined>; socket: { remoteAddress?: string } }) => {
+  const peer = request.socket.remoteAddress || 'unknown'
+  if (!trustsProxy()) return peer
+  const forwarded = request.headers['x-vercel-forwarded-for'] ?? request.headers['x-forwarded-for']
+  const value = Array.isArray(forwarded) ? forwarded[0] : forwarded
+  return value?.split(',')[0]?.trim() || peer
 }
 
 export const roomStoreHealth = () => ({

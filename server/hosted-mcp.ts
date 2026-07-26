@@ -2,7 +2,7 @@ import type http from 'node:http'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { z } from 'zod'
-import { enforceRateLimit, getRoomView, joinRoom, playRoomAction, RoomError, waitForRoomChange } from './room-service.js'
+import { clientIdentity, enforceRateLimit, getRoomView, joinRoom, playRoomAction, RoomError, waitForRoomChange } from './room-service.js'
 import { AGENT_INSTRUCTIONS, PLAYER_SKILL, PLAYER_SKILL_URI, RULES, RULES_URI, playPromptText } from './mcp-content.js'
 import { choiceFieldFor, gameOver, seatMustAct, textResult, toAgentBoard, toAgentView } from './mcp-view.js'
 
@@ -185,10 +185,15 @@ const createHostedMcpServer = (bearerPlayerKey?: string) => {
   return server
 }
 
+/**
+ * A runner seat carries the credential this server minted for it, which is a
+ * truer identity than an address that a human host and several local agent
+ * seats all share. Callers without one still answer for their address.
+ */
 const requestIdentity = (request: http.IncomingMessage) => {
-  const forwarded = request.headers['x-vercel-forwarded-for'] ?? request.headers['x-forwarded-for']
-  const value = Array.isArray(forwarded) ? forwarded[0] : forwarded
-  return value?.split(',')[0]?.trim() || request.socket.remoteAddress || 'unknown'
+  const authorization = request.headers.authorization
+  if (authorization?.startsWith('Bearer ')) return `seat:${authorization.slice(7)}`
+  return clientIdentity(request)
 }
 
 const assertAllowedOrigin = (request: http.IncomingMessage) => {
