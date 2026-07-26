@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import type { BoardEdge, GameAction, GameDisplayState, PlayerColor } from '../game/types'
 import { usePlacementDrop } from './motion/placement'
-import { MOTION_SPEED, seededFrom } from './motion/spring'
+import { clampDelta, MOTION_SPEED, seededFrom, setSpring, spring, stepSpring } from './motion/spring'
 import { BEACON_PENDING, PLAYER_BEACON, PLAYER_TRIM, colorKeyFromHex } from './playerColors'
 import {
   BEACON_PERIOD,
@@ -351,8 +351,28 @@ export function VertexTargets({ game, actions, pendingAction, touchTarget, onAct
   const synced = useRef(false)
   useEffect(() => { synced.current = false }, [actions])
 
-  useFrame(({ clock }) => {
+  /**
+   * The staging beat.
+   *
+   * Choosing a target already says a great deal — the chosen marker goes to 1.7
+   * and its fifty-three neighbours drop to 0.58 and 42 percent brightness — but
+   * until now it said all of it between one frame and the next. A substitution
+   * is not an event. On touch it is worse than on a mouse, because the finger
+   * that made the choice is sitting on top of the thing that changed, and by the
+   * time it lifts there is nothing left to notice.
+   *
+   * So the emphasis arrives instead of appearing. One spring for the whole set,
+   * because only one target can be staged, with enough ring in it to read as the
+   * marker standing up rather than as a resize. The flow is untouched: this is
+   * the same two steps, with the first one visible.
+   */
+  const staged = useRef(spring(0))
+
+  useFrame(({ clock }, delta) => {
     const touch = touchTarget ? 1.55 : 1
+    if (reducedMotion) setSpring(staged.current, hasPending ? 1 : 0)
+    else stepSpring(staged.current, hasPending ? 1 : 0, 2.6, 0.62, clampDelta(delta))
+    const stagedNow = staged.current.value
     actions.forEach((action, index) => {
       const vertex = game.board.vertices[action.vertexId]
       const seed = seeds[index]
@@ -362,7 +382,11 @@ export function VertexTargets({ game, actions, pendingAction, touchTarget, onAct
       // the confirm bar is describing something the eye can already single out.
       const quiet = hasPending && !pending
       const rank = 0.76 + 0.24 * seed.emphasis
-      const scale = (pending ? 1.7 : active ? 1.25 : 1) * rank * (quiet ? 0.58 : 1) * touch
+      // Both halves of the staging beat ride the same spring, so the chosen
+      // marker rises and the rest step back on one curve rather than two.
+      const emphasis = pending ? 1 + 0.7 * stagedNow : active ? 1.25 : 1
+      const recede = quiet ? 1 - 0.42 * stagedNow : 1
+      const scale = emphasis * rank * recede * touch
       const pulse = beaconPulse(clock.elapsedTime, seed.phase, reducedMotion)
       const breathe = 0.92 + pulse * 0.14
 
@@ -389,7 +413,19 @@ export function VertexTargets({ game, actions, pendingAction, touchTarget, onAct
 
       dummy.rotation.set(0, 0, 0)
       dummy.position.set(vertex.x, DECK_Y + 0.2, vertex.z)
-      dummy.scale.setScalar(touch)
+      // The hit volume grows with the drawn mark and never shrinks with it.
+      //
+      // Never shrinking is the important half: a de-emphasised corner draws at
+      // 0.58 but is still perfectly legal, and the audit was explicit that
+      // density relief is emphasis rather than filtering. Shrinking its hit area
+      // would quietly turn it into filtering.
+      //
+      // Growing is the half that was missing. A staged target draws at 1.7,
+      // which put the outer third of a pad the player can see outside the
+      // cylinder they can click — a marker that is visibly bigger than its own
+      // hit region, which is the exact shape of the dead-click bug that already
+      // reached the client once.
+      dummy.scale.setScalar(Math.max(touch, scale))
       dummy.updateMatrix()
       hit.current?.setMatrixAt(index, dummy.matrix)
 
@@ -397,7 +433,7 @@ export function VertexTargets({ game, actions, pendingAction, touchTarget, onAct
       if (active && !pending) tint.lerp(WHITE, 0.45)
       // Dimming a beacon darkens its bright half rather than fading it, so the
       // dark pad underneath keeps holding the value break either way.
-      tint.multiplyScalar((0.5 + 0.5 * seed.emphasis) * (quiet ? 0.42 : 1) * (0.86 + pulse * 0.14))
+      tint.multiplyScalar((0.5 + 0.5 * seed.emphasis) * (quiet ? 1 - 0.58 * stagedNow : 1) * (0.86 + pulse * 0.14))
       band.current?.setColorAt(index, tint)
       blade.current?.setColorAt(index, tint)
     })

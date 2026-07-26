@@ -40,9 +40,9 @@ const boardSector = (x: number, z: number) => {
  * the `import.meta.env.DEV` guard and never reachable from the shipped app.
  */
 type UiPreviewStage = 'match' | 'trade' | 'trade-sent' | 'trade-declined' | 'trade-no-takers' | 'trade-accepted' | 'trade-empty' | 'trade-response' | 'trade-watch'
-  | 'cards' | 'rules' | 'history' | 'summary' | 'introduction' | 'robber' | 'victim'
+  | 'cards' | 'rules' | 'history' | 'summary' | 'introduction' | 'robber' | 'victim' | 'setup'
 const UI_PREVIEW_STAGES: UiPreviewStage[] = ['match', 'trade', 'trade-sent', 'trade-declined', 'trade-no-takers', 'trade-accepted', 'trade-empty', 'trade-response', 'trade-watch',
-  'cards', 'rules', 'history', 'summary', 'introduction', 'robber', 'victim']
+  'cards', 'rules', 'history', 'summary', 'introduction', 'robber', 'victim', 'setup']
 
 const uiPreviewStage = (): UiPreviewStage | undefined => {
   if (!import.meta.env.DEV) return undefined
@@ -52,6 +52,17 @@ const uiPreviewStage = (): UiPreviewStage | undefined => {
 
 const buildUiPreview = (stage: UiPreviewStage) => {
   let state = createGame({ seed: 28, controllers: ['human', 'agent', 'agent'], names: ['You', 'Marlow', 'Ansel'] })
+  // The densest legal set in the game: a fresh board offers the first seat all
+  // fifty corners at once. It is the state the marker language is hardest in,
+  // and the one a hit-area regression would show up in first, so it gets to be
+  // reachable rather than reachable-only-by-starting-a-real-match.
+  if (stage === 'setup') {
+    // Whoever the snake order actually starts with, not seat zero. A fresh game
+    // does not always open on the human, and viewing it from a seat that cannot
+    // act returns an empty legal set, which looks exactly like a broken board.
+    const opener = currentActorId(state) ?? state.players[0].id
+    return { game: toDisplayState(getPlayerView(state, opener)), viewerPlayerId: opener }
+  }
   // Deterministic source so the harness renders the same state on every load.
   let tick = 0
   const random = () => { tick += 1; return ((tick * 9301 + 49297) % 233280) / 233280 }

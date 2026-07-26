@@ -80,6 +80,29 @@ function SeaShadowCatcher() {
   </mesh>
 }
 
+/**
+ * A handle on the live scene, for the dev server only.
+ *
+ * There is no other way in. React-three-fiber keeps its store inside the React
+ * tree and puts nothing on the canvas element, so a QA harness that wants to
+ * ask "is the region I can actually click the same size as the marker I can
+ * see" has to either walk the fiber tree or guess from screenshots. Guessing
+ * from screenshots is what produced the report this exists to answer, where a
+ * hundred and nine blobs were tapped and one of them was a real target.
+ *
+ * Stripped from production by the `import.meta.env.DEV` guard, same as the
+ * `?ui=` harness in `App.tsx`.
+ */
+function DevSceneHandle() {
+  const state = useThree()
+  useEffect(() => {
+    const global = globalThis as { __katanScene?: unknown }
+    global.__katanScene = { scene: state.scene, camera: state.camera, raycaster: state.raycaster, gl: state.gl, size: state.size }
+    return () => { delete global.__katanScene }
+  }, [state])
+  return null
+}
+
 function SceneContent({ game, placementMode, pendingAction, presentation, cinematic, onAction, interactive, sending = false, viewerPlayerId, reducedMotion }: SceneProps & { reducedMotion: boolean }) {
   const { size } = useThree()
   const mobile = size.width <= 520
@@ -238,6 +261,7 @@ export function GameScene(props: SceneProps) {
         <SceneContent {...props} reducedMotion={reducedMotion} />
         <ScenePrecompile onReady={markCompiled} />
         <FrameStats />
+        {import.meta.env.DEV ? <DevSceneHandle /> : null}
       </Suspense>
     </Canvas>
     <LoadingScreen visible={!ready} progress={progress} label={label} />
