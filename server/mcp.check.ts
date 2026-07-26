@@ -54,6 +54,15 @@ const connectBrowser = async (token: string): Promise<BrowserClient> => {
   return { socket, messages }
 }
 
+/**
+ * legalActions groups a family of placements into one object whose id field
+ * holds every choice. Turning that back into one playable action is picking a
+ * value, which is exactly what an agent has to do, so the check does it too.
+ */
+const pickOne = (action: Record<string, unknown>) => Object.fromEntries(
+  Object.entries(action).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]),
+)
+
 const latest = (client: BrowserClient) => client.messages.filter((message): message is Extract<ServerRoomMessage, { type: 'snapshot' }> => message.type === 'snapshot').at(-1)!.room
 const waitForRevision = async (clients: BrowserClient[], revision: number) => {
   while (!clients.every((client) => latest(client).game?.revision === revision)) await new Promise((resolve) => setTimeout(resolve, 5))
@@ -63,15 +72,15 @@ const browsers: BrowserClient[] = []
 try {
   await mcp.connect(transport)
   const tools = await mcp.listTools()
-  assert.deepEqual(tools.tools.map((tool) => tool.name), ['join_room', 'read_rules', 'get_playbook', 'get_view', 'wait_for_turn', 'wait_for_event', 'play_action'])
+  assert.deepEqual(tools.tools.map((tool) => tool.name), ['join_room', 'read_rules', 'get_playbook', 'get_board', 'get_view', 'wait_for_turn', 'wait_for_event', 'play_action'])
   const resources = await mcp.listResources()
   assert.deepEqual(resources.resources.map((resource) => resource.uri), ['katan://rules/base-game', 'katan://skill/autonomous-player'])
   assert.match(mcp.getInstructions() ?? '', /live runner owns sleeping/i)
   const rules = await mcp.callTool({ name: 'read_rules', arguments: {} }) as TextToolResult
   assert.match(rules.content[0].text ?? '', /10 victory points/)
   const joined = await toolJson('join_room', { code, name: 'Atlas' })
-  assert.equal(joined.room.status, 'lobby')
-  assert.equal(joined.room.seats.at(-1).controller, 'agent')
+  assert.equal(joined.status, 'lobby')
+  assert.equal(joined.seats.at(-1).id, 'p2')
   const lobbyWaitStartedAt = Date.now()
   const lobbyWait = await toolJson('wait_for_turn', { timeoutSeconds: 1 })
   assert.equal(lobbyWait.timedOut, true)
@@ -82,7 +91,7 @@ try {
   while (!browsers.every((browser) => latest(browser).status === 'playing')) await new Promise((resolve) => setTimeout(resolve, 5))
 
   const waiting = toolJson('wait_for_turn', { timeoutSeconds: 5 })
-  let agentView = await toolJson('get_view', { includeBoard: false })
+  let agentView = await toolJson('get_view', {})
   for (let step = 0; !agentView.isYourTurn && step < 8; step += 1) {
     const room: RoomView = latest(browsers[0])
     const actorId = room.game!.publicState.actingPlayerId ?? room.game!.publicState.players[room.game!.publicState.activePlayerIndex].id
@@ -92,20 +101,30 @@ try {
     const revision = actorRoom.game!.revision
     actor.socket.send(JSON.stringify({ type: 'action', requestId: `human-${step}`, expectedRevision: revision, action: actorRoom.game!.legalActions[0] }))
     await waitForRevision(browsers, revision + 1)
-    agentView = await toolJson('get_view', { includeBoard: false })
+    agentView = await toolJson('get_view', {})
   }
+
+  const board = await toolJson('get_board', {})
+  assert.equal(board.hexes.length, 19, 'the static island is read once and carries every hex')
+  assert.equal(Object.keys(board.vertexHexes).length, 54)
+  assert.equal(Object.keys(board.edges).length, 72)
 
   const turn = await waiting
   assert.equal(turn.isYourTurn, true)
   assert.equal(agentView.isYourTurn, true)
   assert.ok(agentView.legalActions.length > 0)
   const before = agentView.revision as number
-  const after = await toolJson('play_action', { expectedRevision: before, action: agentView.legalActions[0] })
+  const after = await toolJson('play_action', { expectedRevision: before, action: pickOne(agentView.legalActions[0]) })
+  assert.equal(after.applied, true)
   assert.equal(after.revision, before + 1)
+
+  const stale = await toolJson('play_action', { expectedRevision: before, action: pickOne(agentView.legalActions[0]) })
+  assert.equal(stale.applied, false, 'a stale move must come back recoverable, not as a dead end')
+  assert.equal(stale.revision, before + 1, 'a refused move must still hand back the current revision')
   await waitForRevision(browsers, before + 1)
   assert.equal(latest(browsers[0]).game?.revision, after.revision)
 
-  console.log('mcp check passed: Codex tool discovery, rules, lobby wait, agent seat join, realtime turn, legal action, browser fanout')
+  console.log('mcp check passed: Codex tool discovery, rules, lobby wait, agent seat join, one-time board, realtime turn, grouped legal action, recoverable stale move, browser fanout')
 } finally {
   for (const browser of browsers) browser.socket.close()
   await Promise.all(browsers.map((browser) => browser.socket.readyState === WebSocket.CLOSED ? Promise.resolve() : once(browser.socket, 'close')))

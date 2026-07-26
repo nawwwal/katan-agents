@@ -4,7 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { AgentRoomClient } from './mcp-client'
 import { AGENT_INSTRUCTIONS, PLAYER_SKILL, PLAYER_SKILL_URI, RULES, RULES_URI, playPromptText } from './mcp-content'
-import { textResult, toAgentView } from './mcp-view'
+import { textResult, toAgentBoard, toAgentView } from './mcp-view'
 
 const client = new AgentRoomClient()
 const server = new McpServer({ name: 'katan-player', version: '2.0.0' }, { instructions: AGENT_INSTRUCTIONS })
@@ -41,16 +41,30 @@ server.registerTool('get_playbook', {
   description: 'Read how to handle live wake-ups, public events, trades, credentials, legal actions, and strategic decisions.',
 }, async () => textResult(PLAYER_SKILL))
 
+server.registerTool('get_board', {
+  title: 'Read the island once',
+  description: 'Read the static island: hexes with terrain and number, which hexes each corner touches, which corners each road slot joins, and the harbors. None of it changes for the whole game, so call it once and keep the answer. get_view carries everything that moves, including the robber.',
+}, async () => {
+  if (!client.view) throw new Error('Join a room first.')
+  const room = client.view
+  if (!room.game) return textResult({ status: room.status, note: 'The host has not started the game, so no island has been dealt yet.' })
+  return textResult({
+    code: room.code,
+    seats: room.seats.map((seat) => ({ id: seat.id, name: seat.name })),
+    you: room.viewerPlayerId,
+    ...toAgentBoard(room.game.publicState.board),
+  })
+})
+
 server.registerTool('get_view', {
   title: 'Inspect your private player view',
-  description: 'Read the latest redacted room state, your private hand, recent events, and your legal actions. Include the static board when choosing placements or routes.',
+  description: 'Read everything that changes: whose decision it is, your hand, every player public holdings and score, recent public events, and your legal actions. The island itself is static and lives in get_board. legalActions groups a family of placements into one object whose id field holds every choice; play one by sending a single value from that list.',
   inputSchema: {
-    includeBoard: z.boolean().default(false).describe('Include hex, vertex, edge, harbor, robber, road, and building geometry.'),
     afterRevision: z.number().int().min(0).default(0),
   },
-}, async ({ includeBoard, afterRevision }) => {
+}, async ({ afterRevision }) => {
   if (!client.view) throw new Error('Join a room first.')
-  return textResult(toAgentView(client.view, { includeBoard, afterRevision, connected: client.connected }))
+  return textResult(toAgentView(client.view, { afterRevision, connected: client.connected }))
 })
 
 server.registerTool('wait_for_turn', {
@@ -75,12 +89,24 @@ server.registerTool('wait_for_event', {
 
 server.registerTool('play_action', {
   title: 'Play one legal action',
-  description: 'Submit exactly one action from legalActions (or a valid custom discard/trade bundle) using the current revision. Returns only after every client can observe the authoritative new revision.',
+  description: 'Submit exactly one action at the current revision: an entry from legalActions, one value picked out of a grouped family, or a valid discard or trade bundle. A move that no longer fits comes back with applied false and the current view attached, so one call is always enough to get back on your feet.',
   inputSchema: {
     expectedRevision: z.number().int().min(0),
-    action: z.record(z.string(), z.unknown()).describe('One GameAction JSON object, including its type and required fields.'),
+    action: z.record(z.string(), z.unknown()).describe('One GameAction JSON object with its type and required fields, each field holding a single value.'),
   },
-}, async ({ expectedRevision, action }) => textResult(toAgentView(await client.play(expectedRevision, action), { afterRevision: expectedRevision, connected: client.connected })))
+}, async ({ expectedRevision, action }) => {
+  try {
+    return textResult({ applied: true, ...toAgentView(await client.play(expectedRevision, action), { afterRevision: expectedRevision, connected: client.connected }) })
+  } catch (error) {
+    if (!client.view) throw error
+    return textResult({
+      applied: false,
+      error: { message: error instanceof Error ? error.message : 'That move did not apply.' },
+      hint: 'Read revision, actionRequired and legalActions below and submit one action at that revision.',
+      ...toAgentView(client.view, { connected: client.connected }),
+    })
+  }
+})
 
 server.registerPrompt('play-katan', {
   title: 'Play a Katan seat',
