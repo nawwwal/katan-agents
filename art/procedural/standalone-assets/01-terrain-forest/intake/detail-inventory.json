@@ -1,0 +1,211 @@
+{
+  "sourceImage": "/Users/aditya.nawal/projects/katan-agents/art/reference/standalone-assets/01-terrain-forest.png",
+  "zonesDir": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/01-terrain-forest/intake/crops",
+  "detailInventory": {
+    "scanMethod": "grid-3x3",
+    "targetMinDetails": 10,
+    "details": [
+      {
+        "id": "d01",
+        "kind": "bevel",
+        "description": "bright three-segment chamfer around all six tile edges",
+        "region": {
+          "x": 0.0,
+          "y": 0.0,
+          "width": 1.0,
+          "height": 1.0,
+          "units": "normalized"
+        },
+        "scale": "object",
+        "affects": "geometry",
+        "mapsTo": {
+          "type": "component.localFeatures",
+          "ref": "ground-slab/hex-edge-bevel"
+        },
+        "evidenceRef": "full-object",
+        "confidence": 0.97
+      },
+      {
+        "id": "d02",
+        "kind": "ridge",
+        "description": "broken horizontal soil strata on visible sidewall",
+        "region": {
+          "x": 0.0,
+          "y": 0.0,
+          "width": 1.0,
+          "height": 1.0,
+          "units": "normalized"
+        },
+        "scale": "meso",
+        "affects": "geometry",
+        "mapsTo": {
+          "type": "component.localFeatures",
+          "ref": "ground-slab/soil-strata"
+        },
+        "evidenceRef": "full-object",
+        "confidence": 0.9
+      },
+      {
+        "id": "d03",
+        "kind": "stain",
+        "description": "warmer compacted central clearing",
+        "region": {
+          "x": 0.0,
+          "y": 0.0,
+          "width": 1.0,
+          "height": 1.0,
+          "units": "normalized"
+        },
+        "scale": "macro",
+        "affects": "albedo roughness",
+        "mapsTo": {
+          "type": "material.localOverrides",
+          "ref": "soil/clearing-compaction"
+        },
+        "evidenceRef": "full-object",
+        "confidence": 0.92
+      },
+      {
+        "id": "d04",
+        "kind": "ridge",
+        "description": "overlapping serrated needle tier rims",
+        "region": {
+          "x": 0.0,
+          "y": 0.0,
+          "width": 1.0,
+          "height": 1.0,
+          "units": "normalized"
+        },
+        "scale": "meso",
+        "affects": "geometry normal",
+        "mapsTo": {
+          "type": "component.localFeatures",
+          "ref": "canopy-tiers/needle-tier-ridges"
+        },
+        "evidenceRef": "full-object",
+        "confidence": 0.9
+      },
+      {
+        "id": "d05",
+        "kind": "stain",
+        "description": "olive-gold sun-faded branch tips",
+        "region": {
+          "x": 0.0,
+          "y": 0.0,
+          "width": 1.0,
+          "height": 1.0,
+          "units": "normalized"
+        },
+        "scale": "meso",
+        "affects": "albedo roughness",
+        "mapsTo": {
+          "type": "material.localOverrides",
+          "ref": "needles/sunlit-needle-tips"
+        },
+        "evidenceRef": "full-object",
+        "confidence": 0.86
+      },
+      {
+        "id": "d06",
+        "kind": "stain",
+        "description": "dark cavity response between overlapping tiers",
+        "region": {
+          "x": 0.0,
+          "y": 0.0,
+          "width": 1.0,
+          "height": 1.0,
+          "units": "normalized"
+        },
+        "scale": "meso",
+        "affects": "albedo ao",
+        "mapsTo": {
+          "type": "material.localOverrides",
+          "ref": "needles/canopy-cavity"
+        },
+        "evidenceRef": "full-object",
+        "confidence": 0.9
+      },
+      {
+        "id": "d07",
+        "kind": "stain",
+        "description": "damp darkening around visible trunk roots",
+        "region": {
+          "x": 0.0,
+          "y": 0.0,
+          "width": 1.0,
+          "height": 1.0,
+          "units": "normalized"
+        },
+        "scale": "meso",
+        "affects": "albedo roughness",
+        "mapsTo": {
+          "type": "material.localOverrides",
+          "ref": "bark/bark-root-darkening"
+        },
+        "evidenceRef": "full-object",
+        "confidence": 0.86
+      },
+      {
+        "id": "d08",
+        "kind": "chip",
+        "description": "pale faceted chips on rock crests",
+        "region": {
+          "x": 0.0,
+          "y": 0.0,
+          "width": 1.0,
+          "height": 1.0,
+          "units": "normalized"
+        },
+        "scale": "micro",
+        "affects": "geometry albedo",
+        "mapsTo": {
+          "type": "component.localFeatures",
+          "ref": "rock-system/rock-chips"
+        },
+        "evidenceRef": "full-object",
+        "confidence": 0.84
+      },
+      {
+        "id": "d09",
+        "kind": "stain",
+        "description": "moss accumulation at rock bases",
+        "region": {
+          "x": 0.0,
+          "y": 0.0,
+          "width": 1.0,
+          "height": 1.0,
+          "units": "normalized"
+        },
+        "scale": "micro",
+        "affects": "albedo roughness",
+        "mapsTo": {
+          "type": "material.localOverrides",
+          "ref": "stone/rock-moss"
+        },
+        "evidenceRef": "full-object",
+        "confidence": 0.88
+      },
+      {
+        "id": "d10",
+        "kind": "stain",
+        "description": "sun-faded moss cushion crests",
+        "region": {
+          "x": 0.0,
+          "y": 0.0,
+          "width": 1.0,
+          "height": 1.0,
+          "units": "normalized"
+        },
+        "scale": "micro",
+        "affects": "albedo roughness",
+        "mapsTo": {
+          "type": "material.localOverrides",
+          "ref": "moss/moss-sun-fade"
+        },
+        "evidenceRef": "full-object",
+        "confidence": 0.8
+      }
+    ]
+  },
+  "authoringInstruction": "Open each zone crop under zonesDir and replace every detail stub's kind, description, scale, affects, mapsTo, and confidence with what is actually observed. Add more detail entries per zone if a single zone contains multiple distinct marks; do not leave stubs unfilled or unlinked (mapsTo must reference a real component.localFeatures or material.localOverrides entry)."
+}

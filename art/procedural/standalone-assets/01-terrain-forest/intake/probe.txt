@@ -1,0 +1,11 @@
+{
+  "path": "/Users/aditya.nawal/projects/katan-agents/art/reference/standalone-assets/01-terrain-forest.png",
+  "type": "png",
+  "bytes": 2539844,
+  "width": 1254,
+  "height": 1254,
+  "aspectRatio": 1.0,
+  "technicalSuitability": "pass",
+  "warnings": [],
+  "note": "This is only technical image probing. Semantic object suitability still requires visual inspection."
+}

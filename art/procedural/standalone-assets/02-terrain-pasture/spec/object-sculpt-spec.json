@@ -1,0 +1,5086 @@
+{
+  "targetName": "02 Terrain Pasture",
+  "targetId": "02-terrain-pasture",
+  "schemaVersion": "2.0",
+  "terminologyProfile": {
+    "domain": "real-time procedural Three.js asset",
+    "geometryTerms": [
+      "silhouette",
+      "topology",
+      "primitive",
+      "bevel",
+      "chamfer",
+      "taper",
+      "bend",
+      "boolean cut",
+      "edge loop",
+      "surface normal",
+      "displacement"
+    ],
+    "materialTerms": [
+      "albedo",
+      "baseColor",
+      "roughness",
+      "metalness",
+      "normal map",
+      "bump map",
+      "ambient occlusion",
+      "cavity dirt",
+      "edge wear",
+      "clearcoat"
+    ],
+    "lightingTerms": [
+      "key light",
+      "fill light",
+      "rim light",
+      "HDRI/environment reflection",
+      "contact shadow"
+    ],
+    "descriptionRule": "Use measurable 3D graphics terms. Avoid vague words unless they are paired with concrete geometry/material/shader parameters."
+  },
+  "sourceImage": "/Users/aditya.nawal/projects/katan-agents/art/reference/standalone-assets/02-terrain-pasture.png",
+  "referenceCamera": {
+    "solved": false,
+    "fovDegrees": 40.0,
+    "aspect": 1.0,
+    "orientation": {
+      "yaw": 0.0,
+      "pitch": 0.0,
+      "roll": 0.0
+    },
+    "positionHint": [
+      0.0,
+      0.0,
+      3.0
+    ],
+    "note": "For likeness work, solve the reference camera (forge/stage1_intake/solve_camera_pose.py) so the review render aligns with the photo and the reference can be projected. Confirm by overlay review."
+  },
+  "suitability": "conditional",
+  "scores": {
+    "object_isolation": 0,
+    "silhouette_readability": 0,
+    "depth_inference": 0,
+    "primitive_decomposition": 0,
+    "material_procedurality": 0,
+    "occlusion_risk": 0,
+    "interaction_fit": 0
+  },
+  "preSpecAssessment": {
+    "objectClass": {
+      "primaryType": "terrain diorama tile with grazing animal props",
+      "primaryDomain": "object",
+      "formLanguage": [
+        "low beveled pointy-top hex slab",
+        "soft organic pasture mounds",
+        "rounded wool volumes",
+        "irregular faceted rock clusters"
+      ],
+      "structureKind": [
+        "terrain slab",
+        "repeated sheep assemblies",
+        "embedded rock clusters",
+        "instanced grass clumps"
+      ],
+      "motionPotential": [
+        "subtle sheep head grazing",
+        "small tail/ear idle",
+        "placement lift and settle"
+      ],
+      "materialFamilies": [
+        "short grass and moss",
+        "exposed soil strata",
+        "cream wool",
+        "charcoal face and legs",
+        "weathered stone"
+      ],
+      "notes": "A gameplay-scale pasture hex with three readable sheep and two rock masses. Preserve the canonical hex footprint; surface props remain inside the hit target."
+    },
+    "complexity": {
+      "tier": "complex",
+      "scores": {
+        "silhouetteComplexity": 2,
+        "componentCount": 3,
+        "hierarchyDepth": 2,
+        "repetitionDensity": 3,
+        "materialLayerCount": 3,
+        "localDetailDensity": 3,
+        "occlusionRisk": 2,
+        "actionReadinessNeed": 2
+      },
+      "estimatedCounts": {
+        "macroComponents": 3,
+        "mesoComponents": 8,
+        "microFeatureGroups": 5,
+        "materialLayers": 5,
+        "repetitionSystems": 3
+      },
+      "reasoning": [
+        "The tile combines a fixed gameplay-critical slab with three repeated articulated sheep, two rock groups, and dense surface repetition.",
+        "Identity depends on the three sheep silhouettes and clustered pasture surface, not on a flat green texture."
+      ]
+    },
+    "specDepthDecision": {
+      "requiredDepth": "complex",
+      "minimumComponentLevels": [
+        "macro",
+        "meso",
+        "micro"
+      ],
+      "needsRepetitionSystems": true,
+      "needsMaterialLocalOverrides": true,
+      "needsMultipleReviewViews": true,
+      "needsActionReadyHierarchy": true,
+      "rationale": "Choose simple/moderate/complex/ultra-complex from observed structure, not from a hardcoded domain."
+    },
+    "unknownsToResolveBeforeImplementation": [],
+    "detailInventory": {
+      "scanMethod": "grid-3x3 plus focused sheep crop",
+      "targetMinDetails": 10,
+      "details": [
+        {
+          "id": "wool-curl-breakup",
+          "kind": "ridge",
+          "description": "Tight cream wool clumps break the sheep body highlights",
+          "region": "sheep bodies",
+          "scale": "micro",
+          "affects": "normal and silhouette",
+          "mapsTo": {
+            "type": "component.localFeatures",
+            "ref": "sheep-flock"
+          },
+          "evidenceRef": "full-object",
+          "confidence": 0.92
+        },
+        {
+          "id": "dark-face-mask",
+          "kind": "contour",
+          "description": "Charcoal face and ears contrast with cream wool",
+          "region": "three sheep heads",
+          "scale": "meso",
+          "affects": "albedo and silhouette",
+          "mapsTo": {
+            "type": "component.localFeatures",
+            "ref": "sheep-heads"
+          },
+          "evidenceRef": "full-object",
+          "confidence": 0.95
+        },
+        {
+          "id": "thin-dark-legs",
+          "kind": "contour",
+          "description": "Four narrow dark legs ground each sheep",
+          "region": "under each sheep body",
+          "scale": "meso",
+          "affects": "component structure",
+          "mapsTo": {
+            "type": "component.localFeatures",
+            "ref": "sheep-legs"
+          },
+          "evidenceRef": "full-object",
+          "confidence": 0.9
+        },
+        {
+          "id": "grazing-head-angle",
+          "kind": "contour",
+          "description": "Two heads angle down while one sheep looks across the tile",
+          "region": "sheep head pivots",
+          "scale": "macro",
+          "affects": "pose silhouette",
+          "mapsTo": {
+            "type": "component.localFeatures",
+            "ref": "sheep-flock"
+          },
+          "evidenceRef": "full-object",
+          "confidence": 0.94
+        },
+        {
+          "id": "short-grass-carpet",
+          "kind": "ridge",
+          "description": "Dense short grass creates the dominant pasture grain",
+          "region": "full top surface",
+          "scale": "micro",
+          "affects": "surface response",
+          "mapsTo": {
+            "type": "material.localOverrides",
+            "ref": "grass"
+          },
+          "evidenceRef": "full-object",
+          "confidence": 0.96
+        },
+        {
+          "id": "tall-grass-clumps",
+          "kind": "ridge",
+          "description": "Sparse straw-green clumps punctuate the short grass",
+          "region": "tile perimeter and rocks",
+          "scale": "meso",
+          "affects": "form detail",
+          "mapsTo": {
+            "type": "component.localFeatures",
+            "ref": "grass-clumps"
+          },
+          "evidenceRef": "full-object",
+          "confidence": 0.88
+        },
+        {
+          "id": "left-rock-mass",
+          "kind": "contour",
+          "description": "Large asymmetric gray rock group anchors upper-left",
+          "region": "upper-left quadrant",
+          "scale": "macro",
+          "affects": "mass distribution",
+          "mapsTo": {
+            "type": "component.localFeatures",
+            "ref": "rock-left"
+          },
+          "evidenceRef": "full-object",
+          "confidence": 0.94
+        },
+        {
+          "id": "right-rock-mass",
+          "kind": "contour",
+          "description": "Smaller mossed rock group anchors lower-right",
+          "region": "lower-right quadrant",
+          "scale": "macro",
+          "affects": "mass distribution",
+          "mapsTo": {
+            "type": "component.localFeatures",
+            "ref": "rock-right"
+          },
+          "evidenceRef": "full-object",
+          "confidence": 0.93
+        },
+        {
+          "id": "stone-cracks",
+          "kind": "groove",
+          "description": "Angular cracks and lichen break the stone faces",
+          "region": "both rock groups",
+          "scale": "micro",
+          "affects": "normal and albedo",
+          "mapsTo": {
+            "type": "material.localOverrides",
+            "ref": "stone"
+          },
+          "evidenceRef": "full-object",
+          "confidence": 0.84
+        },
+        {
+          "id": "soil-side-strata",
+          "kind": "seam",
+          "description": "Dark layered soil sidewall separates the grass cap from the ground",
+          "region": "six slab sides",
+          "scale": "meso",
+          "affects": "material boundary",
+          "mapsTo": {
+            "type": "material.localOverrides",
+            "ref": "soil"
+          },
+          "evidenceRef": "full-object",
+          "confidence": 0.94
+        },
+        {
+          "id": "small-pebbles",
+          "kind": "contour",
+          "description": "Scattered pebbles interrupt broad grass areas",
+          "region": "across top surface",
+          "scale": "micro",
+          "affects": "form detail",
+          "mapsTo": {
+            "type": "component.localFeatures",
+            "ref": "pebbles"
+          },
+          "evidenceRef": "full-object",
+          "confidence": 0.82
+        },
+        {
+          "id": "soft-edge-bevel",
+          "kind": "bevel",
+          "description": "Narrow sunlit bevel traces all six top edges",
+          "region": "hex perimeter",
+          "scale": "meso",
+          "affects": "silhouette and highlights",
+          "mapsTo": {
+            "type": "component.localFeatures",
+            "ref": "ground-slab"
+          },
+          "evidenceRef": "full-object",
+          "confidence": 0.95
+        }
+      ]
+    },
+    "anatomy": {
+      "applies": false,
+      "styleHeads": 0.0,
+      "proportions": {
+        "headUnit": 0.0,
+        "torso": 0.0,
+        "legs": 0.0,
+        "shoulderWidth": 0.0,
+        "hipWidth": 0.0
+      },
+      "pose": {
+        "type": "unassessed",
+        "jointAngles": {}
+      },
+      "faceLandmarks": {
+        "eyeLine": 0.0,
+        "eyeSpacing": 0.0,
+        "noseBase": 0.0,
+        "mouthLine": 0.0,
+        "hairline": 0.0
+      },
+      "features": [],
+      "confidence": 0.0,
+      "note": "Only meaningful when objectClass.primaryDomain is character or hybrid. Set applies=true and fill from forge/stage1_intake/extract_landmarks.py. See grimoire/character/reconstruction.md and grimoire/character/likeness_maximization.md."
+    },
+    "sourceImage": "/Users/aditya.nawal/projects/katan-agents/art/reference/standalone-assets/02-terrain-pasture.png"
+  },
+  "qualityContract": {
+    "qualityBar": "complex",
+    "definitionOfDone": [
+      "The rendered model matches the reference silhouette, primary proportions, visible component hierarchy, material response, and most recognizable local features for the selected fidelity tier."
+    ],
+    "minimumSpecDepth": {
+      "macroComponents": 3,
+      "mesoComponents": 8,
+      "microFeatureGroups": 5,
+      "materialLayers": 3,
+      "repetitionSystems": 1,
+      "reviewViewpoints": 4
+    },
+    "featureGroups": [
+      {
+        "id": "overall-silhouette",
+        "name": "Overall silhouette and proportions",
+        "required": true,
+        "qualityCriteria": [
+          "Bounding shape, dominant curves, negative spaces, and scale relationships are explicitly described."
+        ],
+        "evidenceRefs": [
+          "full-object"
+        ],
+        "failureModes": [
+          "model reads as a generic placeholder instead of the reference object",
+          "major proportions are guessed without evidence"
+        ]
+      },
+      {
+        "id": "primary-structure",
+        "name": "Primary structure and hierarchy",
+        "required": true,
+        "qualityCriteria": [
+          "Major parts, joints, seams, contact points, and parent-child relationships are named before code generation."
+        ],
+        "evidenceRefs": [
+          "full-object"
+        ],
+        "failureModes": [
+          "large visible parts are merged into one mesh",
+          "component hierarchy is too shallow for the observed complexity"
+        ]
+      },
+      {
+        "id": "attachment-joint-correctness",
+        "name": "Attachment and joint correctness",
+        "required": true,
+        "qualityCriteria": [
+          "Every visible child appendage, branch, limb, handle, connector, tube, cable, horn, wing, leg, or hinged part has an attachment contract with parent socket, localStart/localEnd, contact type, embed/overlap, and gap tolerance."
+        ],
+        "evidenceRefs": [
+          "full-object"
+        ],
+        "failureModes": [
+          "child part root floats away from the parent",
+          "branch/limb/tube is centered in space instead of pivoting from its root",
+          "parent-child transform mixes world and local coordinates"
+        ]
+      },
+      {
+        "id": "surface-material-response",
+        "name": "Surface material response",
+        "required": true,
+        "qualityCriteria": [
+          "Albedo zones, roughness, normal/bump/displacement intent, cavity dirt, edge wear, and local overrides are specified where visible.",
+          "Important materials define independent albedo, roughness, height/normal, and AO responses instead of reusing one texture for unrelated PBR channels.",
+          "Surface response is decomposed into macro, meso, and micro frequency bands with scale and amplitude tied to object scale."
+        ],
+        "evidenceRefs": [
+          "full-object"
+        ],
+        "failureModes": [
+          "surface looks like flat plastic",
+          "local material variation is missing or not tied to image evidence"
+        ]
+      },
+      {
+        "id": "reference-lookdev",
+        "name": "Reference color, material, and lighting response",
+        "required": true,
+        "qualityCriteria": [
+          "Material-pass names the reference-derived albedo palette, roughness variation, tactile normal/bump/displacement response, and local masks.",
+          "When a source image is available, run reference PBR extraction and require confidence >= 0.7 before treating maps as implementation-ready.",
+          "Lighting-pass names key/fill/rim or environment light, exposure, tone mapping, background, and contact shadow behavior.",
+          "Neutral, grazing-angle, and reference-matched renders prove that surface relief survives relighting and is not painted into albedo."
+        ],
+        "evidenceRefs": [
+          "full-object"
+        ],
+        "failureModes": [
+          "model has acceptable shape but reads as flat shaded or plastic",
+          "colors are a generic average instead of reference-observed local color zones",
+          "lighting is evenly ambient and cannot reproduce the source value range"
+        ]
+      }
+    ],
+    "visualDeltaChecks": [
+      "silhouette and negative-space delta",
+      "component hierarchy depth delta",
+      "repetition density and distribution delta",
+      "material albedo/roughness/normal response delta",
+      "local feature placement and scale delta"
+    ],
+    "antiShallowSpecRules": [
+      "Do not proceed to code if qualityContract.qualityBar is unassessed.",
+      "Do not proceed to code if the spec only contains a root component for a moderate or complex object.",
+      "Do not proceed to code if required featureGroups are not represented by componentTree, materials, or repetitionSystems.",
+      "Do not proceed to code if visible local features are described only in prose and not attached to components/materials/evidenceRefs.",
+      "Do not proceed past structural-pass if attached child parts lack attachment.parentSocket, localStart, localEnd, embedDepth/overlap, and gapTolerance.",
+      "Do not pass material look-dev when albedo is reused as roughness, height, normal, or AO.",
+      "Do not pass material look-dev without macro, meso, and micro surface frequency bands for close-up materials.",
+      "Do not pass reference-fidelity material look-dev from a source image without usable referencePbr maps or an explicit documented limitation.",
+      "Do not patch a spec with extracted PBR maps when extraction confidence is below the target threshold unless the user explicitly accepts lower fidelity."
+    ]
+  },
+  "qualityTargets": {
+    "targetFidelity": 0.85,
+    "mustMatch": [
+      "exact pointy-top hex silhouette",
+      "three distinct sheep poses",
+      "left and right rock mass balance",
+      "dense short-grass carpet",
+      "cream-wool versus charcoal-face separation"
+    ],
+    "niceToHave": [
+      "subtle ear and tail idle",
+      "individual pebble variation"
+    ],
+    "fpsTarget": 60,
+    "reviewViewpoints": [
+      "reference-three-quarter",
+      "top",
+      "front-grazing",
+      "close-up-material"
+    ]
+  },
+  "selfCorrectLoop": {
+    "enabled": true,
+    "visualAcceptance": {
+      "reviewer": "ai-vision",
+      "threshold": 0.7,
+      "comparisonArtifactRequired": true,
+      "layerScoresRequired": true,
+      "codePixelDiffIsAcceptanceAuthority": false,
+      "scoringRule": "AI vision must inspect a side-by-side reference/render sheet and score the current pass from 0 to 1. Pixel-diff code may assist diagnostics but cannot approve a pass.",
+      "requiredLayerScores": [
+        "silhouetteProportion",
+        "componentStructure",
+        "formDetail",
+        "materialSurface",
+        "lightingCamera"
+      ],
+      "featureReviewPolicy": {
+        "enabled": true,
+        "reviewUnit": "semantic-subsystem",
+        "maxCriticalFeaturesPerPass": 5,
+        "maxImportantFeaturesPerPass": 3,
+        "criticalDefaultThreshold": 0.8,
+        "importantAverageThreshold": 0.65,
+        "adaptiveEscalation": true,
+        "singleImagePairOnly": true,
+        "selectionRule": "Choose only the most visually salient, identity-defining, user-prioritized, or high-risk semantic systems. Group repeated parts instead of reviewing every mesh. AI vision scores every selected feature from the same full reference/render pair."
+      }
+    },
+    "reviewAfterPasses": [
+      "blockout",
+      "structural-pass",
+      "form-refinement",
+      "material-pass",
+      "surface-pass",
+      "lighting-pass",
+      "interaction-pass",
+      "optimization-pass"
+    ],
+    "allowedActions": [
+      "continue",
+      "refine-spec",
+      "refine-code",
+      "request-input",
+      "stop"
+    ],
+    "specRefineTriggers": [
+      "missing component",
+      "wrong primitive family",
+      "wrong proportions",
+      "material layer under-specified",
+      "local feature not traceable to viewEvidence",
+      "reference ambiguity discovered during implementation"
+    ],
+    "codeRefineTriggers": [
+      "spec is adequate but generated geometry/material does not match",
+      "browser render differs from reference",
+      "performance budget exceeded",
+      "lighting hides geometry or material response"
+    ],
+    "stopCriteria": [
+      "target fidelity reached or user accepts current approximation",
+      "remaining gaps require new reference images or manual art"
+    ],
+    "screenshotPolicy": {
+      "requiredForPasses": [
+        "blockout",
+        "structural-pass",
+        "form-refinement",
+        "material-pass",
+        "surface-pass",
+        "lighting-pass",
+        "interaction-pass"
+      ],
+      "preferredCapture": "in-app-browser-screenshot",
+      "fallbackCapture": "user-supplied-screenshot-path",
+      "minimumEvidence": "Each visual pass needs a reference image, rendered screenshot, side-by-side comparison sheet, AI vision score, layer scores, and critique before choosing continue.",
+      "reviewPairRule": "Compare the same camera/viewpoint whenever possible; do not judge a front reference against a random render angle.",
+      "acceptanceAuthority": "AI vision review of the comparison sheet. Code-generated pixel similarity is not sufficient evidence."
+    }
+  },
+  "featureReviewTargets": [
+    {
+      "id": "pasture-hex-silhouette",
+      "name": "Exact pointy-top hex slab and top bevel",
+      "tier": "critical",
+      "passIds": [
+        "blockout",
+        "form-refinement"
+      ],
+      "minimumScore": 0.88,
+      "mustPass": true,
+      "componentRefs": [
+        "ground-slab"
+      ],
+      "evidenceRefs": [
+        "full-object"
+      ]
+    },
+    {
+      "id": "three-sheep-composition",
+      "name": "Three readable sheep with two grazing poses and one alert pose",
+      "tier": "critical",
+      "passIds": [
+        "blockout",
+        "structural-pass",
+        "form-refinement"
+      ],
+      "minimumScore": 0.82,
+      "mustPass": true,
+      "componentRefs": [
+        "sheep-flock",
+        "sheep-a",
+        "sheep-b",
+        "sheep-c"
+      ],
+      "evidenceRefs": [
+        "full-object"
+      ]
+    },
+    {
+      "id": "pasture-rock-balance",
+      "name": "Large upper-left and smaller lower-right rock masses",
+      "tier": "critical",
+      "passIds": [
+        "blockout",
+        "structural-pass",
+        "form-refinement"
+      ],
+      "minimumScore": 0.8,
+      "mustPass": true,
+      "componentRefs": [
+        "rock-masses",
+        "rock-left",
+        "rock-right"
+      ],
+      "evidenceRefs": [
+        "full-object"
+      ]
+    },
+    {
+      "id": "pasture-material-system",
+      "name": "Grass soil wool charcoal and stone surface separation",
+      "tier": "critical",
+      "passIds": [
+        "material-pass",
+        "surface-pass",
+        "lighting-pass"
+      ],
+      "minimumScore": 0.78,
+      "mustPass": true,
+      "componentRefs": [
+        "ground-slab",
+        "sheep-flock",
+        "rock-masses",
+        "grass-clumps"
+      ],
+      "evidenceRefs": [
+        "full-object"
+      ]
+    }
+  ],
+  "sculptPipeline": {
+    "passGateMode": "locked-sequential",
+    "passOrder": [
+      "blockout",
+      "structural-pass",
+      "form-refinement",
+      "material-pass",
+      "surface-pass",
+      "lighting-pass",
+      "interaction-pass",
+      "optimization-pass"
+    ],
+    "currentPass": "structural-pass",
+    "completedPasses": [
+      "blockout"
+    ],
+    "lastCompletedPass": "blockout",
+    "blockedReason": "",
+    "nextRequiredEvidence": [
+      "Macro, meso, and repeated structures meet qualityContract.minimumSpecDepth.",
+      "Parent-child relations, joints, seams, sockets, and contact points are explicit.",
+      "Every attached child appendage/connector has parentSocket, localStart/localEnd, contactType, embedDepth or overlap, and gapTolerance.",
+      "AI vision comparison score meets selfCorrectLoop.visualAcceptance.threshold.",
+      "attachment contracts for child appendages/connectors",
+      "no floating child roots/joints in the browser screenshot",
+      "browser render screenshot from your agent's browser/screenshot tool",
+      "side-by-side reference/render comparison sheet for AI vision review",
+      "AI vision score at or above the visual acceptance threshold",
+      "all critical semantic feature scores from the shared image pair at or above their thresholds",
+      "self-correction review appended with action=continue before the next pass"
+    ]
+  },
+  "lookDevTargets": {
+    "qualityPriority": "reference-fidelity",
+    "materialPass": {
+      "albedoPaletteRequired": true,
+      "roughnessVariationRequired": true,
+      "normalOrBumpRequired": true,
+      "localOverridesRequired": true,
+      "minimumTextureResolution": 1024,
+      "preferredTextureResolution": 2048,
+      "independentMapChannels": [
+        "albedo",
+        "roughness",
+        "height",
+        "normal",
+        "ambient-occlusion"
+      ],
+      "requiredSurfaceFrequencyBands": [
+        "macro",
+        "meso",
+        "micro"
+      ],
+      "geometryReliefRequiredWhenSilhouetteAffected": true,
+      "referencePbrExtraction": {
+        "requiredWhenSourceImagePresent": true,
+        "targetThreshold": 0.7,
+        "stopOnLowConfidence": true,
+        "script": "forge/stage1_intake/extract_pbr_evidence.py",
+        "acceptedLimitation": "single-image extraction is reference-derived inference, not exact photogrammetry"
+      },
+      "mustAvoid": [
+        "single flat albedo per material",
+        "uniform roughness",
+        "albedo texture reused as roughness/height/normal/AO",
+        "single-frequency random noise",
+        "plastic-looking smooth bark, stone, cloth, foliage, or aged material",
+        "local color/detail described only in prose without material masks",
+        "claiming exact PBR recovery when confidence is below the target threshold"
+      ]
+    },
+    "lightingPass": {
+      "requiredTerms": [
+        "key light",
+        "fill light",
+        "rim or environment light",
+        "exposure",
+        "tone mapping",
+        "background",
+        "contact shadow"
+      ],
+      "mustAvoid": [
+        "ambient-only lighting",
+        "flat value range",
+        "missing contact shadow",
+        "reference lighting copied without separating material readability"
+      ]
+    },
+    "screenshotReview": [
+      "Compare albedo palette and local color zones.",
+      "Compare roughness/normal/bump response under light.",
+      "Compare cavity dirt, edge wear, stains, moss, scratches, or other local masks.",
+      "Compare key/fill/rim structure, exposure, tone mapping, background, and contact shadows.",
+      "Capture a neutral-light render to verify material readability without reference lighting.",
+      "Capture a grazing-light close-up to expose flat normals, uniform roughness, tiling, and plastic highlights.",
+      "Capture a reference-matched render from the same camera framing as the source."
+    ]
+  },
+  "actionReadiness": {
+    "contract": "Every macro/meso component should be generated as a stable named Object3D pivot node with a mesh child, action metadata, optional sockets, collider proxy, and destruction metadata.",
+    "defaultRigType": "action-ready-static-rig",
+    "rootMotionNode": "root",
+    "requiredComponentFields": [
+      "id",
+      "parent",
+      "transform",
+      "attachment for child appendages, connectors, limbs, tubes, handles, legs, horns, wings, branches, or cables",
+      "actionProfile.animationRole",
+      "actionProfile.pivot",
+      "actionProfile.collider",
+      "actionProfile.destruction"
+    ],
+    "transformChannels": [
+      "translate",
+      "rotate",
+      "scale",
+      "bend",
+      "twist",
+      "detach",
+      "visibility",
+      "material-state"
+    ],
+    "authoringRules": [
+      "Do not collapse independently movable parts into one mesh.",
+      "Put transforms on component pivot groups, not only on raw meshes.",
+      "For attached child parts, put the pivot at the semantic root/socket and build visible geometry from localStart to localEnd.",
+      "Represent hinge, socket, detachable, and breakable intent even when no animation is implemented yet.",
+      "Use simplified collider proxies for runtime physics instead of visual mesh colliders by default."
+    ],
+    "destructionPolicy": {
+      "defaultBreakable": false,
+      "fractureGroupNaming": "Use stable semantic names such as body-shell, left-hinge, glass-panel, branch-segment.",
+      "debrisStrategy": "Prefer detachable component groups and a small number of procedural fragments over random mesh explosion."
+    }
+  },
+  "assumptions": [],
+  "coordinateFrame": {
+    "front": "camera-facing side in the reference image",
+    "up": "image up direction",
+    "scaleReference": "unit scale; adjust after first browser render"
+  },
+  "silhouette": {
+    "boundingShape": "",
+    "aspectRatios": [],
+    "symmetry": "",
+    "dominantCurves": [],
+    "negativeSpaces": [
+      "open central grass between sheep",
+      "clear grass corridor between rock groups"
+    ],
+    "landmarks": [],
+    "description": "Exact pointy-top hex slab with low pasture relief; three compact sheep and two asymmetric rock masses stay inside the gameplay footprint.",
+    "primaryRead": "pasture hex with three sheep",
+    "secondaryRead": "large left rock mass balanced by smaller right rock mass"
+  },
+  "viewEvidence": [
+    {
+      "id": "full-object",
+      "view": "primary",
+      "imageRegion": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 1.0,
+        "height": 1.0,
+        "units": "normalized"
+      },
+      "observations": [
+        "six clean equal hex edges and a dark soil sidewall",
+        "three sheep distributed across open grass with two grazing and one alert",
+        "large upper-left rock mass and smaller lower-right rock mass",
+        "warm upper-left key with soft rightward cast shadows"
+      ],
+      "confidence": 0.94
+    }
+  ],
+  "componentTree": [
+    {
+      "id": "root",
+      "name": "Pasture tile root",
+      "level": "macro",
+      "role": "body",
+      "importance": 1.0,
+      "confidence": 0.5,
+      "primitive": "box",
+      "geometryDescriptor": {
+        "topologyIntent": "low-poly blockout with bevel-ready edges",
+        "edgeTreatment": {
+          "type": "bevel",
+          "bevelRadius": 0.035,
+          "segments": 2
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "vertex normals from generated geometry"
+      },
+      "parent": null,
+      "attachment": null,
+      "dimensions": {
+        "width": 1,
+        "height": 1,
+        "depth": 1,
+        "units": "relative",
+        "confidence": 0.9
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "root",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.5
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": true
+        },
+        "sockets": [
+          {
+            "id": "origin",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "notes": "Stable parent-space attachment socket."
+          }
+        ],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "Replace with sphere/capsule/compound proxy when the object shape demands it."
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "root",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "base"
+        }
+      },
+      "material": "soil",
+      "materialLayers": [
+        "soil"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [],
+      "surfaceDetail": {
+        "macroRoughness": 0.24,
+        "microRoughness": 0.42,
+        "bumpAmplitude": 0.08,
+        "normalPattern": "reference-derived tactile breakup",
+        "displacementPattern": "none",
+        "occlusionPattern": "contact and cavity AO",
+        "edgeWearPattern": "restrained exposed-edge lightening",
+        "notes": "Scale detail to gameplay camera; avoid noisy micro geometry."
+      },
+      "evidenceRefs": [
+        "full-object"
+      ],
+      "details": [],
+      "fidelityTier": "final"
+    },
+    {
+      "id": "ground-slab",
+      "name": "Pointy-top pasture slab",
+      "level": "macro",
+      "role": "body",
+      "importance": 1.0,
+      "confidence": 0.5,
+      "primitive": "extrude",
+      "geometryDescriptor": {
+        "topologyIntent": "low-poly blockout with bevel-ready edges",
+        "edgeTreatment": {
+          "type": "bevel",
+          "bevelRadius": 0.035,
+          "segments": 2
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "vertex normals from generated geometry"
+      },
+      "parent": "root",
+      "attachment": {
+        "parentId": "root",
+        "parentSocket": "origin",
+        "localStart": [
+          0,
+          0,
+          0
+        ],
+        "localEnd": [
+          0,
+          0.18,
+          0
+        ],
+        "baseRadius": 0.5125,
+        "endRadius": 0.30749999999999994,
+        "embedDepth": 0.02,
+        "overlap": 0.02,
+        "contactType": "embedded",
+        "gapTolerance": 0.006,
+        "evidenceRefs": [
+          "full-object"
+        ]
+      },
+      "dimensions": {
+        "width": 2.05,
+        "height": 0.18,
+        "depth": 2.05,
+        "units": "relative",
+        "confidence": 0.9
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          2.05,
+          0.18,
+          2.05
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "root",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.5
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": true
+        },
+        "sockets": [
+          {
+            "id": "origin",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "notes": "Stable parent-space attachment socket."
+          }
+        ],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "Replace with sphere/capsule/compound proxy when the object shape demands it."
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "root",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "base"
+        }
+      },
+      "material": "grass",
+      "materialLayers": [
+        "grass"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "soft-edge-bevel",
+          "description": "soft edge bevel",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.24,
+        "microRoughness": 0.42,
+        "bumpAmplitude": 0.08,
+        "normalPattern": "reference-derived tactile breakup",
+        "displacementPattern": "none",
+        "occlusionPattern": "contact and cavity AO",
+        "edgeWearPattern": "restrained exposed-edge lightening",
+        "notes": "Scale detail to gameplay camera; avoid noisy micro geometry."
+      },
+      "evidenceRefs": [
+        "full-object"
+      ],
+      "details": [],
+      "fidelityTier": "final"
+    },
+    {
+      "id": "pasture-top",
+      "name": "Pasture top relief",
+      "level": "meso",
+      "role": "body",
+      "importance": 1.0,
+      "confidence": 0.5,
+      "primitive": "extrude",
+      "geometryDescriptor": {
+        "topologyIntent": "low-poly blockout with bevel-ready edges",
+        "edgeTreatment": {
+          "type": "bevel",
+          "bevelRadius": 0.035,
+          "segments": 2
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "vertex normals from generated geometry"
+      },
+      "parent": "ground-slab",
+      "attachment": {
+        "parentId": "ground-slab",
+        "parentSocket": "origin",
+        "localStart": [
+          0,
+          0.14,
+          0
+        ],
+        "localEnd": [
+          0,
+          0.2,
+          0
+        ],
+        "baseRadius": 0.08,
+        "endRadius": 0.04,
+        "embedDepth": 0.02,
+        "overlap": 0.02,
+        "contactType": "overlap",
+        "gapTolerance": 0.006,
+        "evidenceRefs": [
+          "full-object"
+        ]
+      },
+      "dimensions": {
+        "width": 2.05,
+        "height": 0.18,
+        "depth": 2.05,
+        "units": "relative",
+        "confidence": 0.9
+      },
+      "transform": {
+        "position": [
+          0,
+          0.16,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1.98,
+          0.035,
+          1.98
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "root",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.5
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": true
+        },
+        "sockets": [
+          {
+            "id": "origin",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "notes": "Stable parent-space attachment socket."
+          }
+        ],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "Replace with sphere/capsule/compound proxy when the object shape demands it."
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "root",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "base"
+        }
+      },
+      "material": "grass",
+      "materialLayers": [
+        "grass"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "short-grass-carpet",
+          "description": "short grass carpet",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.24,
+        "microRoughness": 0.42,
+        "bumpAmplitude": 0.08,
+        "normalPattern": "reference-derived tactile breakup",
+        "displacementPattern": "none",
+        "occlusionPattern": "contact and cavity AO",
+        "edgeWearPattern": "restrained exposed-edge lightening",
+        "notes": "Scale detail to gameplay camera; avoid noisy micro geometry."
+      },
+      "evidenceRefs": [
+        "full-object"
+      ],
+      "details": [],
+      "fidelityTier": "final"
+    },
+    {
+      "id": "sheep-flock",
+      "name": "Three-sheep composition",
+      "level": "macro",
+      "role": "body",
+      "importance": 1.0,
+      "confidence": 0.5,
+      "primitive": "instanced-cluster",
+      "geometryDescriptor": {
+        "topologyIntent": "low-poly blockout with bevel-ready edges",
+        "edgeTreatment": {
+          "type": "bevel",
+          "bevelRadius": 0.035,
+          "segments": 2
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "vertex normals from generated geometry"
+      },
+      "parent": "root",
+      "attachment": {
+        "parentId": "root",
+        "parentSocket": "origin",
+        "localStart": [
+          0,
+          0.2,
+          0
+        ],
+        "localEnd": [
+          0,
+          0.75,
+          0
+        ],
+        "baseRadius": 0.35,
+        "endRadius": 0.21,
+        "embedDepth": 0.02,
+        "overlap": 0.02,
+        "contactType": "embedded",
+        "gapTolerance": 0.006,
+        "evidenceRefs": [
+          "full-object"
+        ]
+      },
+      "dimensions": {
+        "width": 1.4,
+        "height": 0.55,
+        "depth": 1.3,
+        "units": "relative",
+        "confidence": 0.9
+      },
+      "transform": {
+        "position": [
+          0,
+          0.2,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1.4,
+          0.55,
+          1.3
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "root",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.5
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": true
+        },
+        "sockets": [
+          {
+            "id": "origin",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "notes": "Stable parent-space attachment socket."
+          }
+        ],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "Replace with sphere/capsule/compound proxy when the object shape demands it."
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "root",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "base"
+        }
+      },
+      "material": "wool",
+      "materialLayers": [
+        "wool"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "grazing-head-angle",
+          "description": "grazing head angle",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        },
+        {
+          "id": "wool-curl-breakup",
+          "description": "wool curl breakup",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.24,
+        "microRoughness": 0.42,
+        "bumpAmplitude": 0.08,
+        "normalPattern": "reference-derived tactile breakup",
+        "displacementPattern": "none",
+        "occlusionPattern": "contact and cavity AO",
+        "edgeWearPattern": "restrained exposed-edge lightening",
+        "notes": "Scale detail to gameplay camera; avoid noisy micro geometry."
+      },
+      "evidenceRefs": [
+        "full-object"
+      ],
+      "details": [],
+      "fidelityTier": "final"
+    },
+    {
+      "id": "rock-masses",
+      "name": "Two pasture rock anchors",
+      "level": "macro",
+      "role": "body",
+      "importance": 1.0,
+      "confidence": 0.5,
+      "primitive": "instanced-cluster",
+      "geometryDescriptor": {
+        "topologyIntent": "low-poly blockout with bevel-ready edges",
+        "edgeTreatment": {
+          "type": "bevel",
+          "bevelRadius": 0.035,
+          "segments": 2
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "vertex normals from generated geometry"
+      },
+      "parent": "root",
+      "attachment": {
+        "parentId": "root",
+        "parentSocket": "origin",
+        "localStart": [
+          0,
+          0.18,
+          0
+        ],
+        "localEnd": [
+          0,
+          0.63,
+          0
+        ],
+        "baseRadius": 0.375,
+        "endRadius": 0.22499999999999998,
+        "embedDepth": 0.02,
+        "overlap": 0.02,
+        "contactType": "embedded",
+        "gapTolerance": 0.006,
+        "evidenceRefs": [
+          "full-object"
+        ]
+      },
+      "dimensions": {
+        "width": 1.5,
+        "height": 0.45,
+        "depth": 1.3,
+        "units": "relative",
+        "confidence": 0.9
+      },
+      "transform": {
+        "position": [
+          0,
+          0.18,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1.5,
+          0.45,
+          1.3
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "root",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.5
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": true
+        },
+        "sockets": [
+          {
+            "id": "origin",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "notes": "Stable parent-space attachment socket."
+          }
+        ],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "Replace with sphere/capsule/compound proxy when the object shape demands it."
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "root",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "base"
+        }
+      },
+      "material": "stone",
+      "materialLayers": [
+        "stone"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "stone-cracks",
+          "description": "stone cracks",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.24,
+        "microRoughness": 0.42,
+        "bumpAmplitude": 0.08,
+        "normalPattern": "reference-derived tactile breakup",
+        "displacementPattern": "none",
+        "occlusionPattern": "contact and cavity AO",
+        "edgeWearPattern": "restrained exposed-edge lightening",
+        "notes": "Scale detail to gameplay camera; avoid noisy micro geometry."
+      },
+      "evidenceRefs": [
+        "full-object"
+      ],
+      "details": [],
+      "fidelityTier": "final"
+    },
+    {
+      "id": "sheep-a",
+      "name": "Alert sheep",
+      "level": "meso",
+      "role": "body",
+      "importance": 1.0,
+      "confidence": 0.5,
+      "primitive": "instanced-cluster",
+      "geometryDescriptor": {
+        "topologyIntent": "low-poly blockout with bevel-ready edges",
+        "edgeTreatment": {
+          "type": "bevel",
+          "bevelRadius": 0.035,
+          "segments": 2
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "vertex normals from generated geometry"
+      },
+      "parent": "sheep-flock",
+      "attachment": {
+        "parentId": "sheep-flock",
+        "parentSocket": "origin",
+        "localStart": [
+          -0.47,
+          0.2,
+          0.28
+        ],
+        "localEnd": [
+          -0.47,
+          0.52,
+          0.28
+        ],
+        "baseRadius": 0.095,
+        "endRadius": 0.056999999999999995,
+        "embedDepth": 0.02,
+        "overlap": 0.02,
+        "contactType": "embedded",
+        "gapTolerance": 0.006,
+        "evidenceRefs": [
+          "full-object"
+        ]
+      },
+      "dimensions": {
+        "width": 0.38,
+        "height": 0.32,
+        "depth": 0.24,
+        "units": "relative",
+        "confidence": 0.9
+      },
+      "transform": {
+        "position": [
+          -0.47,
+          0.2,
+          0.28
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.38,
+          0.32,
+          0.24
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "root",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.5
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": true
+        },
+        "sockets": [
+          {
+            "id": "origin",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "notes": "Stable parent-space attachment socket."
+          }
+        ],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "Replace with sphere/capsule/compound proxy when the object shape demands it."
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "root",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "base"
+        }
+      },
+      "material": "wool",
+      "materialLayers": [
+        "wool"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "dark-face-mask",
+          "description": "dark face mask",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        },
+        {
+          "id": "thin-dark-legs",
+          "description": "thin dark legs",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.24,
+        "microRoughness": 0.42,
+        "bumpAmplitude": 0.08,
+        "normalPattern": "reference-derived tactile breakup",
+        "displacementPattern": "none",
+        "occlusionPattern": "contact and cavity AO",
+        "edgeWearPattern": "restrained exposed-edge lightening",
+        "notes": "Scale detail to gameplay camera; avoid noisy micro geometry."
+      },
+      "evidenceRefs": [
+        "full-object"
+      ],
+      "details": [],
+      "fidelityTier": "final"
+    },
+    {
+      "id": "sheep-b",
+      "name": "Near grazing sheep",
+      "level": "meso",
+      "role": "body",
+      "importance": 1.0,
+      "confidence": 0.5,
+      "primitive": "instanced-cluster",
+      "geometryDescriptor": {
+        "topologyIntent": "low-poly blockout with bevel-ready edges",
+        "edgeTreatment": {
+          "type": "bevel",
+          "bevelRadius": 0.035,
+          "segments": 2
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "vertex normals from generated geometry"
+      },
+      "parent": "sheep-flock",
+      "attachment": {
+        "parentId": "sheep-flock",
+        "parentSocket": "origin",
+        "localStart": [
+          0.25,
+          0.2,
+          0.38
+        ],
+        "localEnd": [
+          0.25,
+          0.51,
+          0.38
+        ],
+        "baseRadius": 0.1,
+        "endRadius": 0.06,
+        "embedDepth": 0.02,
+        "overlap": 0.02,
+        "contactType": "embedded",
+        "gapTolerance": 0.006,
+        "evidenceRefs": [
+          "full-object"
+        ]
+      },
+      "dimensions": {
+        "width": 0.4,
+        "height": 0.31,
+        "depth": 0.25,
+        "units": "relative",
+        "confidence": 0.9
+      },
+      "transform": {
+        "position": [
+          0.25,
+          0.2,
+          0.38
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.4,
+          0.31,
+          0.25
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "root",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.5
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": true
+        },
+        "sockets": [
+          {
+            "id": "origin",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "notes": "Stable parent-space attachment socket."
+          }
+        ],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "Replace with sphere/capsule/compound proxy when the object shape demands it."
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "root",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "base"
+        }
+      },
+      "material": "wool",
+      "materialLayers": [
+        "wool"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "grazing-head-angle",
+          "description": "grazing head angle",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        },
+        {
+          "id": "thin-dark-legs",
+          "description": "thin dark legs",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.24,
+        "microRoughness": 0.42,
+        "bumpAmplitude": 0.08,
+        "normalPattern": "reference-derived tactile breakup",
+        "displacementPattern": "none",
+        "occlusionPattern": "contact and cavity AO",
+        "edgeWearPattern": "restrained exposed-edge lightening",
+        "notes": "Scale detail to gameplay camera; avoid noisy micro geometry."
+      },
+      "evidenceRefs": [
+        "full-object"
+      ],
+      "details": [],
+      "fidelityTier": "final"
+    },
+    {
+      "id": "sheep-c",
+      "name": "Far grazing sheep",
+      "level": "meso",
+      "role": "body",
+      "importance": 1.0,
+      "confidence": 0.5,
+      "primitive": "instanced-cluster",
+      "geometryDescriptor": {
+        "topologyIntent": "low-poly blockout with bevel-ready edges",
+        "edgeTreatment": {
+          "type": "bevel",
+          "bevelRadius": 0.035,
+          "segments": 2
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "vertex normals from generated geometry"
+      },
+      "parent": "sheep-flock",
+      "attachment": {
+        "parentId": "sheep-flock",
+        "parentSocket": "origin",
+        "localStart": [
+          0.42,
+          0.2,
+          -0.36
+        ],
+        "localEnd": [
+          0.42,
+          0.49,
+          -0.36
+        ],
+        "baseRadius": 0.09,
+        "endRadius": 0.054,
+        "embedDepth": 0.02,
+        "overlap": 0.02,
+        "contactType": "embedded",
+        "gapTolerance": 0.006,
+        "evidenceRefs": [
+          "full-object"
+        ]
+      },
+      "dimensions": {
+        "width": 0.36,
+        "height": 0.29,
+        "depth": 0.23,
+        "units": "relative",
+        "confidence": 0.9
+      },
+      "transform": {
+        "position": [
+          0.42,
+          0.2,
+          -0.36
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.36,
+          0.29,
+          0.23
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "root",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.5
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": true
+        },
+        "sockets": [
+          {
+            "id": "origin",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "notes": "Stable parent-space attachment socket."
+          }
+        ],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "Replace with sphere/capsule/compound proxy when the object shape demands it."
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "root",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "base"
+        }
+      },
+      "material": "wool",
+      "materialLayers": [
+        "wool"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "grazing-head-angle",
+          "description": "grazing head angle",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        },
+        {
+          "id": "thin-dark-legs",
+          "description": "thin dark legs",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.24,
+        "microRoughness": 0.42,
+        "bumpAmplitude": 0.08,
+        "normalPattern": "reference-derived tactile breakup",
+        "displacementPattern": "none",
+        "occlusionPattern": "contact and cavity AO",
+        "edgeWearPattern": "restrained exposed-edge lightening",
+        "notes": "Scale detail to gameplay camera; avoid noisy micro geometry."
+      },
+      "evidenceRefs": [
+        "full-object"
+      ],
+      "details": [],
+      "fidelityTier": "final"
+    },
+    {
+      "id": "rock-left",
+      "name": "Upper-left rock group",
+      "level": "meso",
+      "role": "body",
+      "importance": 1.0,
+      "confidence": 0.5,
+      "primitive": "instanced-cluster",
+      "geometryDescriptor": {
+        "topologyIntent": "low-poly blockout with bevel-ready edges",
+        "edgeTreatment": {
+          "type": "bevel",
+          "bevelRadius": 0.035,
+          "segments": 2
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "vertex normals from generated geometry"
+      },
+      "parent": "rock-masses",
+      "attachment": {
+        "parentId": "rock-masses",
+        "parentSocket": "origin",
+        "localStart": [
+          -0.52,
+          0.18,
+          -0.32
+        ],
+        "localEnd": [
+          -0.52,
+          0.52,
+          -0.32
+        ],
+        "baseRadius": 0.12,
+        "endRadius": 0.072,
+        "embedDepth": 0.02,
+        "overlap": 0.02,
+        "contactType": "embedded",
+        "gapTolerance": 0.006,
+        "evidenceRefs": [
+          "full-object"
+        ]
+      },
+      "dimensions": {
+        "width": 0.48,
+        "height": 0.34,
+        "depth": 0.38,
+        "units": "relative",
+        "confidence": 0.9
+      },
+      "transform": {
+        "position": [
+          -0.52,
+          0.18,
+          -0.32
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.48,
+          0.34,
+          0.38
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "root",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.5
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": true
+        },
+        "sockets": [
+          {
+            "id": "origin",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "notes": "Stable parent-space attachment socket."
+          }
+        ],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "Replace with sphere/capsule/compound proxy when the object shape demands it."
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "root",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "base"
+        }
+      },
+      "material": "stone",
+      "materialLayers": [
+        "stone"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "left-rock-mass",
+          "description": "left rock mass",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        },
+        {
+          "id": "stone-cracks",
+          "description": "stone cracks",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.24,
+        "microRoughness": 0.42,
+        "bumpAmplitude": 0.08,
+        "normalPattern": "reference-derived tactile breakup",
+        "displacementPattern": "none",
+        "occlusionPattern": "contact and cavity AO",
+        "edgeWearPattern": "restrained exposed-edge lightening",
+        "notes": "Scale detail to gameplay camera; avoid noisy micro geometry."
+      },
+      "evidenceRefs": [
+        "full-object"
+      ],
+      "details": [],
+      "fidelityTier": "final"
+    },
+    {
+      "id": "rock-right",
+      "name": "Lower-right rock group",
+      "level": "meso",
+      "role": "body",
+      "importance": 1.0,
+      "confidence": 0.5,
+      "primitive": "instanced-cluster",
+      "geometryDescriptor": {
+        "topologyIntent": "low-poly blockout with bevel-ready edges",
+        "edgeTreatment": {
+          "type": "bevel",
+          "bevelRadius": 0.035,
+          "segments": 2
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "vertex normals from generated geometry"
+      },
+      "parent": "rock-masses",
+      "attachment": {
+        "parentId": "rock-masses",
+        "parentSocket": "origin",
+        "localStart": [
+          0.58,
+          0.18,
+          0.42
+        ],
+        "localEnd": [
+          0.58,
+          0.42,
+          0.42
+        ],
+        "baseRadius": 0.085,
+        "endRadius": 0.051000000000000004,
+        "embedDepth": 0.02,
+        "overlap": 0.02,
+        "contactType": "embedded",
+        "gapTolerance": 0.006,
+        "evidenceRefs": [
+          "full-object"
+        ]
+      },
+      "dimensions": {
+        "width": 0.34,
+        "height": 0.24,
+        "depth": 0.3,
+        "units": "relative",
+        "confidence": 0.9
+      },
+      "transform": {
+        "position": [
+          0.58,
+          0.18,
+          0.42
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.34,
+          0.24,
+          0.3
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "root",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.5
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": true
+        },
+        "sockets": [
+          {
+            "id": "origin",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "notes": "Stable parent-space attachment socket."
+          }
+        ],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "Replace with sphere/capsule/compound proxy when the object shape demands it."
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "root",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "base"
+        }
+      },
+      "material": "stone",
+      "materialLayers": [
+        "stone"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "right-rock-mass",
+          "description": "right rock mass",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        },
+        {
+          "id": "stone-cracks",
+          "description": "stone cracks",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.24,
+        "microRoughness": 0.42,
+        "bumpAmplitude": 0.08,
+        "normalPattern": "reference-derived tactile breakup",
+        "displacementPattern": "none",
+        "occlusionPattern": "contact and cavity AO",
+        "edgeWearPattern": "restrained exposed-edge lightening",
+        "notes": "Scale detail to gameplay camera; avoid noisy micro geometry."
+      },
+      "evidenceRefs": [
+        "full-object"
+      ],
+      "details": [],
+      "fidelityTier": "final"
+    },
+    {
+      "id": "grass-clumps",
+      "name": "Sparse tall grass clumps",
+      "level": "meso",
+      "role": "body",
+      "importance": 1.0,
+      "confidence": 0.5,
+      "primitive": "instanced-cluster",
+      "geometryDescriptor": {
+        "topologyIntent": "low-poly blockout with bevel-ready edges",
+        "edgeTreatment": {
+          "type": "bevel",
+          "bevelRadius": 0.035,
+          "segments": 2
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "vertex normals from generated geometry"
+      },
+      "parent": "ground-slab",
+      "attachment": {
+        "parentId": "ground-slab",
+        "parentSocket": "origin",
+        "localStart": [
+          0,
+          0.18,
+          0
+        ],
+        "localEnd": [
+          0,
+          0.36,
+          0
+        ],
+        "baseRadius": 0.4,
+        "endRadius": 0.24,
+        "embedDepth": 0.02,
+        "overlap": 0.02,
+        "contactType": "embedded",
+        "gapTolerance": 0.006,
+        "evidenceRefs": [
+          "full-object"
+        ]
+      },
+      "dimensions": {
+        "width": 1.6,
+        "height": 0.18,
+        "depth": 1.5,
+        "units": "relative",
+        "confidence": 0.9
+      },
+      "transform": {
+        "position": [
+          0,
+          0.18,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1.6,
+          0.18,
+          1.5
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "root",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.5
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": true
+        },
+        "sockets": [
+          {
+            "id": "origin",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "notes": "Stable parent-space attachment socket."
+          }
+        ],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "Replace with sphere/capsule/compound proxy when the object shape demands it."
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "root",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "base"
+        }
+      },
+      "material": "grass",
+      "materialLayers": [
+        "grass"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "tall-grass-clumps",
+          "description": "tall grass clumps",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.24,
+        "microRoughness": 0.42,
+        "bumpAmplitude": 0.08,
+        "normalPattern": "reference-derived tactile breakup",
+        "displacementPattern": "none",
+        "occlusionPattern": "contact and cavity AO",
+        "edgeWearPattern": "restrained exposed-edge lightening",
+        "notes": "Scale detail to gameplay camera; avoid noisy micro geometry."
+      },
+      "evidenceRefs": [
+        "full-object"
+      ],
+      "details": [],
+      "fidelityTier": "final"
+    },
+    {
+      "id": "pebbles",
+      "name": "Scattered pasture pebbles",
+      "level": "meso",
+      "role": "body",
+      "importance": 1.0,
+      "confidence": 0.5,
+      "primitive": "instanced-cluster",
+      "geometryDescriptor": {
+        "topologyIntent": "low-poly blockout with bevel-ready edges",
+        "edgeTreatment": {
+          "type": "bevel",
+          "bevelRadius": 0.035,
+          "segments": 2
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "vertex normals from generated geometry"
+      },
+      "parent": "ground-slab",
+      "attachment": {
+        "parentId": "ground-slab",
+        "parentSocket": "origin",
+        "localStart": [
+          0,
+          0.18,
+          0
+        ],
+        "localEnd": [
+          0,
+          0.26,
+          0
+        ],
+        "baseRadius": 0.425,
+        "endRadius": 0.255,
+        "embedDepth": 0.02,
+        "overlap": 0.02,
+        "contactType": "embedded",
+        "gapTolerance": 0.006,
+        "evidenceRefs": [
+          "full-object"
+        ]
+      },
+      "dimensions": {
+        "width": 1.7,
+        "height": 0.08,
+        "depth": 1.5,
+        "units": "relative",
+        "confidence": 0.9
+      },
+      "transform": {
+        "position": [
+          0,
+          0.18,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1.7,
+          0.08,
+          1.5
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "root",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.5
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": true
+        },
+        "sockets": [
+          {
+            "id": "origin",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "notes": "Stable parent-space attachment socket."
+          }
+        ],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "Replace with sphere/capsule/compound proxy when the object shape demands it."
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "root",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "base"
+        }
+      },
+      "material": "stone",
+      "materialLayers": [
+        "stone"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "small-pebbles",
+          "description": "small pebbles",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.24,
+        "microRoughness": 0.42,
+        "bumpAmplitude": 0.08,
+        "normalPattern": "reference-derived tactile breakup",
+        "displacementPattern": "none",
+        "occlusionPattern": "contact and cavity AO",
+        "edgeWearPattern": "restrained exposed-edge lightening",
+        "notes": "Scale detail to gameplay camera; avoid noisy micro geometry."
+      },
+      "evidenceRefs": [
+        "full-object"
+      ],
+      "details": [],
+      "fidelityTier": "final"
+    },
+    {
+      "id": "sheep-heads",
+      "name": "Charcoal sheep heads and ears",
+      "level": "micro",
+      "role": "body",
+      "importance": 1.0,
+      "confidence": 0.5,
+      "primitive": "instanced-cluster",
+      "geometryDescriptor": {
+        "topologyIntent": "low-poly blockout with bevel-ready edges",
+        "edgeTreatment": {
+          "type": "bevel",
+          "bevelRadius": 0.008,
+          "segments": 2
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "vertex normals from generated geometry"
+      },
+      "parent": "sheep-flock",
+      "attachment": {
+        "parentId": "sheep-flock",
+        "parentSocket": "origin",
+        "localStart": [
+          0,
+          0.38,
+          0
+        ],
+        "localEnd": [
+          0,
+          0.56,
+          0
+        ],
+        "baseRadius": 0.06,
+        "endRadius": 0.036,
+        "embedDepth": 0.02,
+        "overlap": 0.02,
+        "contactType": "embedded",
+        "gapTolerance": 0.006,
+        "evidenceRefs": [
+          "full-object"
+        ]
+      },
+      "dimensions": {
+        "width": 0.24,
+        "height": 0.18,
+        "depth": 0.18,
+        "units": "relative",
+        "confidence": 0.9
+      },
+      "transform": {
+        "position": [
+          0,
+          0.38,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.24,
+          0.18,
+          0.18
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "root",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.5
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": true
+        },
+        "sockets": [
+          {
+            "id": "origin",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "notes": "Stable parent-space attachment socket."
+          }
+        ],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "Replace with sphere/capsule/compound proxy when the object shape demands it."
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "root",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "base"
+        }
+      },
+      "material": "charcoal",
+      "materialLayers": [
+        "charcoal"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "dark-face-mask",
+          "description": "dark face mask",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.24,
+        "microRoughness": 0.42,
+        "bumpAmplitude": 0.08,
+        "normalPattern": "reference-derived tactile breakup",
+        "displacementPattern": "none",
+        "occlusionPattern": "contact and cavity AO",
+        "edgeWearPattern": "restrained exposed-edge lightening",
+        "notes": "Scale detail to gameplay camera; avoid noisy micro geometry."
+      },
+      "evidenceRefs": [
+        "full-object"
+      ],
+      "details": [],
+      "fidelityTier": "final"
+    },
+    {
+      "id": "sheep-legs",
+      "name": "Twelve narrow sheep legs",
+      "level": "micro",
+      "role": "body",
+      "importance": 1.0,
+      "confidence": 0.5,
+      "primitive": "instanced-cluster",
+      "geometryDescriptor": {
+        "topologyIntent": "low-poly blockout with bevel-ready edges",
+        "edgeTreatment": {
+          "type": "bevel",
+          "bevelRadius": 0.008,
+          "segments": 2
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "vertex normals from generated geometry"
+      },
+      "parent": "sheep-flock",
+      "attachment": {
+        "parentId": "sheep-flock",
+        "parentSocket": "origin",
+        "localStart": [
+          0,
+          0.2,
+          0
+        ],
+        "localEnd": [
+          0,
+          0.43000000000000005,
+          0
+        ],
+        "baseRadius": 0.02,
+        "endRadius": 0.012,
+        "embedDepth": 0.02,
+        "overlap": 0.02,
+        "contactType": "embedded",
+        "gapTolerance": 0.006,
+        "evidenceRefs": [
+          "full-object"
+        ]
+      },
+      "dimensions": {
+        "width": 0.08,
+        "height": 0.23,
+        "depth": 0.08,
+        "units": "relative",
+        "confidence": 0.9
+      },
+      "transform": {
+        "position": [
+          0,
+          0.2,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.08,
+          0.23,
+          0.08
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "root",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.5
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": true
+        },
+        "sockets": [
+          {
+            "id": "origin",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "notes": "Stable parent-space attachment socket."
+          }
+        ],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "Replace with sphere/capsule/compound proxy when the object shape demands it."
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "root",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "base"
+        }
+      },
+      "material": "charcoal",
+      "materialLayers": [
+        "charcoal"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "thin-dark-legs",
+          "description": "thin dark legs",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.24,
+        "microRoughness": 0.42,
+        "bumpAmplitude": 0.08,
+        "normalPattern": "reference-derived tactile breakup",
+        "displacementPattern": "none",
+        "occlusionPattern": "contact and cavity AO",
+        "edgeWearPattern": "restrained exposed-edge lightening",
+        "notes": "Scale detail to gameplay camera; avoid noisy micro geometry."
+      },
+      "evidenceRefs": [
+        "full-object"
+      ],
+      "details": [],
+      "fidelityTier": "final"
+    },
+    {
+      "id": "wool-curls",
+      "name": "Layered wool curl breakup",
+      "level": "micro",
+      "role": "body",
+      "importance": 1.0,
+      "confidence": 0.5,
+      "primitive": "instanced-cluster",
+      "geometryDescriptor": {
+        "topologyIntent": "low-poly blockout with bevel-ready edges",
+        "edgeTreatment": {
+          "type": "bevel",
+          "bevelRadius": 0.008,
+          "segments": 2
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "vertex normals from generated geometry"
+      },
+      "parent": "sheep-flock",
+      "attachment": {
+        "parentId": "sheep-flock",
+        "parentSocket": "origin",
+        "localStart": [
+          0,
+          0.44,
+          0
+        ],
+        "localEnd": [
+          0,
+          0.6799999999999999,
+          0
+        ],
+        "baseRadius": 0.085,
+        "endRadius": 0.051000000000000004,
+        "embedDepth": 0.02,
+        "overlap": 0.02,
+        "contactType": "embedded",
+        "gapTolerance": 0.006,
+        "evidenceRefs": [
+          "full-object"
+        ]
+      },
+      "dimensions": {
+        "width": 0.34,
+        "height": 0.24,
+        "depth": 0.22,
+        "units": "relative",
+        "confidence": 0.9
+      },
+      "transform": {
+        "position": [
+          0,
+          0.44,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.34,
+          0.24,
+          0.22
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "root",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.5
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": true
+        },
+        "sockets": [
+          {
+            "id": "origin",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "notes": "Stable parent-space attachment socket."
+          }
+        ],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "Replace with sphere/capsule/compound proxy when the object shape demands it."
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "root",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "base"
+        }
+      },
+      "material": "wool",
+      "materialLayers": [
+        "wool"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "wool-curl-breakup",
+          "description": "wool curl breakup",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.24,
+        "microRoughness": 0.42,
+        "bumpAmplitude": 0.08,
+        "normalPattern": "reference-derived tactile breakup",
+        "displacementPattern": "none",
+        "occlusionPattern": "contact and cavity AO",
+        "edgeWearPattern": "restrained exposed-edge lightening",
+        "notes": "Scale detail to gameplay camera; avoid noisy micro geometry."
+      },
+      "evidenceRefs": [
+        "full-object"
+      ],
+      "details": [],
+      "fidelityTier": "final"
+    },
+    {
+      "id": "grass-blades",
+      "name": "Short-grass surface repetition",
+      "level": "micro",
+      "role": "body",
+      "importance": 1.0,
+      "confidence": 0.5,
+      "primitive": "instanced-cluster",
+      "geometryDescriptor": {
+        "topologyIntent": "low-poly blockout with bevel-ready edges",
+        "edgeTreatment": {
+          "type": "bevel",
+          "bevelRadius": 0.008,
+          "segments": 2
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "vertex normals from generated geometry"
+      },
+      "parent": "ground-slab",
+      "attachment": {
+        "parentId": "ground-slab",
+        "parentSocket": "origin",
+        "localStart": [
+          0,
+          0.19,
+          0
+        ],
+        "localEnd": [
+          0,
+          0.25,
+          0
+        ],
+        "baseRadius": 0.4375,
+        "endRadius": 0.2625,
+        "embedDepth": 0.02,
+        "overlap": 0.02,
+        "contactType": "embedded",
+        "gapTolerance": 0.006,
+        "evidenceRefs": [
+          "full-object"
+        ]
+      },
+      "dimensions": {
+        "width": 1.75,
+        "height": 0.06,
+        "depth": 1.55,
+        "units": "relative",
+        "confidence": 0.9
+      },
+      "transform": {
+        "position": [
+          0,
+          0.19,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1.75,
+          0.06,
+          1.55
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "root",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.5
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": true
+        },
+        "sockets": [
+          {
+            "id": "origin",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "notes": "Stable parent-space attachment socket."
+          }
+        ],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "Replace with sphere/capsule/compound proxy when the object shape demands it."
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "root",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "base"
+        }
+      },
+      "material": "grass",
+      "materialLayers": [
+        "grass"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "short-grass-carpet",
+          "description": "short grass carpet",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.24,
+        "microRoughness": 0.42,
+        "bumpAmplitude": 0.08,
+        "normalPattern": "reference-derived tactile breakup",
+        "displacementPattern": "none",
+        "occlusionPattern": "contact and cavity AO",
+        "edgeWearPattern": "restrained exposed-edge lightening",
+        "notes": "Scale detail to gameplay camera; avoid noisy micro geometry."
+      },
+      "evidenceRefs": [
+        "full-object"
+      ],
+      "details": [],
+      "fidelityTier": "final"
+    },
+    {
+      "id": "stone-cracks",
+      "name": "Stone crack and lichen breakup",
+      "level": "micro",
+      "role": "body",
+      "importance": 1.0,
+      "confidence": 0.5,
+      "primitive": "instanced-cluster",
+      "geometryDescriptor": {
+        "topologyIntent": "low-poly blockout with bevel-ready edges",
+        "edgeTreatment": {
+          "type": "bevel",
+          "bevelRadius": 0.008,
+          "segments": 2
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "vertex normals from generated geometry"
+      },
+      "parent": "rock-masses",
+      "attachment": {
+        "parentId": "rock-masses",
+        "parentSocket": "origin",
+        "localStart": [
+          0,
+          0.3,
+          0
+        ],
+        "localEnd": [
+          0,
+          0.38,
+          0
+        ],
+        "baseRadius": 0.1125,
+        "endRadius": 0.0675,
+        "embedDepth": 0.02,
+        "overlap": 0.02,
+        "contactType": "embedded",
+        "gapTolerance": 0.006,
+        "evidenceRefs": [
+          "full-object"
+        ]
+      },
+      "dimensions": {
+        "width": 0.45,
+        "height": 0.08,
+        "depth": 0.35,
+        "units": "relative",
+        "confidence": 0.9
+      },
+      "transform": {
+        "position": [
+          0,
+          0.3,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.45,
+          0.08,
+          0.35
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "root",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.5
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": true
+        },
+        "sockets": [
+          {
+            "id": "origin",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "notes": "Stable parent-space attachment socket."
+          }
+        ],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "Replace with sphere/capsule/compound proxy when the object shape demands it."
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "root",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "base"
+        }
+      },
+      "material": "stone",
+      "materialLayers": [
+        "stone"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "stone-cracks",
+          "description": "stone cracks",
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.24,
+        "microRoughness": 0.42,
+        "bumpAmplitude": 0.08,
+        "normalPattern": "reference-derived tactile breakup",
+        "displacementPattern": "none",
+        "occlusionPattern": "contact and cavity AO",
+        "edgeWearPattern": "restrained exposed-edge lightening",
+        "notes": "Scale detail to gameplay camera; avoid noisy micro geometry."
+      },
+      "evidenceRefs": [
+        "full-object"
+      ],
+      "details": [],
+      "fidelityTier": "final"
+    }
+  ],
+  "materials": [
+    {
+      "id": "grass",
+      "name": "Short pasture grass",
+      "type": "standard",
+      "shaderModel": "MeshStandardMaterial / PBR approximation",
+      "baseColor": "#7f7a21",
+      "color": "#7f7a21",
+      "albedo": {
+        "dominant": "#7f7a21",
+        "secondary": [
+          "#a19736",
+          "#565617",
+          "#c2ad63"
+        ],
+        "samplingNotes": "Reference-observed palette with baked-light caution.",
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-grass/grass_albedo.png",
+          "url": "grass_albedo.png",
+          "channel": "albedo",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "colorVariation": {
+        "palette": [
+          "#7f7a21",
+          "#a19736",
+          "#565617",
+          "#c2ad63"
+        ],
+        "pattern": "reference-derived mottling",
+        "amplitude": 0.18,
+        "heightCorrelation": 0.32
+      },
+      "textureResolution": 1024,
+      "textureProjection": {
+        "mode": "uv",
+        "repeat": [
+          2.0,
+          2.0
+        ],
+        "anisotropy": 8,
+        "texelDensityIntent": "Preserve stable world/object-scale detail; do not stretch micro detail with component scale."
+      },
+      "surfaceFrequencyBands": [
+        {
+          "id": "macro",
+          "frequency": 2.0,
+          "amplitude": 0.42,
+          "role": "broad color and height breakup"
+        },
+        {
+          "id": "meso",
+          "frequency": 12.0,
+          "amplitude": 0.22,
+          "role": "ridges, pores, grain, dents, or equivalent visible relief"
+        },
+        {
+          "id": "micro",
+          "frequency": 56.0,
+          "amplitude": 0.08,
+          "role": "highlight breakup visible under grazing light"
+        }
+      ],
+      "roughness": {
+        "base": 0.82,
+        "variation": 0.14,
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-grass/grass_roughness.png",
+          "url": "grass_roughness.png",
+          "channel": "roughness",
+          "source": "reference-pixel-extraction"
+        },
+        "localResponse": "rougher cavities and softer broad highlights"
+      },
+      "metalness": {
+        "base": 0.0,
+        "variation": 0.0
+      },
+      "normal": {
+        "pattern": "reference-derived height-gradient normal map",
+        "strength": 0.26,
+        "scale": 24.0,
+        "space": "tangent",
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-grass/grass_normal.png",
+          "url": "grass_normal.png",
+          "channel": "normal",
+          "source": "reference-pixel-extraction"
+        },
+        "heightSource": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-grass/grass_height.png",
+          "url": "grass_height.png",
+          "channel": "height",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "bump": {
+        "pattern": "reference-derived height field",
+        "amplitude": 0.04,
+        "scale": 24.0,
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-grass/grass_height.png",
+          "url": "grass_height.png",
+          "channel": "height",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "displacement": {
+        "pattern": "none",
+        "amplitude": 0.0,
+        "scale": 1.0,
+        "silhouetteAffects": false
+      },
+      "ambientOcclusion": {
+        "cavityStrength": 0.35,
+        "contactShadowBias": 0.4,
+        "notes": "Contact and cavity AO only; no uniform darkening.",
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-grass/grass_ao.png",
+          "url": "grass_ao.png",
+          "channel": "ambient-occlusion",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "wear": {
+        "edgeWear": 0.0,
+        "scratches": [],
+        "chips": []
+      },
+      "dirt": {
+        "amount": 0.0,
+        "cavityBias": 0.0,
+        "color": "#2F2A22"
+      },
+      "localOverrides": [
+        {
+          "id": "trodden-paths",
+          "region": "subtle sheep paths",
+          "baseColor": "#6e6428",
+          "roughness": 0.76,
+          "evidenceRefs": [
+            "full-object"
+          ]
+        },
+        {
+          "id": "edge-dryness",
+          "region": "top perimeter",
+          "baseColor": "#a69547",
+          "roughness": 0.86,
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "shaderNotes": [
+        "Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.",
+        "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.",
+        "Use normal/bump/displacement only when they map to observed surface relief.",
+        "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."
+      ],
+      "notes": "Replace with image-derived color, roughness, noise, and edge-wear notes.",
+      "referencePbr": {
+        "version": "1.0",
+        "sourceImage": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/crops/zone-r1c1.png",
+        "extractor": "stage1_intake/extract_pbr_evidence.py",
+        "method": "single-image pixel evidence with de-lighting estimate; not photogrammetry",
+        "usable": true,
+        "verdict": "pass",
+        "confidence": 0.818,
+        "estimatedFidelity": 0.818,
+        "targetThreshold": 0.7,
+        "hardLimit": "Single-image PBR channels are evidence estimates and require browser look-dev review.",
+        "maps": {
+          "albedo": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-grass/grass_albedo.png",
+            "url": "grass_albedo.png",
+            "channel": "albedo",
+            "source": "reference-pixel-extraction"
+          },
+          "roughness": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-grass/grass_roughness.png",
+            "url": "grass_roughness.png",
+            "channel": "roughness",
+            "source": "reference-pixel-extraction"
+          },
+          "height": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-grass/grass_height.png",
+            "url": "grass_height.png",
+            "channel": "height",
+            "source": "reference-pixel-extraction"
+          },
+          "normal": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-grass/grass_normal.png",
+            "url": "grass_normal.png",
+            "channel": "normal",
+            "source": "reference-pixel-extraction"
+          },
+          "ao": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-grass/grass_ao.png",
+            "url": "grass_ao.png",
+            "channel": "ambient-occlusion",
+            "source": "reference-pixel-extraction"
+          }
+        },
+        "warnings": [
+          "single-image inverse rendering cannot prove true physical PBR; confidence is capped"
+        ]
+      }
+    },
+    {
+      "id": "soil",
+      "name": "Layered soil sidewall",
+      "type": "standard",
+      "shaderModel": "MeshStandardMaterial / PBR approximation",
+      "baseColor": "#403822",
+      "color": "#403822",
+      "albedo": {
+        "dominant": "#403822",
+        "secondary": [
+          "#665532",
+          "#241f16",
+          "#8b7443"
+        ],
+        "samplingNotes": "Reference-observed palette with baked-light caution.",
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_albedo.png",
+          "url": "stone_albedo.png",
+          "channel": "albedo",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "colorVariation": {
+        "palette": [
+          "#403822",
+          "#665532",
+          "#241f16",
+          "#8b7443"
+        ],
+        "pattern": "reference-derived mottling",
+        "amplitude": 0.18,
+        "heightCorrelation": 0.32
+      },
+      "textureResolution": 1024,
+      "textureProjection": {
+        "mode": "uv",
+        "repeat": [
+          2.0,
+          2.0
+        ],
+        "anisotropy": 8,
+        "texelDensityIntent": "Preserve stable world/object-scale detail; do not stretch micro detail with component scale."
+      },
+      "surfaceFrequencyBands": [
+        {
+          "id": "macro",
+          "frequency": 2.0,
+          "amplitude": 0.42,
+          "role": "broad color and height breakup"
+        },
+        {
+          "id": "meso",
+          "frequency": 12.0,
+          "amplitude": 0.22,
+          "role": "ridges, pores, grain, dents, or equivalent visible relief"
+        },
+        {
+          "id": "micro",
+          "frequency": 56.0,
+          "amplitude": 0.08,
+          "role": "highlight breakup visible under grazing light"
+        }
+      ],
+      "roughness": {
+        "base": 0.91,
+        "variation": 0.14,
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_roughness.png",
+          "url": "stone_roughness.png",
+          "channel": "roughness",
+          "source": "reference-pixel-extraction"
+        },
+        "localResponse": "rougher cavities and softer broad highlights"
+      },
+      "metalness": {
+        "base": 0.0,
+        "variation": 0.0
+      },
+      "normal": {
+        "pattern": "reference-derived height-gradient normal map",
+        "strength": 0.26,
+        "scale": 24.0,
+        "space": "tangent",
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_normal.png",
+          "url": "stone_normal.png",
+          "channel": "normal",
+          "source": "reference-pixel-extraction"
+        },
+        "heightSource": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_height.png",
+          "url": "stone_height.png",
+          "channel": "height",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "bump": {
+        "pattern": "reference-derived height field",
+        "amplitude": 0.04,
+        "scale": 24.0,
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_height.png",
+          "url": "stone_height.png",
+          "channel": "height",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "displacement": {
+        "pattern": "none",
+        "amplitude": 0.0,
+        "scale": 1.0,
+        "silhouetteAffects": false
+      },
+      "ambientOcclusion": {
+        "cavityStrength": 0.35,
+        "contactShadowBias": 0.4,
+        "notes": "Contact and cavity AO only; no uniform darkening.",
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_ao.png",
+          "url": "stone_ao.png",
+          "channel": "ambient-occlusion",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "wear": {
+        "edgeWear": 0.0,
+        "scratches": [],
+        "chips": []
+      },
+      "dirt": {
+        "amount": 0.0,
+        "cavityBias": 0.0,
+        "color": "#2F2A22"
+      },
+      "localOverrides": [
+        {
+          "id": "soil-side-strata",
+          "region": "six slab sides",
+          "baseColor": "#30291c",
+          "roughness": 0.94,
+          "evidenceRefs": [
+            "full-object"
+          ]
+        },
+        {
+          "id": "sunlit-top-edge",
+          "region": "top bevel",
+          "baseColor": "#8b7949",
+          "roughness": 0.8,
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "shaderNotes": [
+        "Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.",
+        "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.",
+        "Use normal/bump/displacement only when they map to observed surface relief.",
+        "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."
+      ],
+      "notes": "Replace with image-derived color, roughness, noise, and edge-wear notes.",
+      "referencePbr": {
+        "version": "1.0",
+        "sourceImage": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/crops/zone-r2c1.png",
+        "extractor": "stage1_intake/extract_pbr_evidence.py",
+        "method": "single-image pixel evidence with de-lighting estimate; not photogrammetry",
+        "usable": true,
+        "verdict": "pass",
+        "confidence": 0.86,
+        "estimatedFidelity": 0.86,
+        "targetThreshold": 0.7,
+        "hardLimit": "Single-image PBR channels are evidence estimates and require browser look-dev review.",
+        "maps": {
+          "albedo": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_albedo.png",
+            "url": "stone_albedo.png",
+            "channel": "albedo",
+            "source": "reference-pixel-extraction"
+          },
+          "roughness": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_roughness.png",
+            "url": "stone_roughness.png",
+            "channel": "roughness",
+            "source": "reference-pixel-extraction"
+          },
+          "height": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_height.png",
+            "url": "stone_height.png",
+            "channel": "height",
+            "source": "reference-pixel-extraction"
+          },
+          "normal": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_normal.png",
+            "url": "stone_normal.png",
+            "channel": "normal",
+            "source": "reference-pixel-extraction"
+          },
+          "ao": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_ao.png",
+            "url": "stone_ao.png",
+            "channel": "ambient-occlusion",
+            "source": "reference-pixel-extraction"
+          }
+        },
+        "warnings": [
+          "single-image inverse rendering cannot prove true physical PBR; confidence is capped"
+        ]
+      }
+    },
+    {
+      "id": "wool",
+      "name": "Cream sheep wool",
+      "type": "standard",
+      "shaderModel": "MeshStandardMaterial / PBR approximation",
+      "baseColor": "#e3cf9e",
+      "color": "#e3cf9e",
+      "albedo": {
+        "dominant": "#e3cf9e",
+        "secondary": [
+          "#c2aa77",
+          "#f0dfb7",
+          "#9b8358"
+        ],
+        "samplingNotes": "Reference-observed palette with baked-light caution.",
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_albedo.png",
+          "url": "wool_albedo.png",
+          "channel": "albedo",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "colorVariation": {
+        "palette": [
+          "#e3cf9e",
+          "#c2aa77",
+          "#f0dfb7",
+          "#9b8358"
+        ],
+        "pattern": "reference-derived mottling",
+        "amplitude": 0.18,
+        "heightCorrelation": 0.32
+      },
+      "textureResolution": 1024,
+      "textureProjection": {
+        "mode": "uv",
+        "repeat": [
+          2.0,
+          2.0
+        ],
+        "anisotropy": 8,
+        "texelDensityIntent": "Preserve stable world/object-scale detail; do not stretch micro detail with component scale."
+      },
+      "surfaceFrequencyBands": [
+        {
+          "id": "macro",
+          "frequency": 2.0,
+          "amplitude": 0.42,
+          "role": "broad color and height breakup"
+        },
+        {
+          "id": "meso",
+          "frequency": 12.0,
+          "amplitude": 0.22,
+          "role": "ridges, pores, grain, dents, or equivalent visible relief"
+        },
+        {
+          "id": "micro",
+          "frequency": 56.0,
+          "amplitude": 0.08,
+          "role": "highlight breakup visible under grazing light"
+        }
+      ],
+      "roughness": {
+        "base": 0.88,
+        "variation": 0.14,
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_roughness.png",
+          "url": "wool_roughness.png",
+          "channel": "roughness",
+          "source": "reference-pixel-extraction"
+        },
+        "localResponse": "rougher cavities and softer broad highlights"
+      },
+      "metalness": {
+        "base": 0.0,
+        "variation": 0.0
+      },
+      "normal": {
+        "pattern": "reference-derived height-gradient normal map",
+        "strength": 0.26,
+        "scale": 24.0,
+        "space": "tangent",
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_normal.png",
+          "url": "wool_normal.png",
+          "channel": "normal",
+          "source": "reference-pixel-extraction"
+        },
+        "heightSource": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_height.png",
+          "url": "wool_height.png",
+          "channel": "height",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "bump": {
+        "pattern": "reference-derived height field",
+        "amplitude": 0.04,
+        "scale": 24.0,
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_height.png",
+          "url": "wool_height.png",
+          "channel": "height",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "displacement": {
+        "pattern": "none",
+        "amplitude": 0.0,
+        "scale": 1.0,
+        "silhouetteAffects": false
+      },
+      "ambientOcclusion": {
+        "cavityStrength": 0.35,
+        "contactShadowBias": 0.4,
+        "notes": "Contact and cavity AO only; no uniform darkening.",
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_ao.png",
+          "url": "wool_ao.png",
+          "channel": "ambient-occlusion",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "wear": {
+        "edgeWear": 0.0,
+        "scratches": [],
+        "chips": []
+      },
+      "dirt": {
+        "amount": 0.0,
+        "cavityBias": 0.0,
+        "color": "#2F2A22"
+      },
+      "localOverrides": [
+        {
+          "id": "wool-shadow-cavities",
+          "region": "curl recesses",
+          "baseColor": "#9b8358",
+          "roughness": 0.94,
+          "evidenceRefs": [
+            "full-object"
+          ]
+        },
+        {
+          "id": "sunlit-wool",
+          "region": "upper-left curls",
+          "baseColor": "#f0dfb7",
+          "roughness": 0.82,
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "shaderNotes": [
+        "Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.",
+        "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.",
+        "Use normal/bump/displacement only when they map to observed surface relief.",
+        "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."
+      ],
+      "notes": "Replace with image-derived color, roughness, noise, and edge-wear notes.",
+      "referencePbr": {
+        "version": "1.0",
+        "sourceImage": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/wool-crop.png",
+        "extractor": "stage1_intake/extract_pbr_evidence.py",
+        "method": "single-image pixel evidence with de-lighting estimate; not photogrammetry",
+        "usable": true,
+        "verdict": "pass",
+        "confidence": 0.829,
+        "estimatedFidelity": 0.829,
+        "targetThreshold": 0.7,
+        "hardLimit": "Single-image PBR channels are evidence estimates and require browser look-dev review.",
+        "maps": {
+          "albedo": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_albedo.png",
+            "url": "wool_albedo.png",
+            "channel": "albedo",
+            "source": "reference-pixel-extraction"
+          },
+          "roughness": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_roughness.png",
+            "url": "wool_roughness.png",
+            "channel": "roughness",
+            "source": "reference-pixel-extraction"
+          },
+          "height": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_height.png",
+            "url": "wool_height.png",
+            "channel": "height",
+            "source": "reference-pixel-extraction"
+          },
+          "normal": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_normal.png",
+            "url": "wool_normal.png",
+            "channel": "normal",
+            "source": "reference-pixel-extraction"
+          },
+          "ao": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_ao.png",
+            "url": "wool_ao.png",
+            "channel": "ambient-occlusion",
+            "source": "reference-pixel-extraction"
+          }
+        },
+        "warnings": [
+          "single-image inverse rendering cannot prove true physical PBR; confidence is capped"
+        ]
+      }
+    },
+    {
+      "id": "charcoal",
+      "name": "Sheep face legs and ears",
+      "type": "standard",
+      "shaderModel": "MeshStandardMaterial / PBR approximation",
+      "baseColor": "#29251f",
+      "color": "#29251f",
+      "albedo": {
+        "dominant": "#29251f",
+        "secondary": [
+          "#443a2d",
+          "#171512"
+        ],
+        "samplingNotes": "Reference-observed palette with baked-light caution.",
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_albedo.png",
+          "url": "wool_albedo.png",
+          "channel": "albedo",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "colorVariation": {
+        "palette": [
+          "#29251f",
+          "#443a2d",
+          "#171512"
+        ],
+        "pattern": "reference-derived mottling",
+        "amplitude": 0.18,
+        "heightCorrelation": 0.32
+      },
+      "textureResolution": 1024,
+      "textureProjection": {
+        "mode": "uv",
+        "repeat": [
+          2.0,
+          2.0
+        ],
+        "anisotropy": 8,
+        "texelDensityIntent": "Preserve stable world/object-scale detail; do not stretch micro detail with component scale."
+      },
+      "surfaceFrequencyBands": [
+        {
+          "id": "macro",
+          "frequency": 2.0,
+          "amplitude": 0.42,
+          "role": "broad color and height breakup"
+        },
+        {
+          "id": "meso",
+          "frequency": 12.0,
+          "amplitude": 0.22,
+          "role": "ridges, pores, grain, dents, or equivalent visible relief"
+        },
+        {
+          "id": "micro",
+          "frequency": 56.0,
+          "amplitude": 0.08,
+          "role": "highlight breakup visible under grazing light"
+        }
+      ],
+      "roughness": {
+        "base": 0.78,
+        "variation": 0.14,
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_roughness.png",
+          "url": "wool_roughness.png",
+          "channel": "roughness",
+          "source": "reference-pixel-extraction"
+        },
+        "localResponse": "rougher cavities and softer broad highlights"
+      },
+      "metalness": {
+        "base": 0.0,
+        "variation": 0.0
+      },
+      "normal": {
+        "pattern": "reference-derived height-gradient normal map",
+        "strength": 0.26,
+        "scale": 24.0,
+        "space": "tangent",
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_normal.png",
+          "url": "wool_normal.png",
+          "channel": "normal",
+          "source": "reference-pixel-extraction"
+        },
+        "heightSource": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_height.png",
+          "url": "wool_height.png",
+          "channel": "height",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "bump": {
+        "pattern": "reference-derived height field",
+        "amplitude": 0.04,
+        "scale": 24.0,
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_height.png",
+          "url": "wool_height.png",
+          "channel": "height",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "displacement": {
+        "pattern": "none",
+        "amplitude": 0.0,
+        "scale": 1.0,
+        "silhouetteAffects": false
+      },
+      "ambientOcclusion": {
+        "cavityStrength": 0.35,
+        "contactShadowBias": 0.4,
+        "notes": "Contact and cavity AO only; no uniform darkening.",
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_ao.png",
+          "url": "wool_ao.png",
+          "channel": "ambient-occlusion",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "wear": {
+        "edgeWear": 0.0,
+        "scratches": [],
+        "chips": []
+      },
+      "dirt": {
+        "amount": 0.0,
+        "cavityBias": 0.0,
+        "color": "#2F2A22"
+      },
+      "localOverrides": [
+        {
+          "id": "muzzle-softness",
+          "region": "face front",
+          "baseColor": "#3b3127",
+          "roughness": 0.86,
+          "evidenceRefs": [
+            "full-object"
+          ]
+        },
+        {
+          "id": "leg-contact",
+          "region": "hoof ends",
+          "baseColor": "#171512",
+          "roughness": 0.9,
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "shaderNotes": [
+        "Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.",
+        "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.",
+        "Use normal/bump/displacement only when they map to observed surface relief.",
+        "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."
+      ],
+      "notes": "Replace with image-derived color, roughness, noise, and edge-wear notes.",
+      "referencePbr": {
+        "version": "1.0",
+        "sourceImage": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/wool-crop.png",
+        "extractor": "stage1_intake/extract_pbr_evidence.py",
+        "method": "single-image pixel evidence with de-lighting estimate; not photogrammetry",
+        "usable": true,
+        "verdict": "pass",
+        "confidence": 0.829,
+        "estimatedFidelity": 0.829,
+        "targetThreshold": 0.7,
+        "hardLimit": "Single-image PBR channels are evidence estimates and require browser look-dev review.",
+        "maps": {
+          "albedo": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_albedo.png",
+            "url": "wool_albedo.png",
+            "channel": "albedo",
+            "source": "reference-pixel-extraction"
+          },
+          "roughness": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_roughness.png",
+            "url": "wool_roughness.png",
+            "channel": "roughness",
+            "source": "reference-pixel-extraction"
+          },
+          "height": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_height.png",
+            "url": "wool_height.png",
+            "channel": "height",
+            "source": "reference-pixel-extraction"
+          },
+          "normal": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_normal.png",
+            "url": "wool_normal.png",
+            "channel": "normal",
+            "source": "reference-pixel-extraction"
+          },
+          "ao": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-wool-body/wool_ao.png",
+            "url": "wool_ao.png",
+            "channel": "ambient-occlusion",
+            "source": "reference-pixel-extraction"
+          }
+        },
+        "warnings": [
+          "single-image inverse rendering cannot prove true physical PBR; confidence is capped"
+        ]
+      }
+    },
+    {
+      "id": "stone",
+      "name": "Weathered pasture stone",
+      "type": "standard",
+      "shaderModel": "MeshStandardMaterial / PBR approximation",
+      "baseColor": "#77715d",
+      "color": "#77715d",
+      "albedo": {
+        "dominant": "#77715d",
+        "secondary": [
+          "#9b9274",
+          "#4e4b3f",
+          "#b4a889"
+        ],
+        "samplingNotes": "Reference-observed palette with baked-light caution.",
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_albedo.png",
+          "url": "stone_albedo.png",
+          "channel": "albedo",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "colorVariation": {
+        "palette": [
+          "#77715d",
+          "#9b9274",
+          "#4e4b3f",
+          "#b4a889"
+        ],
+        "pattern": "reference-derived mottling",
+        "amplitude": 0.18,
+        "heightCorrelation": 0.32
+      },
+      "textureResolution": 1024,
+      "textureProjection": {
+        "mode": "uv",
+        "repeat": [
+          2.0,
+          2.0
+        ],
+        "anisotropy": 8,
+        "texelDensityIntent": "Preserve stable world/object-scale detail; do not stretch micro detail with component scale."
+      },
+      "surfaceFrequencyBands": [
+        {
+          "id": "macro",
+          "frequency": 2.0,
+          "amplitude": 0.42,
+          "role": "broad color and height breakup"
+        },
+        {
+          "id": "meso",
+          "frequency": 12.0,
+          "amplitude": 0.22,
+          "role": "ridges, pores, grain, dents, or equivalent visible relief"
+        },
+        {
+          "id": "micro",
+          "frequency": 56.0,
+          "amplitude": 0.08,
+          "role": "highlight breakup visible under grazing light"
+        }
+      ],
+      "roughness": {
+        "base": 0.84,
+        "variation": 0.14,
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_roughness.png",
+          "url": "stone_roughness.png",
+          "channel": "roughness",
+          "source": "reference-pixel-extraction"
+        },
+        "localResponse": "rougher cavities and softer broad highlights"
+      },
+      "metalness": {
+        "base": 0.0,
+        "variation": 0.0
+      },
+      "normal": {
+        "pattern": "reference-derived height-gradient normal map",
+        "strength": 0.26,
+        "scale": 24.0,
+        "space": "tangent",
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_normal.png",
+          "url": "stone_normal.png",
+          "channel": "normal",
+          "source": "reference-pixel-extraction"
+        },
+        "heightSource": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_height.png",
+          "url": "stone_height.png",
+          "channel": "height",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "bump": {
+        "pattern": "reference-derived height field",
+        "amplitude": 0.04,
+        "scale": 24.0,
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_height.png",
+          "url": "stone_height.png",
+          "channel": "height",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "displacement": {
+        "pattern": "none",
+        "amplitude": 0.0,
+        "scale": 1.0,
+        "silhouetteAffects": false
+      },
+      "ambientOcclusion": {
+        "cavityStrength": 0.35,
+        "contactShadowBias": 0.4,
+        "notes": "Contact and cavity AO only; no uniform darkening.",
+        "map": {
+          "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_ao.png",
+          "url": "stone_ao.png",
+          "channel": "ambient-occlusion",
+          "source": "reference-pixel-extraction"
+        }
+      },
+      "wear": {
+        "edgeWear": 0.0,
+        "scratches": [],
+        "chips": []
+      },
+      "dirt": {
+        "amount": 0.0,
+        "cavityBias": 0.0,
+        "color": "#2F2A22"
+      },
+      "localOverrides": [
+        {
+          "id": "moss-lichen",
+          "region": "upward stone faces",
+          "baseColor": "#6f7228",
+          "roughness": 0.92,
+          "evidenceRefs": [
+            "full-object"
+          ]
+        },
+        {
+          "id": "stone-cracks",
+          "region": "recessed cracks",
+          "baseColor": "#3f3d35",
+          "roughness": 0.95,
+          "evidenceRefs": [
+            "full-object"
+          ]
+        }
+      ],
+      "shaderNotes": [
+        "Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.",
+        "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.",
+        "Use normal/bump/displacement only when they map to observed surface relief.",
+        "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."
+      ],
+      "notes": "Replace with image-derived color, roughness, noise, and edge-wear notes.",
+      "referencePbr": {
+        "version": "1.0",
+        "sourceImage": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/crops/zone-r0c1.png",
+        "extractor": "stage1_intake/extract_pbr_evidence.py",
+        "method": "single-image pixel evidence with de-lighting estimate; not photogrammetry",
+        "usable": true,
+        "verdict": "pass",
+        "confidence": 0.86,
+        "estimatedFidelity": 0.86,
+        "targetThreshold": 0.7,
+        "hardLimit": "Single-image PBR channels are evidence estimates and require browser look-dev review.",
+        "maps": {
+          "albedo": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_albedo.png",
+            "url": "stone_albedo.png",
+            "channel": "albedo",
+            "source": "reference-pixel-extraction"
+          },
+          "roughness": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_roughness.png",
+            "url": "stone_roughness.png",
+            "channel": "roughness",
+            "source": "reference-pixel-extraction"
+          },
+          "height": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_height.png",
+            "url": "stone_height.png",
+            "channel": "height",
+            "source": "reference-pixel-extraction"
+          },
+          "normal": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_normal.png",
+            "url": "stone_normal.png",
+            "channel": "normal",
+            "source": "reference-pixel-extraction"
+          },
+          "ao": {
+            "path": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/intake/pbr-stone/stone_ao.png",
+            "url": "stone_ao.png",
+            "channel": "ambient-occlusion",
+            "source": "reference-pixel-extraction"
+          }
+        },
+        "warnings": [
+          "single-image inverse rendering cannot prove true physical PBR; confidence is capped"
+        ]
+      }
+    }
+  ],
+  "repetitionSystems": [
+    {
+      "id": "sheep-instances",
+      "name": "Three posed sheep assemblies",
+      "componentRefs": [
+        "sheep-a",
+        "sheep-b",
+        "sheep-c"
+      ],
+      "count": 3,
+      "distribution": "fixed reference-matched triangular composition",
+      "seed": 72022
+    },
+    {
+      "id": "grass-clump-instances",
+      "name": "Sparse taller grass clumps",
+      "componentRefs": [
+        "grass-clumps"
+      ],
+      "count": 42,
+      "distribution": "deterministic blue-noise style distribution outside sheep and rock clearances",
+      "seed": 72023
+    },
+    {
+      "id": "pebble-instances",
+      "name": "Scattered pasture pebbles",
+      "componentRefs": [
+        "pebbles"
+      ],
+      "count": 34,
+      "distribution": "deterministic edge-weighted scatter",
+      "seed": 72024
+    }
+  ],
+  "buildPasses": [
+    {
+      "id": "blockout",
+      "goal": "Match macro silhouette and proportions.",
+      "componentRefs": [
+        "root"
+      ],
+      "acceptance": [
+        "Silhouette reads correctly without materials.",
+        "Quality contract has named all required macro feature groups before code generation.",
+        "AI vision comparison score meets selfCorrectLoop.visualAcceptance.threshold."
+      ]
+    },
+    {
+      "id": "structural-pass",
+      "goal": "Build the component hierarchy implied by the pre-spec complexity assessment.",
+      "componentRefs": [
+        "root"
+      ],
+      "acceptance": [
+        "Macro, meso, and repeated structures meet qualityContract.minimumSpecDepth.",
+        "Parent-child relations, joints, seams, sockets, and contact points are explicit.",
+        "Every attached child appendage/connector has parentSocket, localStart/localEnd, contactType, embedDepth or overlap, and gapTolerance.",
+        "AI vision comparison score meets selfCorrectLoop.visualAcceptance.threshold."
+      ]
+    },
+    {
+      "id": "form-refinement",
+      "goal": "Refine shape, deformation, bevels, tapers, curves, asymmetry, and visible local geometry.",
+      "componentRefs": [
+        "root"
+      ],
+      "acceptance": [
+        "Important visible forms are represented in component geometryDescriptor, deformations, localFeatures, or repetitionSystems.",
+        "Endpoint-based child parts are rooted at their attachment sockets and do not visibly float away from parents.",
+        "AI vision comparison score meets selfCorrectLoop.visualAcceptance.threshold."
+      ]
+    },
+    {
+      "id": "material-pass",
+      "goal": "Match material color, roughness, bump, and local variation.",
+      "componentRefs": [
+        "root"
+      ],
+      "acceptance": [
+        "Reference-derived albedo palette records dominant, secondary, and accent colors per visible material.",
+        "Each important material defines roughness variation and at least one normal/bump/displacement response.",
+        "Local material overrides, dirt/wear/stains/moss/chips/scratches or equivalent masks are tied to evidenceRefs.",
+        "Thin, transparent, reflective, wet, or fibrous materials document alpha/transmission/clearcoat/metalness/fiber response when relevant.",
+        "Generated preview uses procedural albedo/roughness/bump texture or vertex color variation instead of one flat color.",
+        "Generated preview uses independent PBR maps at 1024px or higher for the quality-first tier.",
+        "If source pixels are available, referencePbr extraction passed at confidence >= 0.7 or the pass is stopped/requesting better references.",
+        "Macro, meso, and micro surface frequency bands are visible at the intended review distance without obvious tiling.",
+        "AI vision comparison score meets selfCorrectLoop.visualAcceptance.threshold."
+      ]
+    },
+    {
+      "id": "surface-pass",
+      "goal": "Add procedural surface locality such as normal/bump/displacement, AO, dirt, stains, chips, grain, moss, scratches, and wear.",
+      "componentRefs": [
+        "root"
+      ],
+      "acceptance": [
+        "Every required material feature group has local overrides or surfaceDetail tied to evidenceRefs.",
+        "A grazing-angle close-up proves that normal/height detail breaks highlights naturally and does not read as smooth plastic.",
+        "AI vision comparison score meets selfCorrectLoop.visualAcceptance.threshold."
+      ]
+    },
+    {
+      "id": "lighting-pass",
+      "goal": "Make material and form readable under neutral turntable lighting plus optional reference lighting.",
+      "componentRefs": [
+        "root"
+      ],
+      "acceptance": [
+        "lightingFromPhoto identifies key light direction/color/intensity, fill light, rim or environment light, and ambient color.",
+        "Exposure, tone mapping, background color/gradient, shadow softness, and contact shadow behavior are specified.",
+        "Lighting does not hide geometry/material gaps and screenshots can be compared fairly to the reference.",
+        "Neutral, grazing, and reference-matched lighting checks distinguish material errors from lighting errors.",
+        "AI vision comparison score meets selfCorrectLoop.visualAcceptance.threshold."
+      ]
+    },
+    {
+      "id": "interaction-pass",
+      "goal": "Make the model ready for future animation, transformation, physics, or destruction.",
+      "componentRefs": [
+        "root"
+      ],
+      "acceptance": [
+        "Macro and movable meso components have stable pivot nodes.",
+        "Sockets, collider proxies, and destruction metadata are present for future runtime actions.",
+        "AI vision comparison score meets selfCorrectLoop.visualAcceptance.threshold."
+      ]
+    },
+    {
+      "id": "optimization-pass",
+      "goal": "Protect runtime performance after visual fidelity is accepted.",
+      "componentRefs": [
+        "root"
+      ],
+      "acceptance": [
+        "Triangle count, draw calls, instancing, LOD strategy, and FPS target are documented or verified.",
+        "Repeated detail is instanced or simplified where possible without breaking silhouette/material believability."
+      ]
+    }
+  ],
+  "visualEvidence": [
+    {
+      "timestamp": "2026-07-21T17:26:12.511287+00:00",
+      "passId": "blockout",
+      "estimatedFidelity": 0.83,
+      "aiVisionScore": 0.83,
+      "visualAcceptanceThreshold": 0.7,
+      "layerScores": {
+        "silhouetteProportion": 0.88,
+        "componentStructure": 0.84,
+        "formDetail": 0.64,
+        "materialSurface": 0.42,
+        "lightingCamera": 0.8
+      },
+      "featureReviews": [
+        {
+          "id": "pasture-hex-silhouette",
+          "score": 0.92
+        },
+        {
+          "id": "three-sheep-composition",
+          "score": 0.84
+        },
+        {
+          "id": "pasture-rock-balance",
+          "score": 0.82
+        }
+      ],
+      "referenceScreenshot": "/Users/aditya.nawal/projects/katan-agents/art/reference/standalone-assets/02-terrain-pasture.png",
+      "renderScreenshot": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/review/blockout-v5-square.png",
+      "comparisonImage": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/review/blockout-v5-comparison.png",
+      "cameraView": "reference-three-quarter",
+      "notes": "",
+      "aiVisionNotes": "The gameplay-critical hex and macro prop distribution match. Sheep are intentionally clay blockouts; wool, anatomy molding, grass, pebble density, stone shaping, and final materials belong to later unlocked passes."
+    }
+  ],
+  "reviewHistory": [
+    {
+      "timestamp": "2026-07-21T17:26:12.511287+00:00",
+      "passId": "blockout",
+      "estimatedFidelity": 0.83,
+      "aiVisionScore": 0.83,
+      "visualAcceptanceThreshold": 0.7,
+      "layerScores": {
+        "silhouetteProportion": 0.88,
+        "componentStructure": 0.84,
+        "formDetail": 0.64,
+        "materialSurface": 0.42,
+        "lightingCamera": 0.8
+      },
+      "featureReviews": [
+        {
+          "id": "pasture-hex-silhouette",
+          "score": 0.92
+        },
+        {
+          "id": "three-sheep-composition",
+          "score": 0.84
+        },
+        {
+          "id": "pasture-rock-balance",
+          "score": 0.82
+        }
+      ],
+      "action": "continue",
+      "summary": "V5 locks the exact canonical pointy-top slab, the three-sheep triangular composition with two grazing poses and one alert pose, and the large-left/small-right rock balance at reference-relative scale.",
+      "matched": [],
+      "mismatches": [],
+      "specFixes": [],
+      "codeFixes": [],
+      "evidence": [],
+      "visualEvidence": {
+        "referenceScreenshot": "/Users/aditya.nawal/projects/katan-agents/art/reference/standalone-assets/02-terrain-pasture.png",
+        "renderScreenshot": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/review/blockout-v5-square.png",
+        "comparisonImage": "/Users/aditya.nawal/projects/katan-agents/art/procedural/standalone-assets/02-terrain-pasture/review/blockout-v5-comparison.png",
+        "cameraView": "reference-three-quarter",
+        "notes": "",
+        "aiVisionNotes": "The gameplay-critical hex and macro prop distribution match. Sheep are intentionally clay blockouts; wool, anatomy molding, grass, pebble density, stone shaping, and final materials belong to later unlocked passes."
+      }
+    }
+  ],
+  "lodPlan": [
+    {
+      "tier": "near",
+      "distance": 0,
+      "strategy": "full component tree and material layers"
+    },
+    {
+      "tier": "far",
+      "distance": 30,
+      "strategy": "merge static components and reduce local feature geometry"
+    }
+  ],
+  "performanceBudget": {
+    "qualityPriority": "reference-fidelity",
+    "targetTriangles": 250000,
+    "maxDrawCalls": 160,
+    "textureSize": 2048,
+    "fpsTarget": 30,
+    "optimizationPolicy": "Reach accepted visual fidelity first, then optimize without removing reference-critical geometry or surface layers."
+  },
+  "lightingFromPhoto": [
+    {
+      "type": "key light",
+      "direction": [
+        -0.49,
+        0.77,
+        0.43
+      ],
+      "color": "#ffdbad",
+      "intensity": 4.25,
+      "shadowSoftness": 0.58
+    },
+    {
+      "type": "fill light",
+      "direction": [
+        0.56,
+        0.63,
+        -0.56
+      ],
+      "color": "#c7dce3",
+      "intensity": 0.86
+    },
+    {
+      "type": "hemisphere environment",
+      "color": "#f4f7f7",
+      "intensity": 1.18,
+      "note": "neutral sky with cool blue-grey ground fill"
+    },
+    {
+      "type": "render intent",
+      "exposure": 1.2,
+      "toneMapping": "ACES Filmic",
+      "background": "#f3f3f1",
+      "contactShadow": "soft contact shadow beneath slab plus diffuse rightward cast shadows from sheep and rocks"
+    }
+  ],
+  "proceduralStrategy": [
+    "Block out macro silhouette first.",
+    "Add component hierarchy and joints.",
+    "Create stable pivot groups, sockets, collider proxies, and destruction metadata before visual polish.",
+    "Refine forms with bevels, tapers, bends, and procedural noise.",
+    "Run reference PBR extraction for important source-image materials and stop when confidence is below the target threshold.",
+    "Add material variation before adding expensive micro-geometry."
+  ],
+  "animationAnchors": [
+    "root pivot node supports whole-object translation, rotation, scale, and visibility changes",
+    "component pivot groups support later local transforms without rebuilding geometry"
+  ],
+  "destructionAnchors": [
+    "actionProfile.destruction.fractureGroup marks detachable or breakable component sets",
+    "component seams and sockets define plausible break points instead of random explosions"
+  ],
+  "risks": [
+    {
+      "id": "sheep-scale",
+      "description": "Sheep can become toy-like blobs at gameplay zoom.",
+      "mitigation": "Keep charcoal head/leg contrast and distinct head poses readable before wool micro detail."
+    },
+    {
+      "id": "grass-density",
+      "description": "Individual blades can exceed the web triangle/draw-call budget.",
+      "mitigation": "Use instancing and cap density after browser measurement."
+    },
+    {
+      "id": "canonical-footprint",
+      "description": "Surface props can overhang neighboring gameplay hexes.",
+      "mitigation": "Keep all authored bounds inside the canonical pointy-top hit target."
+    }
+  ]
+}
