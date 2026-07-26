@@ -132,7 +132,11 @@ export const foldedLathe = (
     const [radius, y] = profile[index]
     const t = index / (profile.length - 1)
     const theta = (segment / segments) * Math.PI * 2
-    const r = radiusAt(radius, theta, 1 - Math.abs(t - 0.55) * 1.2)
+    // Folds are deepest at the hem and fade towards the shoulders. The old
+    // weighting peaked in the middle of the profile, which put the cloth
+    // movement where nothing sees it: at board scale the only fold that reads
+    // is one that bites the silhouette, and the silhouette is the hem.
+    const r = radiusAt(radius, theta, 0.3 + 0.7 * (1 - t) ** 0.8)
     return new THREE.Vector3(Math.cos(theta) * r, y, Math.sin(theta) * r)
   }
   for (let index = 0; index < profile.length - 1; index += 1) {
@@ -212,6 +216,130 @@ export const banner = (width: number, height: number) => {
   position.needsUpdate = true
   geometry.computeVertexNormals()
   return geometry
+}
+
+/**
+ * A slack line between two points, built as a chain of short cylinders with a
+ * parabolic sag. Used for mooring warps: a rope that visibly runs from a
+ * bollard to a boat is what makes the boat read as moored rather than adrift.
+ */
+export const ropeLine = (
+  from: [number, number, number],
+  to: [number, number, number],
+  sag: number,
+  radius = 0.006,
+  segments = 5,
+): Part[] => {
+  const a = new THREE.Vector3(...from)
+  const b = new THREE.Vector3(...to)
+  const at = (t: number) => {
+    const point = a.clone().lerp(b, t)
+    point.y -= sag * 4 * t * (1 - t)
+    return point
+  }
+  const parts: Part[] = []
+  const up = new THREE.Vector3(0, 1, 0)
+  for (let index = 0; index < segments; index += 1) {
+    const p0 = at(index / segments)
+    const p1 = at((index + 1) / segments)
+    const mid = p0.clone().add(p1).multiplyScalar(0.5)
+    const dir = p1.clone().sub(p0)
+    const length = dir.length()
+    const quaternion = new THREE.Quaternion().setFromUnitVectors(up, dir.normalize())
+    const euler = new THREE.Euler().setFromQuaternion(quaternion)
+    parts.push({
+      geo: cyl(radius, radius, length, 5),
+      pos: [mid.x, mid.y, mid.z],
+      rot: [euler.x, euler.y, euler.z],
+      uv: [1, 1],
+    })
+  }
+  return parts
+}
+
+/**
+ * A clinker-built open boat hull: outer skin, inner skin, rail cap and floor,
+ * so a camera looking down into it sees planking rather than straight through
+ * the far side. `+X` is the bow. The waterline sits at local `y = 0`.
+ */
+export const openHull = (
+  length: number,
+  beam: number,
+  freeboard: number,
+  draft: number,
+  segments = 20,
+): Part[] => {
+  const plan = (theta: number, xScale: number, zScale: number) => {
+    const c = Math.cos(theta)
+    const s = Math.sin(theta)
+    // Raising the sine exponent pulls the beam in near the ends, which is what
+    // turns an ellipse into something with a stem and a stern post.
+    const x = length * Math.sign(c) * Math.abs(c) ** 0.82 * (c > 0 ? 1 : 0.88)
+    const z = beam * Math.sign(s) * Math.abs(s) ** 1.55
+    return new THREE.Vector3(x * xScale, 0, z * zScale)
+  }
+  const sheerY = (theta: number) => freeboard + Math.abs(Math.cos(theta)) ** 3 * freeboard * 0.85
+  const ring = (xScale: number, zScale: number, y: (theta: number) => number) =>
+    Array.from({ length: segments }, (_, index) => {
+      const theta = (index / segments) * Math.PI * 2
+      const point = plan(theta, xScale, zScale)
+      point.y = y(theta)
+      return point
+    })
+
+  const outerSheer = ring(1, 1, sheerY)
+  const outerKeel = ring(0.9, 0.66, () => -draft)
+  const innerSheer = ring(0.94, 0.84, (theta) => sheerY(theta) - 0.004)
+  const innerKeel = ring(0.84, 0.5, () => -draft + 0.016)
+
+  const positions: number[] = []
+  const uvs: number[] = []
+  const tri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, u: number) => {
+    positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z)
+    uvs.push(u, 0, u, 1, u + 0.5, 1)
+  }
+  const strip = (top: THREE.Vector3[], bottom: THREE.Vector3[], flip: boolean) => {
+    for (let index = 0; index < segments; index += 1) {
+      const next = (index + 1) % segments
+      const u = index / segments
+      if (flip) {
+        tri(top[index], bottom[index], bottom[next], u)
+        tri(top[index], bottom[next], top[next], u)
+      } else {
+        tri(top[index], bottom[next], bottom[index], u)
+        tri(top[index], top[next], bottom[next], u)
+      }
+    }
+  }
+  const fan = (loop: THREE.Vector3[], y: number, up: boolean) => {
+    const centre = new THREE.Vector3(0, y, 0)
+    for (let index = 0; index < segments; index += 1) {
+      const next = (index + 1) % segments
+      const a = loop[index].clone(); a.y = y
+      const b = loop[next].clone(); b.y = y
+      if (up) tri(centre, b, a, index / segments)
+      else tri(centre, a, b, index / segments)
+    }
+  }
+
+  strip(outerSheer, outerKeel, false)
+  strip(innerSheer, innerKeel, true)
+  fan(outerKeel, -draft, false)
+  fan(innerKeel, -draft + 0.016, true)
+  const railFrom = positions.length
+  strip(outerSheer, innerSheer, true)
+
+  const build = (start: number, end: number) => {
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions.slice(start, end), 3))
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs.slice((start / 3) * 2, (end / 3) * 2), 2))
+    geometry.computeVertexNormals()
+    return geometry
+  }
+  return [
+    { geo: build(0, railFrom), tint: [0.5, 0.44, 0.4] },
+    { geo: build(railFrom, positions.length), tint: [1.15, 1.08, 0.98] },
+  ]
 }
 
 /** Ring of merlons around a battlement, returned as merge-ready parts. */

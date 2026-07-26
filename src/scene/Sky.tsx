@@ -11,8 +11,16 @@ export const SUN_DIRECTION = new THREE.Vector3(-0.640, 0.616, 0.461).normalize()
 
 /** Warm horizon band. Drives distance haze and the low half of the sky. */
 export const HAZE_LOW = new THREE.Color('#6d93a8')
-/** Cool upper atmosphere. Drives haze on the far ocean. */
-export const HAZE_HIGH = new THREE.Color('#17456a')
+/**
+ * Cool upper atmosphere, and the colour the far ocean fades into.
+ *
+ * This used to be #17456a, which is darker and more saturated than the sea it
+ * was supposed to be hazing. Distance made the top of the frame deeper instead
+ * of paler, so the haze pass was working as a blue vignette and the frame had
+ * no atmospheric perspective at all. Air scatters light towards the observer;
+ * far things get lighter and lose saturation. This is pale enough to do that.
+ */
+export const HAZE_HIGH = new THREE.Color('#9dbdd2')
 /** Ocean colour fed back into the environment map as bounce light. */
 export const OCEAN_BOUNCE = new THREE.Color('#0d3f52')
 
@@ -90,11 +98,24 @@ export function Sky() {
     const generator = new THREE.PMREMGenerator(gl)
     const target = generator.fromScene(probeScene)
     scene.environment = target.texture
-    // Image based lighting carries most of the coloured shade. At 0.38 the
-    // probe was barely contributing and every shadow fell back to flat
-    // ambient; 0.8 lets the sky and the ocean disc actually tint the surfaces
-    // the key light never reaches.
-    scene.environmentIntensity = 0.8
+    // This number is why nothing in the scene cast a shadow.
+    //
+    // The sky dome is a physical model, so its PMREM is in absolute radiance,
+    // not in the 0..1 range an authored HDRI usually lands in. Integrated over
+    // the hemisphere it delivers roughly 4 to 6 units of irradiance to an
+    // upward face. At 0.8 that put more light on every surface than the key
+    // light's 4.25 * cos(38 degrees) = 2.6, from every direction at once, so a
+    // shadowed pixel lost about a third of its light and the difference
+    // disappeared under the tone curve. The shadow map was always correct:
+    // dropping it by most of an order of magnitude makes it visible with no
+    // other change. It then came back up to 0.3, which is the most skylight the
+    // shade can take while the sun still clearly wins: lit to shaded measures
+    // about 2.6 to 1, close to the reference board and light enough to keep
+    // material readable inside a mountain shadow.
+    //
+    // Verified by A/B at runtime -- environmentIntensity 0 produced hard black
+    // shadows from a probe box on a scene that had never shown one.
+    scene.environmentIntensity = 0.3
 
     return () => {
       scene.environment = null

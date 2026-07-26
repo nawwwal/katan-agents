@@ -8,6 +8,7 @@ import { ActionEffects } from './ActionEffects'
 import { CameraRig } from './CameraRig'
 import { Island } from './Island'
 import { Lighting } from './Lighting'
+import { SEA_LEVEL } from './ocean/oceanConfig'
 import { FrameStats } from './loading/FrameStats'
 import { LoadingScreen } from './loading/LoadingScreen'
 import { ScenePrecompile } from './loading/precompile'
@@ -29,6 +30,41 @@ type SceneProps = {
   cinematic?: boolean
   onAction: (action: GameAction) => void
   interactive: boolean
+}
+
+/**
+ * The island's shadow on the water.
+ *
+ * Without this the island reads as a sticker laid on a photograph of the sea:
+ * a landmass three units tall in raking light, and the water beside it exactly
+ * as bright as the water on the far side of the frame.
+ *
+ * The ocean itself cannot receive it. `Water` is a raw `ShaderMaterial`, so
+ * three never injects the shadow chunks into it and `receiveShadow` is inert
+ * there. This is an invisible plane skimming the surface whose only job is to
+ * catch that shadow: `ShadowMaterial` renders nothing at all where the sun
+ * reaches and a soft tint where it does not, so the wave shader underneath
+ * shows through unchanged.
+ *
+ * The tint is a deep teal rather than black. Water in the shade of a headland
+ * still returns the sky and its own depth; painting it grey is the tell that
+ * makes composited shadows look pasted on.
+ */
+function SeaShadowCatcher() {
+  return <mesh
+    // Sea level plus enough to clear the wave crests. At the surface exactly,
+    // the swell writes depth over the catcher and the shadow vanishes; the
+    // authored beach shelf does not start until 0.28, so 0.14 is a clean gap
+    // between the two and is far too shallow to read as a floating sheet from
+    // any camera the rig allows.
+    position={[0, SEA_LEVEL + 0.088, 0]}
+    rotation={[-Math.PI / 2, 0, 0]}
+    receiveShadow
+    renderOrder={2}
+  >
+    <planeGeometry args={[30, 30]} />
+    <shadowMaterial transparent opacity={0.55} color="#0a3348" depthWrite={false} />
+  </mesh>
 }
 
 function SceneContent({ game, placementMode, pendingAction, presentation, cinematic, onAction, interactive, reducedMotion }: SceneProps & { reducedMotion: boolean }) {
@@ -67,6 +103,7 @@ function SceneContent({ game, placementMode, pendingAction, presentation, cinema
     <Sky />
     <Lighting mobile={mobile} />
     <Water reducedMotion={reducedMotion} />
+    <SeaShadowCatcher />
     <group rotation={[0, -0.04, 0]}>
       <Island game={game} robberActions={robberActions} onAction={onAction} />
       {Object.entries(game.roadOwners).map(([edgeId, playerId]) => {
@@ -131,9 +168,13 @@ export function GameScene(props: SceneProps) {
       shadows
       camera={{ position: [7.7, 10.3, 9.8], fov: 31, near: 0.5, far: 900 }}
       gl={{ alpha: true, antialias: false, powerPreference: 'high-performance' }}
+      // Tone mapping is deliberately not set here. The effect composer forces
+      // `gl.toneMapping` to `NoToneMapping` for as long as it is mounted, so
+      // anything assigned on this renderer is dead the moment `PostFX` renders
+      // its first frame -- including `toneMappingExposure`, which read 1.14 for
+      // several sessions and did nothing. Both the ACES curve and exposure are
+      // owned by the composer.
       onCreated={({ gl }) => {
-        gl.toneMapping = THREE.ACESFilmicToneMapping
-        gl.toneMappingExposure = 1.14
         gl.outputColorSpace = THREE.SRGBColorSpace
         gl.shadowMap.type = THREE.PCFSoftShadowMap
       }}

@@ -459,10 +459,13 @@ export const tokenFaceMaps = (value: number): SurfaceMaps => {
   const rough = surface(size)
   const centre = size / 2
 
+  // The disc used to sit around #ecdfc0, which the scene's exposure pushed to
+  // near-white and bloomed over the numeral. Dropping the whole plate about two
+  // stops keeps the paint dark against it instead of the other way round.
   const stone = albedo.context.createRadialGradient(centre, centre * 0.8, size * 0.05, centre, centre, size * 0.55)
-  stone.addColorStop(0, '#f2e7cb')
-  stone.addColorStop(0.7, '#e3d5b3')
-  stone.addColorStop(1, '#c9b892')
+  stone.addColorStop(0, '#d8c8a2')
+  stone.addColorStop(0.62, '#c6b58e')
+  stone.addColorStop(1, '#9d8c6b')
   albedo.context.fillStyle = stone
   albedo.context.fillRect(0, 0, size, size)
   mottle(albedo.context, size, random, 46, 0.12, false)
@@ -502,20 +505,30 @@ export const tokenFaceMaps = (value: number): SurfaceMaps => {
   albedo.context.arc(centre, centre, size * 0.41, 0, Math.PI * 2)
   albedo.context.stroke()
 
-  const ink = hot ? '#8e2317' : '#332417'
+  const ink = hot ? '#6d1008' : '#17100a'
   const numeral = String(value)
   albedo.context.textAlign = 'center'
   albedo.context.textBaseline = 'middle'
-  albedo.context.font = `700 ${size * 0.5}px "Times New Roman", Georgia, serif`
-  // Chisel shadow, then the painted face of the numeral.
-  albedo.context.fillStyle = 'rgba(255,250,232,0.75)'
+  albedo.context.font = `800 ${size * 0.54}px "Times New Roman", Georgia, serif`
+  // A raised chisel highlight below and to the right, then the painted numeral
+  // fattened with a stroke: mip filtering at board scale eats thin serifs, and
+  // a hairline numeral is exactly how the old token washed out.
+  albedo.context.fillStyle = 'rgba(255,248,226,0.55)'
   albedo.context.fillText(numeral, centre + 5, centre - 30 + 5)
   albedo.context.fillStyle = ink
+  albedo.context.strokeStyle = ink
+  albedo.context.lineWidth = size * 0.026
+  albedo.context.lineJoin = 'round'
+  albedo.context.strokeText(numeral, centre, centre - 34)
   albedo.context.fillText(numeral, centre, centre - 34)
   height.context.textAlign = 'center'
   height.context.textBaseline = 'middle'
   height.context.font = albedo.context.font
   height.context.fillStyle = '#3a3a3a'
+  height.context.strokeStyle = '#3a3a3a'
+  height.context.lineWidth = size * 0.026
+  height.context.lineJoin = 'round'
+  height.context.strokeText(numeral, centre, centre - 34)
   height.context.fillText(numeral, centre, centre - 34)
   rough.context.textAlign = 'center'
   rough.context.textBaseline = 'middle'
@@ -523,9 +536,12 @@ export const tokenFaceMaps = (value: number): SurfaceMaps => {
   rough.context.fillStyle = '#7a7a7a'
   rough.context.fillText(numeral, centre, centre - 34)
 
+  // Bigger, wider-spaced pips. At the default camera the old ones landed inside
+  // a couple of texels each and filtered down to a smudge; these survive as
+  // countable dots, and the 6/8 pair still reads red.
   const pips = 6 - Math.abs(7 - value)
-  const pipRadius = size * 0.019
-  const spacing = pipRadius * 3.1
+  const pipRadius = size * 0.029
+  const spacing = pipRadius * 2.7
   const start = centre - ((pips - 1) * spacing) / 2
   for (let index = 0; index < pips; index += 1) {
     const x = start + index * spacing

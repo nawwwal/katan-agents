@@ -61,12 +61,53 @@ export type BoardEdge = {
   hexes: string[]
 }
 
+export type DesertPlacement = 'random' | 'center' | 'edge'
+export type HarborLayout = 'shuffled' | 'fixed'
+
+/** Constraints the host can ask the generator to satisfy, in the order they are relaxed. */
+export type BoardConstraint = 'balancedPips' | 'balancedResources' | 'noAdjacentSameNumbers' | 'noAdjacentSixEight'
+
+export type BoardOptions = {
+  /** No tile may share its terrain with two or more of its neighbours. */
+  balancedResources: boolean
+  /** No 6 or 8 touches another 6 or 8. */
+  noAdjacentSixEight: boolean
+  /** No two equal numbers touch. */
+  noAdjacentSameNumbers: boolean
+  /** Caps the pips on any one intersection and evens the pips across the six wedges of the island. */
+  balancedPips: boolean
+  desert: DesertPlacement
+  harbors: HarborLayout
+}
+
+/** How a board was actually produced, so the UI can reproduce it and report relaxed constraints. */
+export type BoardGeneration = {
+  seed: number
+  options: BoardOptions
+  /** Constraints the generator had to drop to finish. Empty when everything the host asked for held. */
+  relaxed: BoardConstraint[]
+  attempts: number
+}
+
+export const BOARD_CONSTRAINTS: BoardConstraint[] = ['balancedPips', 'balancedResources', 'noAdjacentSameNumbers', 'noAdjacentSixEight']
+
+/** Legacy defaults: exactly what the board looked like before options existed. */
+export const defaultBoardOptions = (): BoardOptions => ({
+  balancedResources: false,
+  noAdjacentSixEight: true,
+  noAdjacentSameNumbers: false,
+  balancedPips: false,
+  desert: 'random',
+  harbors: 'shuffled',
+})
+
 export type Board = {
   hexes: HexTile[]
   vertices: Record<string, BoardVertex>
   edges: Record<string, BoardEdge>
   harbors: Harbor[]
   robberHexId: string
+  generation: BoardGeneration
 }
 
 export type DevelopmentCard = 'knight' | 'road-building' | 'year-of-plenty' | 'monopoly' | 'victory-point'
@@ -170,6 +211,7 @@ export type PublicGameState = Omit<GameState, 'players' | 'developmentDeck' | 'l
 
 export type CreateGameOptions = {
   seed?: number
+  boardOptions?: BoardOptions
   privateRandomSeed?: number
   random?: () => number
   controllers?: Controller[]

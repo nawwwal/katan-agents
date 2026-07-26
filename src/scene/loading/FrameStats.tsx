@@ -57,6 +57,18 @@ type FrameProbe = {
   reset: () => void
   report: () => FrameReport
   shadowProbe: () => unknown
+  /**
+   * Live handles on the renderer and the scene graph.
+   *
+   * React Three Fiber keeps both entirely inside React, so from a devtools
+   * console or a screenshot harness there is otherwise no way to reach them.
+   * Every render defect found in this scene so far needed exactly this: drop a
+   * probe mesh in, A/B a light, read a uniform. The shadow bug was diagnosed in
+   * four steps through this handle after two sessions of static reading.
+   */
+  gl: THREE.WebGLRenderer
+  scene: THREE.Scene
+  THREE: typeof THREE
 }
 
 declare global {
@@ -182,7 +194,7 @@ export function FrameStats() {
         shadows: surveyShadows(gl, scene),
       }
     }
-    globalThis.__katanFrames = { reset, report, shadowProbe: () => shadowProbe(gl, scene) }
+    globalThis.__katanFrames = { reset, report, shadowProbe: () => shadowProbe(gl, scene), gl, scene, THREE }
     return () => { globalThis.__katanFrames = undefined }
   }, [gl, scene])
 

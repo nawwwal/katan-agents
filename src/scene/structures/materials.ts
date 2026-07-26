@@ -49,6 +49,17 @@ export const masonryMaterial = lazy(() => standard(masonryMaps(), { roughness: 0
 export const plasterMaterial = lazy(() => standard(plasterMaps(), { roughness: 0.94, normalScale: 0.75 }))
 export const timberMaterial = lazy(() => standard(timberMaps(), { roughness: 0.82, color: '#8a6440' }))
 export const plankMaterial = lazy(() => standard(plankMaps(), { roughness: 0.86, color: '#c19468' }))
+/**
+ * Planking that reads its value from vertex colour, so one boat hull can carry
+ * a tarred outer skin, a lighter inner skin and a bright rail cap in a single
+ * draw call. Without that value break the hull reads as a grey blob.
+ */
+export const variedPlankMaterial = lazy(() => {
+  const material = standard(plankMaps(), { roughness: 0.88, color: '#b58a5f' })
+  material.vertexColors = true
+  return material
+})
+
 export const cobbleMaterial = lazy(() => standard(cobbleMaps(), { roughness: 0.9, normalScale: 1.15 }))
 export const gravelMaterial = lazy(() => standard(gravelMaps(), { roughness: 0.97, normalScale: 1.3 }))
 export const quayMaterial = lazy(() => standard(quayMaps(), { roughness: 0.92, normalScale: 1.1 }))
@@ -75,13 +86,13 @@ export const terraceMaterial = lazy(() => {
  * crevice blocks be dirtied down without extra draw calls.
  */
 export const variedMasonryMaterial = lazy(() => {
-  const material = standard(masonryMaps(), { color: '#c8bca1', roughness: 0.9, normalScale: 1.35 })
+  const material = standard(masonryMaps(), { color: '#b3a688', roughness: 0.91, normalScale: 1.5 })
   material.vertexColors = true
   return material
 })
 
 export const variedPlasterMaterial = lazy(() => {
-  const material = standard(plasterMaps(), { color: '#d3c9b2', roughness: 0.95, normalScale: 0.95 })
+  const material = standard(plasterMaps(), { color: '#c2b79b', roughness: 0.95, normalScale: 1.1 })
   material.vertexColors = true
   return material
 })
@@ -132,7 +143,12 @@ export const ironMaterial = lazy(() => new THREE.MeshStandardMaterial({ color: '
 export const brassMaterial = lazy(() => new THREE.MeshStandardMaterial({ color: '#b08a3c', roughness: 0.36, metalness: 0.85 }))
 export const glassMaterial = lazy(() => new THREE.MeshStandardMaterial({ color: '#1d5b63', roughness: 0.22, metalness: 0.1, emissive: '#0d2b33', emissiveIntensity: 0.35 }))
 export const ropeMaterial = lazy(() => new THREE.MeshStandardMaterial({ color: '#b39a6c', roughness: 0.96 }))
-export const bronzeMaterial = lazy(() => new THREE.MeshStandardMaterial({ color: '#463f34', roughness: 0.7, metalness: 0.22 }))
+/**
+ * Robber cloak. Lifted off near-black and stripped of most of its metalness:
+ * a dark specular cloth swallowed the cloak folds entirely, and folds you
+ * cannot see at board scale are folds you did not model.
+ */
+export const bronzeMaterial = lazy(() => new THREE.MeshStandardMaterial({ color: '#544632', roughness: 0.82, metalness: 0.06 }))
 export const voidMaterial = lazy(() => new THREE.MeshStandardMaterial({ color: '#07080a', roughness: 1, metalness: 0 }))
 
 const roofCache = new Map<string, THREE.MeshStandardMaterial>()

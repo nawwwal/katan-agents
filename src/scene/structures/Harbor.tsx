@@ -4,9 +4,9 @@ import * as THREE from 'three'
 import type { GameDisplayState, Harbor } from '../../game/types'
 import { coastlineAt } from '../terrain/IslandBody'
 import { GROUND_Y } from '../terrain/hex'
-import { box, cyl, merge, type Part } from './geometry'
-import { ironMaterial, plankMaterial, quayMaterial, ropeMaterial, timberMaterial } from './materials'
-import { harborSignMaps, hashString, makeRng } from './textures'
+import { box, cyl, merge, openHull, ropeLine, type Part } from './geometry'
+import { ironMaterial, plankMaterial, quayMaterial, ropeMaterial, timberMaterial, variedPlankMaterial } from './materials'
+import { harborSignMaps, makeRng } from './textures'
 
 // Timber piers on stone-footed pilings that run out from the coast, with
 // mooring posts, rope, crates and a moored boat. Every pier shares one merged
@@ -14,6 +14,8 @@ import { harborSignMaps, hashString, makeRng } from './textures'
 // draw calls plus one painted trade board each.
 
 const DECK = 0.44
+/** Still-water height in the same frame the piers are placed in. */
+const SEA_LEVEL = 0.052
 const lazy = <T,>(build: () => T) => {
   let value: T | null = null
   return () => {
@@ -64,8 +66,10 @@ const buildPier = (): PierGroups => {
     timber.push({ geo: box(0.42, 0.022, 0.022), pos: [0.335, DECK - 0.19, side * 0.19], rot: [0, 0, 0.16], uv: [4, 1] })
   }
 
-  // Mooring bollards with rope wraps and a coil on the deck.
-  for (const [x, z] of [[0.12, 0.2], [0.55, 0.2], [0.55, -0.2]] as Array<[number, number]>) {
+  // Mooring bollards with rope wraps and a coil on the deck. Two of them sit on
+  // the -Z edge because that is the side the boat lies against, and the warps
+  // below run from those two down to her stem and stern.
+  for (const [x, z] of [[0.12, 0.2], [0.55, 0.2], [0.55, -0.2], [0.16, -0.2]] as Array<[number, number]>) {
     timber.push({ geo: cyl(0.038, 0.042, 0.12, 10), pos: [x, DECK + 0.07, z], uv: [1.4, 1] })
     timber.push({ geo: cyl(0.05, 0.05, 0.018, 10), pos: [x, DECK + 0.135, z], uv: [1.4, 0.3] })
     rope.push({ geo: new THREE.TorusGeometry(0.041, 0.008, 6, 14), pos: [x, DECK + 0.09, z], rot: [Math.PI / 2, 0, 0] })
@@ -93,14 +97,50 @@ const buildPier = (): PierGroups => {
   }
   timber.push({ geo: box(0.024, 0.024, 0.3), pos: [0.06, DECK + 0.33, 0], uv: [1, 2] })
 
-  // Moored rowing boat.
-  const hull: Part[] = [
-    { geo: box(0.24, 0.062, 0.1), pos: [0, 0, 0], uv: [2.4, 1] },
-    { geo: cyl(0.0, 0.05, 0.1, 6), pos: [0.16, 0, 0], rot: [0, 0, Math.PI / 2], scale: [1, 1, 0.62], uv: [1, 1] },
-    { geo: cyl(0.0, 0.05, 0.08, 6), pos: [-0.155, 0, 0], rot: [0, 0, -Math.PI / 2], scale: [1, 1, 0.62], uv: [1, 1] },
-    { geo: box(0.06, 0.014, 0.1), pos: [0.03, 0.028, 0], uv: [1, 1] },
-    { geo: box(0.014, 0.012, 0.19), pos: [-0.06, 0.05, 0.02], rot: [0.1, 0.35, 0], uv: [1, 1] },
+  // Moored rowing boat. Everything about her is authored in the pier's own local
+  // frame and drawn on the pier's instance matrix, so she can never drift: she
+  // lies alongside the -Z deck edge, warped fore and aft to the two bollards.
+  const boatYaw = 0.035
+  const boatAt: [number, number, number] = [0.31, SEA_LEVEL, -0.302]
+  const cos = Math.cos(boatYaw)
+  const sin = Math.sin(boatYaw)
+  const aboard = (x: number, y: number, z: number): [number, number, number] => [
+    boatAt[0] + x * cos + z * sin,
+    boatAt[1] + y,
+    boatAt[2] - x * sin + z * cos,
   ]
+  const hull: Part[] = openHull(0.19, 0.062, 0.03, 0.036).map((part) => ({
+    ...part,
+    pos: boatAt,
+    rot: [0, boatYaw, 0],
+    uv: [3, 1.4],
+  }))
+  // Thwarts, floorboards and a pair of shipped oars. At board scale these read
+  // as the dark/light striping that tells you the boat is open and occupied.
+  for (const [x, width] of [[0.055, 0.096], [-0.075, 0.084]] as Array<[number, number]>) {
+    hull.push({
+      geo: box(0.022, 0.011, width), pos: aboard(x, 0.024, 0), rot: [0, boatYaw, 0],
+      uv: [1, 1], tint: [1.2, 1.12, 1.0],
+    })
+  }
+  hull.push({ geo: box(0.2, 0.008, 0.05), pos: aboard(-0.01, -0.014, 0), rot: [0, boatYaw, 0], uv: [3, 1], tint: [0.62, 0.55, 0.48] })
+  for (const [side, tilt] of [[1, 0.22], [-1, -0.14]] as Array<[number, number]>) {
+    hull.push({
+      geo: box(0.2, 0.009, 0.011), pos: aboard(-0.02, 0.031, side * 0.032), rot: [0, boatYaw + tilt, 0],
+      uv: [3, 1], tint: [1.25, 1.16, 1.02],
+    })
+    hull.push({
+      geo: box(0.045, 0.007, 0.022), pos: aboard(-0.13 + side * 0.006, 0.031, side * 0.032 + tilt * 0.11), rot: [0, boatYaw + tilt, 0],
+      uv: [1, 1], tint: [1.25, 1.16, 1.02],
+    })
+  }
+  // Tarpaulin-covered load in the bow, so she is not an empty shell.
+  hull.push({ geo: box(0.055, 0.026, 0.062), pos: aboard(0.11, 0.019, 0), rot: [0, boatYaw + 0.12, 0], uv: [1, 1], tint: [0.72, 0.68, 0.6] })
+
+  // Mooring warps: bollard to stem, bollard to stern. This is the line that
+  // turns "a boat near a pier" into "a boat tied to a pier".
+  rope.push(...ropeLine([0.55, DECK + 0.125, -0.2], aboard(0.15, 0.03, 0.05), 0.05, 0.0055))
+  rope.push(...ropeLine([0.16, DECK + 0.125, -0.2], aboard(-0.15, 0.03, 0.05), 0.045, 0.0055))
 
   return {
     plank: merge(plank),
@@ -136,7 +176,7 @@ const signMaterials = (harbor: Harbor) => {
   return materials
 }
 
-type Placement = { harbor: Harbor; x: number; z: number; yaw: number; jitter: number }
+type Placement = { harbor: Harbor; x: number; z: number; yaw: number }
 
 const world = new THREE.Vector3()
 const quaternion = new THREE.Quaternion()
@@ -194,7 +234,6 @@ export function HarborPiers({ game }: { game: GameDisplayState }) {
         const delta = Math.abs(((Math.atan2(point.z, point.x) - bearing + Math.PI * 3) % (Math.PI * 2)) - Math.PI)
         if (delta < bestGap) { bestGap = delta; best = point }
       }
-      const random = makeRng(hashString(harbor.id))
       return {
         harbor,
         // Sit the quay's back face a little inside the shelf so the steps bite
@@ -202,7 +241,6 @@ export function HarborPiers({ game }: { game: GameDisplayState }) {
         x: best.x - best.nx * (QUAY_BACK + 0.06),
         z: best.z - best.nz * (QUAY_BACK + 0.06),
         yaw: Math.atan2(-best.nz, best.nx),
-        jitter: (random() - 0.5) * 0.9,
       }
     })
   }, [game.board])
@@ -224,19 +262,12 @@ export function HarborPiers({ game }: { game: GameDisplayState }) {
       dummy.rotation.set(0, placement.yaw, 0)
       dummy.scale.setScalar(1)
       dummy.updateMatrix()
-      for (const key of ['plank', 'timber', 'stone', 'rope', 'iron'] as const) {
+      // Every prop — quay, deck, bollards, warps, cargo and boat — is authored
+      // in the pier's local frame and shares its matrix, so nothing can end up
+      // adrift in open water when the coastline projection moves a pier.
+      for (const key of ['plank', 'timber', 'stone', 'rope', 'iron', 'boat'] as const) {
         refs[key].current?.setMatrixAt(index, dummy.matrix)
       }
-      // The boat rides just off the deck, rocked a little per harbour.
-      dummy.position.set(placement.x, 0, placement.z)
-      dummy.rotation.set(0, placement.yaw, 0)
-      dummy.updateMatrix()
-      const local = new THREE.Matrix4().compose(
-        new THREE.Vector3(0.36, 0.062, -0.36),
-        new THREE.Quaternion().setFromEuler(new THREE.Euler(0.03 * placement.jitter, 0.2 + placement.jitter * 0.3, 0.05 * placement.jitter)),
-        new THREE.Vector3(1, 1, 1),
-      )
-      refs.boat.current?.setMatrixAt(index, dummy.matrix.multiply(local))
     })
     for (const key of ['plank', 'timber', 'stone', 'rope', 'iron', 'boat'] as const) {
       const mesh = refs[key].current
@@ -253,7 +284,7 @@ export function HarborPiers({ game }: { game: GameDisplayState }) {
     <instancedMesh ref={refs.stone} args={[groups.stone, quayMaterial(), count]} castShadow receiveShadow />
     <instancedMesh ref={refs.rope} args={[groups.rope, ropeMaterial(), count]} castShadow />
     <instancedMesh ref={refs.iron} args={[groups.iron, ironMaterial(), count]} castShadow />
-    <instancedMesh ref={refs.boat} args={[groups.boat, plankMaterial(), count]} castShadow receiveShadow />
+    <instancedMesh ref={refs.boat} args={[groups.boat, variedPlankMaterial(), count]} castShadow receiveShadow />
     {placements.map((placement) => <group key={placement.harbor.id} position={[placement.x, 0, placement.z]} rotation={[0, placement.yaw, 0]}>
       <TradeBoard harbor={placement.harbor} />
     </group>)}

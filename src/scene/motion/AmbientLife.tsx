@@ -8,7 +8,6 @@ import { seededFrom } from './spring'
 // here is instanced (one draw call per system), seeded from stable ids, and
 // silent under `prefers-reduced-motion`.
 
-const SEA_LEVEL = 0.052
 const GROUND = 0.478
 /** One wind for the whole island, so smoke, leaves and clouds agree. */
 const WIND = new THREE.Vector2(0.86, 0.51).normalize()
@@ -197,69 +196,10 @@ export function WindDrift({ game, count = 46, reducedMotion }: { game: GameDispl
   </instancedMesh>
 }
 
-// ---------------------------------------------------------- harbour boats
-
-export function HarborBoats({ game, reducedMotion }: { game: GameDisplayState; reducedMotion: boolean }) {
-  const mesh = useRef<THREE.InstancedMesh>(null)
-  const dummy = useMemo(() => new THREE.Object3D(), [])
-  const geometry = useMemo(() => {
-    // An upturned hemisphere: a coracle hull at the scale it is actually seen.
-    const hull = new THREE.SphereGeometry(1, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2)
-    hull.rotateX(Math.PI)
-    hull.scale(0.13, 0.085, 0.26)
-    return hull
-  }, [])
-
-  const boats = useMemo(() => game.board.harbors.flatMap((harbor) => {
-    const edge = game.board.edges[harbor.edgeId]
-    if (!edge) return []
-    const [a, b] = edge.vertices.map((id) => game.board.vertices[id])
-    const midX = (a.x + b.x) / 2
-    const midZ = (a.z + b.z) / 2
-    const length = Math.hypot(midX, midZ) || 1
-    const random = seededFrom(`boat-${harbor.id}`)
-    const reach = 1.23 + random() * 0.1
-    const side = (random() - 0.5) * 0.5
-    return [{
-      x: (midX / length) * (length * reach) - (midZ / length) * side,
-      z: (midZ / length) * (length * reach) + (midX / length) * side,
-      heading: -Math.atan2(b.z - a.z, b.x - a.x) + (random() - 0.5) * 0.6,
-      phase: random() * Math.PI * 2,
-      period: 1.5 + random() * 0.7,
-    }]
-  }), [game.board.edges, game.board.harbors, game.board.vertices])
-
-  useFrame(({ clock }) => {
-    const instanced = mesh.current
-    if (!instanced || !boats.length) return
-    const time = reducedMotion ? 0 : clock.elapsedTime
-    for (let index = 0; index < boats.length; index += 1) {
-      const boat = boats[index]
-      const swell = Math.sin(time * boat.period + boat.phase)
-      dummy.position.set(boat.x, SEA_LEVEL + 0.028 + swell * 0.026, boat.z)
-      dummy.rotation.set(
-        Math.cos(time * boat.period * 0.8 + boat.phase) * 0.075,
-        boat.heading,
-        swell * 0.1,
-      )
-      dummy.scale.setScalar(1)
-      dummy.updateMatrix()
-      instanced.setMatrixAt(index, dummy.matrix)
-    }
-    instanced.instanceMatrix.needsUpdate = true
-  })
-
-  if (!boats.length) return null
-  return <instancedMesh ref={mesh} args={[geometry, undefined, boats.length]} castShadow frustumCulled={false}>
-    <meshStandardMaterial color="#7d5a3a" roughness={0.76} flatShading side={THREE.DoubleSide} />
-  </instancedMesh>
-}
-
 export function AmbientLife({ game, reducedMotion }: { game: GameDisplayState; reducedMotion: boolean }) {
   return <group>
     <WindDrift game={game} reducedMotion={reducedMotion} />
     <ChimneySmoke game={game} reducedMotion={reducedMotion} />
-    <HarborBoats game={game} reducedMotion={reducedMotion} />
     <Gulls reducedMotion={reducedMotion} />
   </group>
 }

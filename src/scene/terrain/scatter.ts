@@ -337,12 +337,18 @@ const hills = (ctx: Ctx) => {
     const runStart = ctx.rng() * segments
     for (let i = 0; i < segments; i += 1) {
       const phase = ((i - runStart) / segments) * 3
-      if (phase - Math.floor(phase) > 0.3) continue
+      // Two short runs per bench rather than three, so the blocks read as a
+      // couple of stacks somebody left where they cut them. Any more than that
+      // and the eye counts them as a pattern round the token again.
+      if (phase - Math.floor(phase) > 0.22) continue
       const a0 = (i / segments) * Math.PI * 2 + ctx.rng() * 0.2
       const x = Math.cos(a0) * (radius + (ctx.rng() - 0.5) * 0.12)
       const z = Math.sin(a0) * (radius + (ctx.rng() - 0.5) * 0.12)
       if (hexNorm(x, z) > ROAD_CLEARANCE) continue
-      const s = 0.6 + ctx.rng() * 0.6
+      // Quarried slabs, not chips. In the reference the cut blocks are the
+      // largest objects on the tile by a distance -- that size difference
+      // against the rubble is a big part of why the pit reads as worked.
+      const s = 0.95 + ctx.rng() * 0.85
       ctx.out.push({
         family: `clayBlock${Math.floor(ctx.rng() * 3)}`,
         x, y: ctx.height(x, z) - 0.01, z,
@@ -358,10 +364,18 @@ const hills = (ctx: Ctx) => {
     count: 6, minDist: 0.19, inset: 0.8, clear: 0.5, rimBias: 1,
     scale: [0.5, 0.95], tilt: 0.22, tintRange: 0.18, warmRange: 0.07,
   })
-  // Broken brick across the floor of the pan.
+  // Broken brick, tipped in heaps rather than sprinkled.
+  //
+  // Twenty-four evenly Poisson-spaced rubble props across the whole tile is
+  // exactly the "confetti" read: spoil does not distribute itself, it gets
+  // barrowed to three or four places and dumped. Clumping the same material
+  // also leaves clean pan between the heaps, which is where the pit floor gets
+  // to be a pit floor instead of a texture with objects on it.
   addProps(ctx, {
     variants: [{ family: 'clayRubble0' }, { family: 'clayRubble1' }, { family: 'clayRubble2' }],
-    count: 24, minDist: 0.09, inset: 0.78, scale: [0.6, 1.4], tilt: 0.5, tintRange: 0.24, warmRange: 0.08,
+    count: 18, minDist: 0.075, inset: 0.72, clear: 0.3,
+    clumps: { count: 4, spread: 0.16 },
+    scale: [0.6, 1.5], tilt: 0.5, tintRange: 0.24, warmRange: 0.08,
   })
   addProps(ctx, { variants: [{ family: 'dryBrush' }], count: 18, minDist: 0.12, inset: 0.8, clear: 0.24, scale: [0.6, 1.25], tilt: 0.2 })
   addProps(ctx, { variants: [{ family: 'bush0' }, { family: 'bush2' }], count: 11, minDist: 0.15, inset: 0.8, rimBias: 1, clear: 0.45, scale: [0.5, 1], tilt: 0.16, warmRange: 0.14 })
@@ -420,19 +434,28 @@ const desert = (ctx: Ctx) => {
     count: 15, minDist: 0.2, inset: 0.87, clear: TOKEN_CLEARANCE, scale: [0.6, 1.35], tilt: 0.05, sink: 0.02, tintRange: 0.18,
   })
   addProps(ctx, { variants: [{ family: 'dryBrush' }], count: 52, minDist: 0.088, inset: 0.94, clear: 0.2, scale: [0.5, 1.25], tilt: 0.22, tintBias: 0.08 })
-  addProps(ctx, { variants: [{ family: 'tussock' }], count: 22, minDist: 0.11, inset: 0.93, clear: 0.24, scale: [0.45, 0.85], tilt: 0.25, tintRange: 0.2, warmRange: 0.12 })
+  // Desert grass is bleached straw, not pasture green: the tussock geometry is
+  // shared with the wool tile, so the difference has to come out of the instance
+  // tint, and on a green base a heavy warm bias is what turns it to hay.
+  addProps(ctx, { variants: [{ family: 'tussock' }], count: 14, minDist: 0.16, inset: 0.93, clear: 0.3, rimBias: 1, scale: [0.45, 0.85], tilt: 0.25, tintRange: 0.2, warmRange: 0.1, tintBias: 0.2, warmBias: 0.22 })
   // Desert stone is sun-bleached, so it gets a much warmer instance tint than
   // the same boulders used on pasture and mountain.
+  //
+  // Counts are deliberately low now that the tile is tessellated finely enough
+  // for its dune crests to survive to the screen. Twenty-two boulders and sixty
+  // pebbles buried the sand under gravel, which is most of why the desert read
+  // as an unfinished hex: an erg is mostly *empty*, and the emptiness is the
+  // subject. What is left is pushed to the rim where drift piles against rock.
   addProps(ctx, {
     variants: [{ family: 'boulder0' }, { family: 'boulder1' }, { family: 'boulder2' }],
-    count: 22, minDist: 0.14, inset: 0.91, clear: 0.24, rimBias: 1, scale: [0.45, 1.35], tilt: 0.26,
-    tintRange: 0.14, warmRange: 0.03, tintBias: 0.14, warmBias: 0.14,
+    count: 10, minDist: 0.2, inset: 0.91, clear: 0.34, rimBias: 1, scale: [0.5, 1.4], tilt: 0.26,
+    tintRange: 0.14, warmRange: 0.03, tintBias: 0.2, warmBias: 0.16,
   })
   addProps(ctx, {
     variants: [{ family: 'pebble0' }, { family: 'pebble1' }, { family: 'pebble2' }],
-    count: 60, minDist: 0.062, inset: 0.94, scale: [0.45, 1.35], tilt: 0.5, tintBias: 0.12, warmBias: 0.13,
+    count: 26, minDist: 0.09, inset: 0.94, rimBias: 1, scale: [0.45, 1.2], tilt: 0.5, tintBias: 0.18, warmBias: 0.15,
   })
-  addProps(ctx, { variants: [{ family: 'shard0' }, { family: 'shard1' }], count: 18, minDist: 0.13, inset: 0.92, clear: 0.28, rimBias: 1, scale: [0.35, 0.85], tilt: 0.32, tintRange: 0.18, warmRange: 0.04, tintBias: 0.12, warmBias: 0.14 })
+  addProps(ctx, { variants: [{ family: 'shard0' }, { family: 'shard1' }], count: 9, minDist: 0.18, inset: 0.92, clear: 0.34, rimBias: 1, scale: [0.35, 0.85], tilt: 0.32, tintRange: 0.18, warmRange: 0.04, tintBias: 0.18, warmBias: 0.16 })
 }
 
 const BIOMES: Record<Terrain, (ctx: Ctx) => void> = {

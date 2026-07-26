@@ -4,11 +4,11 @@ import { PLAYER_BANNER, PLAYER_ROOF, PLAYER_TRIM } from '../playerColors'
 import { banner, box, cone, cyl, gableRoof, merge, merlons, pennant, prism, type Part } from './geometry'
 import {
   clothMaterial,
-  cobbleMaterial,
   glassMaterial,
   ironMaterial,
   paintedTrimMaterial,
   roofMaterial,
+  terraceMaterial,
   timberMaterial,
   variedMasonryMaterial,
   variedPlasterMaterial,
@@ -55,6 +55,16 @@ const lazy = <T,>(build: () => T) => {
  */
 const stone = (value: number): [number, number, number] => [value, value * (0.94 + value * 0.05), value * (0.86 + value * 0.1)]
 
+/** Widen the gap between the darkest and lightest course on a piece. */
+const spread = (value: number) => stone(0.5 + (value - 0.5) * 1.34)
+
+/**
+ * Wet stone: the courses that stay damp go cooler as well as darker. Every
+ * other tint on the piece warms as it drops, so a single cool band at the foot
+ * of the wall is what finally breaks the one-material sandcastle read.
+ */
+const damp = (value: number): [number, number, number] => [value * 0.94, value * 0.97, value * 1.06]
+
 const quoins = (cx: number, cz: number, w: number, d: number, height: number, size: number): Part[] =>
   [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz], index) => ({
     geo: box(size, height, size),
@@ -63,12 +73,31 @@ const quoins = (cx: number, cz: number, w: number, d: number, height: number, si
     tint: stone(1.02 + index * 0.03) as [number, number, number],
   }))
 
-const windowOpening = (x: number, y: number, z: number, yaw: number, w = 0.045, h = 0.06): { frame: Part[]; glass: Part } => ({
-  frame: [
-    { geo: box(w + 0.018, h + 0.018, 0.014), pos: [x, y, z], rot: [0, yaw, 0], uv: [2, 2] },
-  ],
-  glass: { geo: box(w, h, 0.02), pos: [x, y, z], rot: [0, yaw, 0], uv: [1, 1] },
-})
+/**
+ * A window is a hole, and a hole is dark. The old opening was a pale frame with
+ * a glass slab in it and no reveal, so it read as a sticker. This adds a sunk
+ * near-black reveal behind the frame and a soot stain weeping down the wall
+ * below the sill — the two things that make a small opening read as a recess.
+ */
+const windowOpening = (x: number, y: number, z: number, yaw: number, w = 0.045, h = 0.06): { frame: Part[]; glass: Part; grime: Part[] } => {
+  const out: [number, number, number] = [Math.sin(yaw), 0, Math.cos(yaw)]
+  const at = (offset: number, dy = 0): [number, number, number] => [x + out[0] * offset, y + dy, z + out[2] * offset]
+  return {
+    frame: [
+      { geo: box(w + 0.018, h + 0.018, 0.014), pos: [x, y, z], rot: [0, yaw, 0], uv: [2, 2] },
+      // Stone sill, proud of the wall so it throws its own line of shade.
+      { geo: box(w + 0.03, 0.008, 0.018), pos: at(0.004, -h / 2 - 0.012), rot: [0, yaw, 0], uv: [2, 1] },
+    ],
+    glass: { geo: box(w, h, 0.02), pos: [x, y, z], rot: [0, yaw, 0], uv: [1, 1] },
+    grime: [
+      // Shadowed reveal: a dark plate a hair wider than the frame, so a rim of
+      // it survives around the joinery as the shade a real opening throws.
+      { geo: box(w + 0.03, h + 0.03, 0.006), pos: at(0.002), rot: [0, yaw, 0], uv: [1, 1], tint: [0.2, 0.19, 0.17] },
+      // Weathering weeping down from the sill.
+      { geo: box(w + 0.026, h * 0.8, 0.004), pos: at(0.003, -h * 0.86), rot: [0, yaw, 0], uv: [2, 2], tint: [0.52, 0.49, 0.44] },
+    ],
+  }
+}
 
 const buildSettlement = (): Groups => {
   const masonry: Part[] = []
@@ -144,6 +173,19 @@ const buildSettlement = (): Groups => {
   ]) {
     trim.push(...spec.frame)
     glass.push(spec.glass)
+    masonry.push(...spec.grime)
+  }
+  // Grime under the eaves: the strip of wall the roof keeps dry and dirty is
+  // always the darkest band on a real building, and it is what stops a plaster
+  // box reading as fresh-poured plastic.
+  for (const [cx, cz, w, d, top] of [
+    [mainX, 0, mainW, mainD, mainTop],
+    [wingX, wingZ, wingW, wingD, wingTop],
+  ] as Array<[number, number, number, number, number]>) {
+    for (const side of [-1, 1]) {
+      plaster.push({ geo: box(w + 0.002, 0.036, 0.004), pos: [cx, top - 0.026, cz + side * (d / 2 + 0.002)], uv: [6, 1], tint: stone(0.52) })
+      plaster.push({ geo: box(0.004, 0.036, d + 0.002), pos: [cx + side * (w / 2 + 0.002), top - 0.026, cz], uv: [6, 1], tint: stone(0.52) })
+    }
   }
   // Painted eaves board along the main range: a thin owner-coloured line that
   // survives the top-down view without turning the roof into a toy.
@@ -188,19 +230,19 @@ const buildCity = (): Groups => {
   // Battered curtain wall on a talus base. The talus is the dirtiest stone on
   // the piece and the wall lightens as it rises, which is what stops the whole
   // thing reading as one pale mass.
-  masonry.push({ geo: cyl(0.315, 0.375, 0.1, 12), pos: [0, 0.05, 0], uv: [6, 1.4], tint: stone(0.52) })
-  masonry.push({ geo: cyl(0.305, 0.315, 0.2, 12), pos: [0, 0.2, 0], uv: [6, 2.4], tint: stone(0.88) })
-  masonry.push({ geo: cyl(0.335, 0.335, 0.026, 12), pos: [0, 0.312, 0], uv: [6, 0.5], tint: stone(1.06) })
+  masonry.push({ geo: cyl(0.315, 0.375, 0.1, 12), pos: [0, 0.05, 0], uv: [6, 1.4], tint: damp(0.5) })
+  masonry.push({ geo: cyl(0.305, 0.315, 0.2, 12), pos: [0, 0.2, 0], uv: [6, 2.4], tint: spread(0.84) })
+  masonry.push({ geo: cyl(0.335, 0.335, 0.026, 12), pos: [0, 0.312, 0], uv: [6, 0.5], tint: spread(1.14) })
   // Every merlon its own value, so the crown reads as set blocks with shadow
   // between them rather than a cast plastic crenellation.
-  masonry.push(...merlons(0.312, 16, 0.062, 0.055, 0.352).map((part) => ({ ...part, tint: stone(0.72 + random() * 0.42) })))
+  masonry.push(...merlons(0.312, 16, 0.062, 0.055, 0.352).map((part) => ({ ...part, tint: spread(0.66 + random() * 0.5) })))
   floor.push({ geo: cyl(0.30, 0.30, 0.02, 12), pos: [0, 0.315, 0], uv: [4, 4] })
 
   // Corner bastions.
   for (const angle of [Math.PI * 0.25, Math.PI * 0.75, Math.PI * 1.25, Math.PI * 1.75]) {
     const x = Math.cos(angle) * 0.295
     const z = Math.sin(angle) * 0.295
-    masonry.push({ geo: cyl(0.075, 0.088, 0.4, 8), pos: [x, 0.2, z], uv: [3, 5], tint: stone(0.72 + random() * 0.24) })
+    masonry.push({ geo: cyl(0.075, 0.088, 0.4, 8), pos: [x, 0.2, z], uv: [3, 5], tint: spread(0.7 + random() * 0.3) })
     masonry.push({ geo: cyl(0.092, 0.092, 0.022, 8), pos: [x, 0.412, z], uv: [3, 0.5], tint: stone(1.04) })
   }
 
@@ -253,6 +295,23 @@ const buildCity = (): Groups => {
   ]) {
     timber.push(...spec.frame)
     glass.push(spec.glass)
+    masonry.push(...spec.grime)
+  }
+
+  // Soot and rain staining under every cornice on the city, plus a wet band
+  // round the foot of the curtain wall. The critic read the city as pale; the
+  // fix is not to repaint it but to stop every course sharing one value.
+  masonry.push({ geo: cyl(0.318, 0.318, 0.03, 12), pos: [0, 0.297, 0], uv: [6, 0.6], tint: stone(0.44) })
+  masonry.push({ geo: cyl(0.379, 0.379, 0.03, 12), pos: [0, 0.016, 0], uv: [6, 0.6], tint: damp(0.34) })
+  for (const [cx, cz, w, d, top] of [
+    [-0.02, -0.02, 0.2, 0.2, keepBase + keepH - 0.04],
+    [0.19, 0.13, 0.115, 0.115, towerBase + towerH - 0.036],
+    [-0.03, 0.19, hallW, hallD, towerBase + hallTop - 0.03],
+  ] as Array<[number, number, number, number, number]>) {
+    for (const side of [-1, 1]) {
+      plaster.push({ geo: box(w + 0.002, 0.03, 0.004), pos: [cx, top, cz + side * (d / 2 + 0.002)], uv: [6, 1], tint: stone(0.5) })
+      plaster.push({ geo: box(0.004, 0.03, d + 0.002), pos: [cx + side * (w / 2 + 0.002), top, cz], uv: [6, 1], tint: stone(0.5) })
+    }
   }
 
   // Hanging banners flanking the gate, plus the keep pennant.
@@ -295,7 +354,9 @@ function Structure({ groups, color }: { groups: Groups; color: PlayerColor }) {
     <mesh geometry={groups.metal} material={ironMaterial()} castShadow />
     <mesh geometry={groups.cloth} material={clothMaterial(PLAYER_BANNER[color])} castShadow />
     <mesh geometry={groups.trim} material={paintedTrimMaterial(PLAYER_TRIM[color])} castShadow receiveShadow />
-    {groups.floor ? <mesh geometry={groups.floor} material={cobbleMaterial()} receiveShadow /> : null}
+    {/* The courtyard is glimpsed between merlons, so it wants the fine, darker
+        terrace cobble: the coarse pale one flashed as a white patch. */}
+    {groups.floor ? <mesh geometry={groups.floor} material={terraceMaterial()} receiveShadow /> : null}
   </group>
 }
 

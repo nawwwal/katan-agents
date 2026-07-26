@@ -116,14 +116,62 @@ const snowPatch = (material: THREE.MeshStandardMaterial) => {
   }
 }
 
+/**
+ * Sun side and shade side get different *hues*, not just different brightness.
+ *
+ * The critic's note on the forest was "no colour break between species or
+ * between light and shade sides", and the second half of that is the cheap one.
+ * Real foliage is not one green lit two ways: the leaves facing the sun scatter
+ * warm yellow-green, and the ones facing away are lit almost entirely by the sky
+ * and go blue-green. A diffuse term only changes the value, so without this the
+ * whole canopy is one hue and reads as a single plastic mass.
+ *
+ * This is a hue rotation keyed on the world normal against the sun azimuth, not
+ * a brightness lift, so it is not standing in for the missing shadows -- it
+ * survives unchanged once they land, and it is the same split the lighting rig
+ * already sets up between its warm key and its cool sky.
+ */
+const SUN_TILT = /* glsl */`vec3( -0.640, 0.616, 0.461 )`
+
+const sunShadeTint = (material: THREE.MeshStandardMaterial, amount: number) => {
+  const existing = material.onBeforeCompile
+  material.onBeforeCompile = (shader, renderer) => {
+    existing?.call(material, shader, renderer)
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vSunFacing;')
+      .replace('#include <defaultnormal_vertex>', `#include <defaultnormal_vertex>
+        vSunFacing = dot( normalize( inverseTransformDirection( transformedNormal, viewMatrix ) ), normalize( ${SUN_TILT} ) );`)
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vSunFacing;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        {
+          float sunward = smoothstep( -0.55, 0.75, vSunFacing );
+          // Sunlit: warmer and a touch desaturated, the way a leaf looks when
+          // you are seeing transmitted light through it as well as reflected.
+          vec3 sunward3 = diffuseColor.rgb * vec3( 1.22, 1.10, 0.72 );
+          // Shaded: the sky is the only source, so the green swings blue and
+          // gains saturation as the warm component drops out of it.
+          vec3 shade3 = diffuseColor.rgb * vec3( 0.72, 0.92, 1.24 );
+          diffuseColor.rgb = mix( diffuseColor.rgb, mix( shade3, sunward3, sunward ), ${amount.toFixed(3)} );
+        }`)
+  }
+  const key = material.customProgramCacheKey
+  material.customProgramCacheKey = () => `${key ? key.call(material) : 'katan'}-sunshade-${amount}`
+  material.needsUpdate = true
+  return material
+}
+
 const SURFACE_MATERIAL: Record<Surface, () => THREE.MeshStandardMaterial> = {
   // Anything rooted and flexible: trees, crops, tussocks, brush. The wind is a
   // vertex-shader term weighted by height above the instance origin, so a
   // crown moves and a trunk does not, at the cost of one uniform per frame for
   // several thousand instances.
-  foliage: () => applyWindSway(
-    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, dithering: true }),
-    0.36,
+  foliage: () => sunShadeTint(
+    applyWindSway(
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, dithering: true }),
+      0.36,
+    ),
+    0.55,
   ),
   // Rooted but rigid: a saguaro and a haystack do not sway.
   stiff: () => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.93, metalness: 0, dithering: true }),
@@ -139,7 +187,13 @@ const SURFACE_MATERIAL: Record<Surface, () => THREE.MeshStandardMaterial> = {
   // face, and giving it its own material is what stops the pit blocks reading
   // as recoloured granite.
   clay: () => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0, dithering: true }),
-  livestock: () => applyGrazing(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0, dithering: true })),
+  // Fleece is the most nearly-white thing on the island, so it is also where a
+  // flat hue reads worst. The same warm/cool split keeps the lit side cream and
+  // the far side blue-grey, which is what stops a sheep being a paper cutout.
+  livestock: () => sunShadeTint(
+    applyGrazing(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0, dithering: true })),
+    0.4,
+  ),
   timber: () => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0, dithering: true }),
 }
 

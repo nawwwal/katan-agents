@@ -22,6 +22,57 @@ export const hexNorm = (x: number, z: number) => {
 }
 
 /**
+ * The clay pit's bench field, without the micro-relief on top.
+ *
+ * The old version stepped a clean function of radius, which produced concentric
+ * contour rings on a cone -- the exact thing the client read as "not coming
+ * through". A real pit is excavated from a couple of directions, so the benches
+ * on one face sit at a different depth from the benches on the next and the
+ * risers are cut, not eroded. Warping the radius by angle before quantising it
+ * is what buys that, and it costs two sines.
+ *
+ * This is split out from `tileRelief` because the vertex shading needs its
+ * *gradient*, and taking that off the full relief would just measure the ridged
+ * noise. Everything the brick tile's colour does is derived from this one
+ * function, so the paint cannot disagree with the shape -- which is the trap the
+ * earlier texture-space terracing fell into.
+ */
+const brickBench = (x: number, z: number, s: number) => {
+  // The workings are cut off-centre. Excavating from the middle outwards put the
+  // deepest point of the pit directly under the number token, which left the
+  // disc hanging over a hole -- and a pit centred on the tile centre is the
+  // concentric read all over again.
+  const px = x - Math.cos(s * 0.0011) * 0.3
+  const pz = z - Math.sin(s * 0.0017) * 0.3
+  const radial = Math.sqrt(px * px + pz * pz)
+  const angle = Math.atan2(pz, px)
+  // Two lobes, not three concentric rings. The reference pit is one working cut
+  // into a plateau with a couple of bays in it, and the wall between the bays is
+  // the tallest thing on the tile. Three evenly spaced rings around the centre
+  // read as a contour map instead, so the angular warp is now strong enough to
+  // pull the contours into lobes and there are fewer, taller steps.
+  const face = Math.sin(angle * 2 + s * 0.0013) * 0.5 + Math.sin(angle * 3 - s * 0.0007) * 0.26
+  const noise = fbm(x * 1.7 + s, z * 1.7, 3, s)
+  const warped = Math.max(0, radial + face * 0.3 + (noise - 0.5) * 0.22)
+  const benches = 2.2
+  const field = warped * benches
+  const band = field - Math.floor(field)
+  // Sharp riser, dead-flat bench: the transition happens over the last sixth of
+  // the band rather than being smeared across all of it.
+  const step = (Math.floor(field) + smoothstep(0.82, 0.96, band)) / benches
+  // The floor is flat, not a bowl. In the reference the pit bottom is a pale
+  // worked pan with rubble on it, and a curved bottom would fight the benches
+  // for the eye.
+  const floor = -0.42 * smoothstep(0.9, 0.3, warped)
+  const h = floor + step * 0.42
+  // Flat pad under the number token, blended over the width of the disc. It is
+  // a working level in the pit rather than a plug of untouched plateau, so it
+  // sits below the rim and reads as the floor the barrows run across.
+  const pad = smoothstep(0.5, 0.28, Math.sqrt(x * x + z * z))
+  return h * (1 - pad) + -0.07 * pad
+}
+
+/**
  * Per-biome relief in world units, measured from GROUND_Y. Always fades to zero
  * at the hex boundary so neighbouring tiles meet as one continuous landmass and
  * roads and settlements keep sitting flush on the seam.
@@ -49,30 +100,7 @@ export const tileRelief = (terrain: Terrain, x: number, z: number, seed: number)
       break
     }
     case 'brick': {
-      // Worked clay pit, cut in benches.
-      //
-      // The old version stepped a clean function of radius, which produced
-      // concentric contour rings on a cone -- the exact thing the client read
-      // as "not coming through". A real pit is excavated from a couple of
-      // directions, so the benches on one face sit at a different depth from
-      // the benches on the next and the risers are cut, not eroded. Warping the
-      // radius by angle before quantising it is what buys that, and it costs
-      // two sines.
-      const angle = Math.atan2(z, x)
-      const face = Math.sin(angle * 2 + s * 0.0013) * 0.5 + Math.sin(angle * 3 - s * 0.0007) * 0.26
-      const noise = fbm(x * 1.7 + s, z * 1.7, 3, s)
-      const warped = Math.max(0, radial + face * 0.15 + (noise - 0.5) * 0.2)
-      const benches = 3.2
-      const field = warped * benches
-      const band = field - Math.floor(field)
-      // Sharp riser, dead-flat bench: the transition happens over the last
-      // sixth of the band rather than being smeared across all of it.
-      const step = (Math.floor(field) + smoothstep(0.82, 0.96, band)) / benches
-      // The floor is flat, not a bowl. In the reference the pit bottom is a
-      // pale worked pan with rubble on it, and a curved bottom would fight the
-      // benches for the eye.
-      const floor = -0.34 * smoothstep(0.86, 0.28, warped)
-      h = floor + step * 0.33 + ridge(x * 3.4 + s, z * 3.4, 2, s + 11) * 0.018
+      h = brickBench(x, z, s) + ridge(x * 3.4 + s, z * 3.4, 2, s + 11) * 0.018
       break
     }
     case 'ore': {
@@ -168,7 +196,12 @@ export type TileSurface = {
  * hexes never show the same texture orientation, and a low-frequency vertex
  * tint breaks up the remaining repetition.
  */
-export const createTileSurface = (terrain: Terrain, tileId: string, divisions = 20): TileSurface => {
+// 20 divisions put a vertex every 0.05 of a tile radius, and the clay pit's
+// risers are about 0.044 wide -- so the mesh terracing was being sampled at
+// roughly one vertex per step and averaged straight back out. Doubling it costs
+// 19 tiles x 9.6k triangles, which is nothing, and it also lets the desert's
+// dune crests and the ore massif's ridges survive to the screen.
+export const createTileSurface = (terrain: Terrain, tileId: string, divisions = 40): TileSurface => {
   const seed = tileSeed(tileId)
   const { positions, indices } = rings(divisions)
   const count = positions.length
@@ -202,16 +235,39 @@ export const createTileSurface = (terrain: Terrain, tileId: string, divisions = 
     let warm = 1
     let cool = 1
     if (terrain === 'brick') {
-      // The pit pan is a paler, dustier, dried-out surface and the cut faces
-      // above it are saturated wet clay. That contrast is most of what makes
-      // the reference read as a clay pit rather than as orange ground, and it
-      // is free here because the depth is already known per vertex. Kept
-      // deliberately mild: at 0.4 it bleached the floor to near-white and the
-      // whole tile lost its hue.
-      const pan = smoothstep(-0.06, -0.26, y)
-      tint *= 1 + pan * 0.18
-      warm = 1 - pan * 0.05
-      cool = 1 + pan * 0.14
+      // Wet cut faces, dry benches.
+      //
+      // Depth alone was doing this before and depth alone is not enough: it
+      // grades the tile from rim to floor, which at board distance is a soft
+      // vignette, not strata. What makes the reference read as an excavation is
+      // that the *risers* -- the vertical cut faces between benches -- are dark,
+      // saturated, freshly-exposed wet clay, while the treads on either side of
+      // them are pale dust. That is a hard edge repeated three times across the
+      // tile, and it is the thing the eye counts as terracing.
+      //
+      // The riser mask is the gradient of the bench field itself, so it lands
+      // exactly on the geometry's own steps rather than on a second contour
+      // pattern quantised in texture space. That mistake made the tile look
+      // like marbled paper last round.
+      const d = 0.05
+      const gx = brickBench(x + d, z, seed & 0xffff) - brickBench(x - d, z, seed & 0xffff)
+      const gz = brickBench(x, z + d, seed & 0xffff) - brickBench(x, z - d, seed & 0xffff)
+      const riser = smoothstep(0.22, 0.9, Math.hypot(gx, gz) / (2 * d))
+      const pan = smoothstep(-0.08, -0.32, y)
+      // The baked albedo carries pale dust patches that were built to be read
+      // under a softer key. Against the current grade they blew out and the tile
+      // went molten -- fired clay is a *dark* pigment and the reference plateau
+      // sits well below mid grey. Pulling the whole tile down is what turns lava
+      // back into terracotta; the pan and the risers then have somewhere to go.
+      // The pan is *dust*, not slate: at cool 1.26 it went pale blue and read as
+      // a puddle under the token. Dried clay loses chroma but keeps its warm
+      // bias, so most of the lift belongs in the overall value, not in blue.
+      // Riser darkening is deliberately light. It exists to say "this face was
+      // cut and is still damp", not to draw the shadow -- the sun does that now,
+      // and at 0.3 the two stacked up and the pit interior went to mud.
+      tint *= 0.88 * (1 + pan * 0.34) * (1 - riser * 0.15)
+      warm = (1 - pan * 0.03) * (1 + riser * 0.2)
+      cool = (1 + pan * 0.12) * (1 - riser * 0.34)
     }
     if (terrain === 'desert') {
       // The baked sand is very light by design so the ripple normals have

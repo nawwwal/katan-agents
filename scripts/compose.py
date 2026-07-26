@@ -574,10 +574,17 @@ E8 = BEAT / 3.0             # one quaver in 6/8
 BAR = 6 * E8                # 1.579 s
 
 
-def title_score() -> tuple[list[Event], float, list[str]]:
+Voices = dict[str, list[tuple[float, float, str]]]
+
+
+def title_score() -> tuple[list[Event], float, list[str], Voices]:
     rng = np.random.default_rng(20260726)
     ev: list[Event] = []
     log: list[str] = []
+    voices: Voices = {}
+
+    def sing(voice: str, t: float, dur: float, pitch: str) -> None:
+        voices.setdefault(voice, []).append((t, t + dur, pitch))
 
     def bar_t(bar: float) -> float:
         return bar * BAR
@@ -635,9 +642,13 @@ def title_score() -> tuple[list[Event], float, list[str]]:
     log.append("KATAN — TITLE THEME  'The Sail'")
     log.append("D dorian · 6/8 · 76 bpm dotted-crotchet · 24 bars · %.2f s loop" % length)
     log.append("")
-    log.append("form   | 0-3 intro (harp + drone) | 4-11 A: melody, lute |")
-    log.append("       | 12-19 A': melody doubled by choir, drum enters, counter-line |")
+    log.append("form   | 0-3 intro (harp + drone) | 4-11 A: melody alone, lute |")
+    log.append("       | 12-19 A': two choir voices, tenor counter-line, drum |")
     log.append("       | 20-23 coda: C-G-Dm turnaround back into the intro texture")
+    log.append("")
+    log.append("The bowed strings double the lute an octave down through A'. That is")
+    log.append("orchestration, not counterpoint, so they are not registered as a voice")
+    log.append("in the check below -- an octave doubling of one line is one line.")
     log.append("")
 
     # --- pedal: one unbroken D across the whole loop -----------------------
@@ -658,6 +669,7 @@ def title_score() -> tuple[list[Event], float, list[str]]:
         top = voicing[-1]
         octave_up = top[0] + str(int(top[-1]) + 1)
         shape = [voicing[0], voicing[1], voicing[2], octave_up]
+        sing("bass", bar_t(bar), BAR, voicing[0])
         density = 1.0 if bar >= 4 else 0.9
         for i, slot in enumerate(harp_slots):
             t = bar_t(bar) + slot * E8 + hum()
@@ -670,7 +682,7 @@ def title_score() -> tuple[list[Event], float, list[str]]:
     # --- melody -------------------------------------------------------------
     def lay_tune(bar0: int, tune: list[tuple[str, int]], *, instrument: str, gain: float,
                  pan: float, track: str, octave: int = 0, extra: dict | None = None,
-                 legato: float = 1.35) -> None:
+                 legato: float = 1.35, voice: str | None = None) -> None:
         pos = 0
         for name, quavers in tune:
             if octave:
@@ -679,51 +691,97 @@ def title_score() -> tuple[list[Event], float, list[str]]:
             dur = quavers * E8 * legato
             ev.append(Event(t, dur, instrument, name, gain=vel(gain), pan=pan,
                             track=track, extra=dict(extra or {})))
+            if voice:
+                # Notated position, not the humanised one: counterpoint is a
+                # property of the score, and 14 ms of rubato must not hide a
+                # parallel octave from the checker.
+                sing(voice, bar_t(bar0) + pos * E8, quavers * E8, name)
             pos += quavers
 
     # A section: the tune on the lute, alone over harp and drone.
     lay_tune(4, antecedent, instrument="lead", gain=0.95, pan=0.12, track="lute",
-             extra={"brightness": 4200.0, "damping": 0.24, "loop_gain": 0.9978, "pick": 0.16})
+             extra={"brightness": 4200.0, "damping": 0.24, "loop_gain": 0.9978, "pick": 0.16},
+             voice="melody")
     lay_tune(8, consequent, instrument="lead", gain=0.98, pan=0.12, track="lute",
-             extra={"brightness": 4400.0, "damping": 0.23, "loop_gain": 0.9980, "pick": 0.16})
+             extra={"brightness": 4400.0, "damping": 0.23, "loop_gain": 0.9980, "pick": 0.16},
+             voice="melody")
 
     # A': the same tune, doubled an octave down by bowed strings and shadowed
     # by the choir. Same notes, more weight -- that is the whole arrangement
     # arc, and it is why the second time round feels like an arrival.
     lay_tune(12, antecedent, instrument="lead", gain=0.95, pan=0.12, track="lute",
-             extra={"brightness": 4300.0, "damping": 0.24, "loop_gain": 0.9978, "pick": 0.16})
+             extra={"brightness": 4300.0, "damping": 0.24, "loop_gain": 0.9978, "pick": 0.16},
+             voice="melody")
     lay_tune(16, consequent, instrument="lead", gain=1.00, pan=0.12, track="lute",
-             extra={"brightness": 4500.0, "damping": 0.23, "loop_gain": 0.9982, "pick": 0.16})
+             extra={"brightness": 4500.0, "damping": 0.23, "loop_gain": 0.9982, "pick": 0.16},
+             voice="melody")
     lay_tune(12, antecedent, instrument="pad", gain=0.52, pan=-0.28, track="strings",
              octave=-1, legato=1.0, extra={"attack": 0.10, "release": 0.35, "bright": 0.9})
     lay_tune(16, consequent, instrument="pad", gain=0.55, pan=-0.28, track="strings",
              octave=-1, legato=1.0, extra={"attack": 0.10, "release": 0.35, "bright": 0.9})
 
-    # Choir: not the tune, the chord under it, entering with A'.
-    for bar in range(12, 20):
-        _, voicing = chords[bar]
-        for i, note in enumerate(voicing[1:]):
-            up = note[0] + note[1:-1] + str(int(note[-1]) + 1)
-            ev.append(Event(bar_t(bar) - 0.25, BAR + 0.9, "choir", up,
+    # Choir under A'. NOT the chord transposed up, which is what an earlier
+    # draft did: transposing voicing[1:] up an octave put the choir's top voice
+    # on the melody's own pitch at every single downbeat of bars 12-19, and
+    # marched it in parallel unison with the tune from bar 13 to 14 and again
+    # from 14 to 15. Two voices in parallel unison are one voice.
+    #
+    # These are written out instead, as two real inner parts. The upper is
+    # essentially an A pedal with a neighbour either side, so it moves obliquely
+    # while the melody climbs; the lower has its own small contour. No downbeat
+    # doubles the melody's pitch class in any octave.
+    #   bar    12  13  14  15  16  17  18  19
+    #   tune   D4  G4  C5  F4  D4  C5  B4  F4
+    #   upper  A3  B3  A3  A3  A3  A3  G3  A3
+    #   lower  F3  D3  E3  D3  F3  F3  D3  D3
+    # The lower part rests in bars 13, 15 and 19 -- the two phrase ends and one
+    # mid-phrase breath. That is a phrasing decision and it is also the thing
+    # that keeps it from being dragged into parallel fifths with the bass, which
+    # is where G->Am and F->G in this progression want to pull any inner voice
+    # that insists on sounding in every bar.
+    choir_parts = {
+        "upper": ["A3", "B3", "A3", "A3", "A3", "A3", "G3", "A3"],
+        "lower": ["F3", None, "E3", None, "F3", "F3", "D3", None],
+    }
+    for i, (part, notes) in enumerate(choir_parts.items()):
+        for k, note in enumerate(notes):
+            if note is None:
+                continue
+            bar = 12 + k
+            ev.append(Event(bar_t(bar) - 0.25, BAR + 0.9, "choir", note,
                             gain=0.42 - 0.08 * i, pan=(-0.5 + 0.9 * i), track="choir",
                             extra={"vowel": "oo" if bar < 16 else "ah"}))
+            sing(f"choir-{part}", bar_t(bar), BAR, note)
 
-    # Counter-line under A'. One note a bar, chosen so that no downbeat makes
-    # a perfect octave or fifth with the melody and no two consecutive
-    # downbeats move in parallel into one. Against the tune's climb to D5 in
-    # bar 17 it holds still, which is what makes the climb sound like a climb.
-    #   bar   12  13  14  15  16      17  18  19
-    #   tune  D4  G4  C5  F4  D4      C5  B4  F4
-    #   line  F3  D3  E3  D3  A3-G3   A3  D3  D3
-    #   int.  M6  P11 m13 m10 P4      m10 M13 m10
-    counter = [("F3", 6), ("D3", 6), ("E3", 6), ("D3", 6),
-               ("A3", 4), ("G3", 2), ("A3", 6), ("D3", 6), ("D3", 6)]
-    pos = 0
-    for name, quavers in counter:
-        ev.append(Event(bar_t(12) + pos * E8 + hum(0.02), quavers * E8 * 1.2, "pad", name,
-                        gain=0.34, pan=0.42, track="counter",
-                        extra={"attack": 0.35, "release": 0.6, "bright": 0.7}))
-        pos += quavers
+    # Counter-line under A'. The earlier draft was one note per bar, entering on
+    # every downbeat with the melody -- same rhythm, same phrasing, so it read as
+    # harmony rather than as a second part. This one is a tenor line with its own
+    # everything:
+    #
+    #   rhythm  it enters off the beat nine times out of ten, holds notes two to
+    #           six quavers long against the tune's ones and twos, and rests for
+    #           the whole second half of bar 15 where the tune is breathing.
+    #   contour a stepwise climb F2-G2-B2-C3-D3, a leap of a fifth up to its
+    #           apex A3, then a descent F3-D3-A2. One arch, one apex, and the
+    #           apex is in bar 16 -- a bar BEFORE the melody's D5 in bar 17.
+    #   motion  it holds that A3 through the whole of the melody's climb (oblique
+    #           motion, which is what makes a climb audible as a climb) and then
+    #           walks down through bars 17-19 while the tune also falls, but by
+    #           different intervals, so nothing runs in parallel.
+    #
+    #   bar/quaver  12.2 13.1 13.3 14.2 15.0 16.2 17.1 17.3 18.3 19.0
+    #   note        F2   G2   B2   C3   D3   A3   A3   F3   B2   A2
+    #   length (q)  4    2    3    4    3    3    2    3    3    6
+    counter = [(12, 2, "F2", 4), (13, 1, "G2", 2), (13, 3, "B2", 3),
+               (14, 2, "C3", 4), (15, 0, "D3", 3), (16, 2, "A3", 3),
+               (17, 1, "A3", 2), (17, 3, "F3", 3), (18, 3, "B2", 3),
+               (19, 0, "A2", 6)]
+    for bar, slot, name, quavers in counter:
+        t = bar_t(bar) + slot * E8
+        ev.append(Event(t + hum(0.02), quavers * E8 * 1.15, "pad", name,
+                        gain=0.36, pan=0.42, track="counter",
+                        extra={"attack": 0.30, "release": 0.55, "bright": 0.7}))
+        sing("counter", t, quavers * E8, name)
 
     # --- percussion: enters at bar 12, leaves at bar 20 --------------------
     # Never a straight quaver pulse. The pattern is 12 quavers long across two
@@ -777,14 +835,22 @@ def title_score() -> tuple[list[Event], float, list[str]]:
     log.append("motif, antecedent : " + spell(antecedent))
     log.append("motif, consequent : " + spell(consequent))
     log.append("coda tag          : " + spell(tag))
-    log.append("counter-line      : " + " ".join(f"{n}/{q}" for n, q in counter))
+    log.append("")
+    log.append("bars 12-19, the four written voices, one column per bar:")
+    log.append("  tune        " + "  ".join(
+        f"{n:<4}" for n in ("D4", "G4", "C5", "F4", "D4", "C5", "B4", "F4")))
+    log.append("  choir upper " + "  ".join(f"{n:<4}" for n in choir_parts["upper"]))
+    log.append("  choir lower " + "  ".join(f"{n or '--':<4}" for n in choir_parts["lower"]))
+    log.append("  bass        " + "  ".join(f"{chords[b][1][0]:<4}" for b in range(12, 20)))
+    log.append("  counter-line, off the beat and on its own rhythm:")
+    log.append("    " + "  ".join(f"{b}.{s}:{n}/{q}" for b, s, n, q in counter))
     log.append("")
     log.append("harmony (one per bar):")
     log.append("  " + " ".join(chords[b][0] for b in range(bars)))
-    return ev, length, log
+    return ev, length, log, voices
 
 
-def match_score() -> tuple[list[Event], float, list[str]]:
+def match_score() -> tuple[list[Event], float, list[str], Voices]:
     """The hour-long bed. A aeolian: the same seven notes as the title, heard
     from A instead of D, so motif fragments drop in untransposed.
 
@@ -794,6 +860,7 @@ def match_score() -> tuple[list[Event], float, list[str]]:
     rng = np.random.default_rng(19891114)
     ev: list[Event] = []
     log: list[str] = []
+    voices: Voices = {}
     length = 96.0
 
     # Six harmonic areas, 16 s each. Aeolian, and it never actually cadences --
@@ -804,7 +871,9 @@ def match_score() -> tuple[list[Event], float, list[str]]:
         (32.0, "Am7",    ["C2", "C3", "G3", "C4", "E4", "G4"]),
         (48.0, "Gsus/A", ["G1", "G2", "D3", "G3", "C4", "D4"]),
         (64.0, "Dm7/A",  ["D2", "D3", "A3", "C4", "F4", "A4"]),
-        (80.0, "Am",     ["A1", "A2", "E3", "A3", "B3", "E4"]),
+        # Returns to exactly the opening voicing. The bed has to arrive back
+        # where it started before the loop point or the wrap is a chord change.
+        (80.0, "Am",     ["A1", "A2", "E3", "A3", "C4", "E4"]),
     ]
 
     log.append("KATAN — MATCH BED  'Long Water'")
@@ -830,19 +899,32 @@ def match_score() -> tuple[list[Event], float, list[str]]:
         # overlapped, so a chord change is a lean rather than an edge.
         ev.append(Event(t0 - 3.0, span + 7.0, "drone", voicing[1], gain=0.30, track="drone",
                         extra={"cutoff": 340.0}))
+        # The bed has no metre, so its counterpoint is area-to-area rather than
+        # note-to-note: three sustained upper voices whose motion between the
+        # six harmonic areas is what the check reads.
         for j, note in enumerate(voicing[2:5]):
+            voices.setdefault(f"area{j}", []).append((t0, t0 + span, note))
             # Long bowed tones, each entering at its own moment inside the area
             # so the chord assembles rather than arriving.
             offset = 0.6 + 2.3 * j + float(rng.uniform(0, 1.4))
             ev.append(Event(t0 + offset - 2.5, span - offset + 6.5, "pad", note,
                             gain=0.74 - 0.10 * j, pan=(-0.55 + 0.5 * j), track="strings",
-                            extra={"attack": 3.2, "release": 4.5, "bright": 0.9}))
-        ev.append(Event(t0 + 1.5, span + 5.5, "choir", voicing[3], gain=0.44,
+                            extra={"attack": 3.2, "release": 4.5, "bright": 1.0}))
+        ev.append(Event(t0 + 1.5, span + 5.5, "choir", voicing[3], gain=0.40,
                         pan=0.15, track="choir", extra={"vowel": "oo"}))
         # A top voice around 350-450 Hz. Without it the whole bed sits under
-        # 300 Hz and reads as rumble rather than as an ensemble breathing.
-        ev.append(Event(t0 + 4.0, span + 4.0, "choir", voicing[5], gain=0.22,
+        # 300 Hz and reads as rumble rather than as an ensemble breathing. The
+        # 'ah' formant is the brightest thing in the bed and it is carrying the
+        # 1-3 kHz band more or less on its own, so it is worth more than the
+        # 0.22 an earlier draft gave it.
+        ev.append(Event(t0 + 4.0, span + 4.0, "choir", voicing[5], gain=0.34,
                         pan=-0.3, track="choir", extra={"vowel": "ah"}))
+        # And the same voice an octave up, very quiet: pure air, no new onsets,
+        # so it cannot introduce a pulse. Without it there is literally nothing
+        # above 4 kHz and the bed sounds like it is playing through a wall.
+        top = voicing[5][0] + voicing[5][1:-1] + str(int(voicing[5][-1]) + 1)
+        ev.append(Event(t0 + 6.0, span + 3.0, "choir", top, gain=0.10,
+                        pan=0.45, track="choir", extra={"vowel": "ah"}))
 
     # --- motif fragments, sparse -------------------------------------------
     # Only ever the head (D-F-A) or the tail (C-B-A-G) of the title tune, never
@@ -872,7 +954,7 @@ def match_score() -> tuple[list[Event], float, list[str]]:
     bell_hits = [(5.2, "A4"), (21.7, "E5"), (35.4, "C5"), (52.9, "G4"),
                  (63.1, "D5"), (77.6, "A4"), (91.3, "E4")]
     for t0, note in bell_hits:
-        ev.append(Event(t0, 6.0, "bell", note, gain=0.20, pan=float(rng.uniform(-0.4, 0.4)),
+        ev.append(Event(t0, 6.0, "bell", note, gain=0.32, pan=float(rng.uniform(-0.4, 0.4)),
                         track="bell", extra={"warmth": 1.4}))
     log.append("Bells: " + ", ".join(f"{t:.1f}s {n}" for t, n in bell_hits))
 
@@ -885,78 +967,141 @@ def match_score() -> tuple[list[Event], float, list[str]]:
                         track="drum", extra={"pitch_hz": 78.0, "tone": 0.18}))
     log.append("Frame drum: " + ", ".join(f"{t:.1f}" for t in drum_hits) + " s")
     log.append("Smallest gap between any two onsets of the same layer: see analysis.")
-    return ev, length, log
+    return ev, length, log, voices
 
 
-def victory_score() -> tuple[list[Event], float, list[str]]:
-    """Ten seconds. The motif's consequent, augmented, landing on D major --
-    a Picardy third, which is period-honest for modal music and is the only
-    way this resolves as an arrival instead of another question."""
+def victory_score() -> tuple[list[Event], float, list[str], Voices]:
+    """The payoff cue. 10.8 s, one phrase, one cadence, no loop.
+
+    Two things were wrong with the earlier draft and both are fixed here.
+
+    LENGTH. It ran 15.4 s, which is a victory sting that is still going after
+    the player has moved on. The spec is 8-12 s. This is 10.8 s: 8.5 s of music
+    and 2.3 s of ring, with the last 1.4 s faded.
+
+    CADENCE. It ended G -> D, a plagal 'amen'. Plagal motion is a settling, not
+    an arrival -- it has no leading tone and no dissonance to resolve, so it
+    confirms a tonic that has already been reached rather than reaching one.
+    After an hour of play the cue has to actually land, so this is the full
+    apparatus instead:
+
+        G  (IV, the dorian major subdominant -- the predominant)
+        D/A  (cadential six-four: the tonic triad over the dominant bass, which
+              is the preparation. Its sixth F#3 and fourth D3 above the A are
+              both suspensions waiting on the dominant.)
+        A7 (V7: F#3 -> E3 resolves the sixth, D3 -> C#3 resolves the fourth,
+            and A3 -> G3 adds the seventh. Three suspensions, three resolutions,
+            all by step, all downward.)
+        D  (I major: C#3 -> D3 as the leading tone, G3 -> F#3 as the seventh,
+            and the melody's C#5 -> D5 on top.)
+
+    The bass moves D ... A ... D underneath, so the pedal itself cadences. C# is
+    the only note outside D dorian in the whole score and it appears exactly
+    once, in the last second, which is musica ficta doing precisely the job it
+    was invented for.
+    """
     rng = np.random.default_rng(20261225)
     ev: list[Event] = []
     log: list[str] = []
-    length = 11.6
-    q = 0.42  # a slower pulse than the title: 71 bpm crotchet, broadened
+    voices: Voices = {}
+    length = 10.8
+
+    def sing(voice: str, t: float, dur: float, pitch: str) -> None:
+        voices.setdefault(voice, []).append((t, t + dur, pitch))
 
     log.append("KATAN — VICTORY  'Landfall'")
-    log.append("D dorian into D major · 11.60 s · does not loop")
+    log.append("D dorian into D major · 10.80 s · does not loop")
     log.append("")
 
-    # Anacrusis flourish, then the tune wide open.
-    tune = [(0.00, "D4", 2), (0.84, "F4", 1), (1.26, "A4", 3),
-            (2.52, "C5", 2), (3.36, "D5", 2), (4.20, "C5", 2),
-            (5.04, "B4", 2), (5.88, "A4", 1), (6.30, "G4", 2),
-            (7.14, "F4", 2), (7.98, "D5", 6)]
-    for t0, name, beats in tune:
-        ev.append(Event(t0 + float(rng.normal(0, 0.008)), beats * q * 1.6, "lead", name,
+    # The tune. One arch: up D-F-A-C, a turn at the top, down through B-A to the
+    # phrase's floor of G4 at 6.00 s, then a scalar run G-A-B-C back up into the
+    # cadence. The high D5 is held back until the six-four at 7.20 s, so the
+    # piece has exactly one climax and it is inside the cadence rather than
+    # before it. Note values shorten through the run (0.80, 0.40, 0.30) and then
+    # broaden again at the six-four, which is how a phrase pushes and then
+    # arrives without changing tempo.
+    #
+    # The run is also why B4 does not leap straight to D5. An earlier version
+    # did, and the accompaniment's tenor moved B2 to D3 underneath it -- the
+    # same minor third, two octaves apart, which is a parallel octave arriving
+    # on the most important beat in the score.
+    tune = [(0.00, "D4", 0.80), (0.80, "F4", 0.40), (1.20, "A4", 1.20),
+            (2.40, "C5", 0.80), (3.20, "B4", 0.40), (3.60, "C5", 0.80),
+            (4.40, "A4", 0.40), (4.80, "B4", 0.80), (5.60, "A4", 0.40),
+            (6.00, "G4", 0.30), (6.30, "A4", 0.30), (6.60, "B4", 0.30),
+            (6.90, "C5", 0.30), (7.20, "D5", 0.70), (7.90, "C#5", 0.60),
+            (8.50, "D5", 2.30)]
+    for t0, name, span in tune:
+        ev.append(Event(t0 + float(rng.normal(0, 0.008)), span * 1.7, "lead", name,
                         gain=1.05, pan=0.05, track="lute",
                         extra={"brightness": 5200.0, "damping": 0.20, "loop_gain": 0.9985,
                                "pick": 0.14}))
-        ev.append(Event(t0 + float(rng.normal(0, 0.012)), beats * q * 1.3, "pad", name,
+        ev.append(Event(t0 + float(rng.normal(0, 0.012)), span * 1.35, "pad", name,
                         gain=0.55, pan=-0.2, track="strings",
                         extra={"attack": 0.06, "release": 0.3, "bright": 1.1}))
+        sing("melody", t0, span, name)
 
-    # Harmony: Dm - F - G - Dm - G - D major. The last chord is the payoff.
-    # Dm - F - Am - G - D. The last move is G to D, a plagal arrival: the
-    # "amen" cadence. Approaching the tonic from Am instead, as an earlier
-    # draft did, is v-I, which in a minor mode sounds like one more question.
-    # After an hour of play the cue has to stop asking and land.
-    prog = [(0.00, ["D2", "D3", "A3"], 2.6, "Dm"),
-            (2.52, ["F2", "C3", "F3"], 2.6, "F"),
-            (5.04, ["A2", "E3", "A3"], 1.7, "Am"),
-            (6.30, ["G2", "D3", "B3"], 1.7, "G"),
-            (7.98, ["D2", "D3", "A3", "F#4", "D5"], 4.6, "D major")]
+    # Four parts throughout: bass, then three upper voices that keep their
+    # identity from chord to chord, which is the only way a cadence can be said
+    # to resolve at all. The C# of the dominant is deliberately absent from the
+    # accompaniment and sounded only by the melody -- a leading tone doubled in
+    # two octaves resolves in parallel octaves, which is the exact fault this
+    # pass exists to remove.
+    prog = [(0.00, ["D2", "D3", "F3", "A3"], 2.40, "Dm"),
+            (2.40, ["A2", "C3", "F3", "A3"], 2.40, "F/A"),
+            (4.80, ["E2", "B2", "E3", "G3"], 1.20, "Em"),
+            (6.00, ["G2", "B2", "D3", "G3"], 1.20, "G"),
+            (7.20, ["A2", "D3", "F#3", "A3"], 0.70, "D/A"),
+            (7.90, ["A2", "E3", "G3", "A3"], 0.60, "A7"),
+            (8.50, ["D2", "D3", "F#3", "A3"], 2.30, "D")]
     for t0, voicing, dur, name in prog:
         for i, note in enumerate(voicing):
-            ev.append(Event(t0 - 0.05, dur, "pad", note, gain=0.42 - 0.05 * i,
-                            pan=(-0.5 + 0.25 * i), track="strings",
-                            extra={"attack": 0.10, "release": 0.5, "bright": 1.0}))
-            ev.append(Event(t0 + i * 0.035, 3.2, "pluck", note, gain=0.5, pan=(0.4 - 0.2 * i),
-                            track="harp", extra={"brightness": 3800.0}))
-        ev.append(Event(t0 - 0.4, dur + 1.6, "choir", voicing[-1], gain=0.36, pan=0.0,
+            hold = dur + (0.9 if t0 < 7.2 else 0.25)
+            ev.append(Event(t0 - 0.05, hold, "pad", note, gain=0.42 - 0.04 * i,
+                            pan=(-0.5 + 0.22 * i), track="strings",
+                            extra={"attack": 0.10, "release": 0.4, "bright": 1.0}))
+            ev.append(Event(t0 + i * 0.030, min(3.2, dur + 2.2), "pluck", note, gain=0.5,
+                            pan=(0.4 - 0.16 * i), track="harp",
+                            extra={"brightness": 3800.0}))
+            # The three upper chord tones are the voices the cadence lives in,
+            # so they are the ones the counterpoint check reads.
+            if i:
+                sing(f"chord{i}", t0, dur, note)
+        ev.append(Event(t0 - 0.3, dur + 1.2, "choir", voicing[-1], gain=0.36, pan=0.0,
                         track="choir", extra={"vowel": "ah"}))
-    ev.append(Event(-0.2, length + 0.6, "drone", "D1", gain=0.42, track="drone",
-                    extra={"cutoff": 200.0}))
 
-    # Drums: a real accelerating figure into the last chord, then nothing.
-    hits = [(0.00, 1.0), (1.26, 0.6), (2.52, 0.95), (3.78, 0.6), (5.04, 0.9),
-            (6.30, 0.7), (7.14, 0.6), (7.56, 0.7), (7.77, 0.8), (7.98, 1.15)]
+    # The pedal cadences too: D under the whole phrase, A under the six-four and
+    # the dominant, D again at the arrival. A tonic pedal held through the V7
+    # would have blunted the one moment the cue exists for.
+    for t0, note, dur, gain in ((-0.2, "D1", 7.5, 0.42), (7.15, "A1", 1.45, 0.40),
+                                (8.45, "D1", 2.6, 0.46)):
+        ev.append(Event(t0, dur, "drone", note, gain=gain, track="drone",
+                        extra={"cutoff": 200.0}))
+        sing("pedal", max(t0, 0.0), dur, note)
+
+    # Drums tighten into the cadence and stop dead on the arrival.
+    hits = [(0.00, 1.0), (1.20, 0.6), (2.40, 0.95), (3.60, 0.6), (4.80, 0.9),
+            (6.00, 0.8), (7.20, 0.75), (7.90, 0.8), (8.20, 0.6), (8.35, 0.7),
+            (8.50, 1.2)]
     for t0, amp in hits:
         ev.append(Event(t0 + float(rng.normal(0, 0.008)), 1.2, "perc", gain=amp * 0.85,
                         pan=-0.05, track="drum", extra={"pitch_hz": 88.0, "tone": 0.45}))
-    for t0 in (0.42, 1.68, 2.94, 4.20, 5.46, 6.72):
+    for t0 in (0.40, 1.60, 2.80, 4.00, 5.20, 6.40):
         ev.append(Event(t0, 0.3, "perc", gain=0.25, pan=0.4, track="shaker",
                         extra={"kind": "shaker"}))
 
-    # Bells on the arrival.
     for note, g, off in (("D5", 0.85, 0.0), ("A5", 0.55, 0.06), ("F#5", 0.5, 0.12)):
-        ev.append(Event(7.98 + off, 5.5, "bell", note, gain=g, pan=0.25, track="bell",
+        ev.append(Event(8.50 + off, 5.0, "bell", note, gain=g, pan=0.25, track="bell",
                         extra={"warmth": 1.6}))
 
-    log.append("melody : " + " ".join(f"{n}" for _, n, _ in tune))
-    log.append("harmony: " + " -> ".join(name for *_, name in prog))
-    log.append("The final D major is the Picardy third; everything before it is dorian.")
-    return ev, length, log
+    log.append("melody : " + " ".join(n for _, n, _ in tune))
+    log.append("harmony: " + " -> ".join(f"{name}@{t:.2f}s" for t, _, _, name in prog))
+    log.append("cadence: G (IV) -> D/A (cadential 6-4) -> A7 (V7) -> D (I, Picardy)")
+    log.append("         6-4 to 5-3 by step: F#3->E3, D3->C#3, A3->G3; then C#3->D3,")
+    log.append("         G3->F#3, and the tune C#5->D5. Bass D ... A ... D.")
+    log.append("C# is the only note outside D dorian in the whole score, and it")
+    log.append("lasts 0.6 s.")
+    return ev, length, log, voices
 
 
 # ---------------------------------------------------------------------------
@@ -1131,6 +1276,90 @@ def analysis_image(items: list[tuple[str, np.ndarray]], path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+PERFECT = {0, 7}  # interval classes that parallel motion is forbidden between
+
+
+def voice_leading_report(voices: dict[str, list[tuple[float, float, str]]],
+                         label: str) -> list[str]:
+    """Read the counterpoint back and grade it, rather than asserting it in a comment.
+
+    Builds the sonority at every onset in the piece, then walks every pair of
+    voices and flags:
+
+      * parallel unisons, fifths and octaves -- both voices move in the same
+        direction and the interval class stays perfect. This is the specific
+        failure that turns a counter-line into a thickening of the melody.
+      * direct (hidden) fifths and octaves reached by similar motion where the
+        UPPER voice leaps. Similar motion into a perfect interval is only
+        objectionable when the top voice jumps into it; stepwise arrival is the
+        ordinary 'horn fifth' and is not a fault.
+      * static pairs, meaning two voices that never move independently.
+
+    Compound intervals are reduced, because a parallel fifteenth is a parallel
+    octave with more air in it.
+    """
+    names = sorted(voices)
+    onsets = sorted({round(t, 6) for v in voices.values() for t, _, _ in v})
+
+    def sounding(voice: list[tuple[float, float, str]], t: float) -> int | None:
+        for start, end, pitch in voice:
+            if start - 1e-6 <= t < end - 1e-6:
+                return midi_of(pitch)
+        return None
+
+    grid = {n: [sounding(voices[n], t) for t in onsets] for n in names}
+    lines = [f"  {label}: counterpoint check, {len(onsets)} sonorities, "
+             f"{len(names)} voices ({', '.join(names)})"]
+    faults: list[str] = []
+    motion_tally = {"contrary": 0, "oblique": 0, "similar": 0}
+
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            moves = 0
+            for k in range(len(onsets) - 1):
+                a0, a1, b0, b1 = grid[a][k], grid[a][k + 1], grid[b][k], grid[b][k + 1]
+                if None in (a0, a1, b0, b1):
+                    continue
+                da, db = a1 - a0, b1 - b0
+                if da == 0 and db == 0:
+                    continue
+                moves += 1
+                if da == 0 or db == 0:
+                    motion_tally["oblique"] += 1
+                elif (da > 0) == (db > 0):
+                    motion_tally["similar"] += 1
+                else:
+                    motion_tally["contrary"] += 1
+                before, after = abs(a0 - b0), abs(a1 - b1)
+                if after % 12 not in PERFECT:
+                    continue
+                same_dir = da != 0 and db != 0 and (da > 0) == (db > 0)
+                if same_dir and before % 12 == after % 12:
+                    faults.append(
+                        f"    PARALLEL {'octave/unison' if after % 12 == 0 else 'fifth'} "
+                        f"{a}+{b} at {onsets[k]:.2f}->{onsets[k + 1]:.2f}s "
+                        f"({before} st -> {after} st)")
+                elif same_dir:
+                    upper = a if a1 > b1 else b
+                    leap = abs(da if upper == a else db)
+                    if leap > 2:
+                        faults.append(
+                            f"    direct {'octave' if after % 12 == 0 else 'fifth'} "
+                            f"{a}+{b} at {onsets[k + 1]:.2f}s, upper voice leaps {leap} st")
+            if moves == 0:
+                faults.append(f"    {a}+{b} never move independently")
+
+    total = sum(motion_tally.values()) or 1
+    lines.append("    motion between voice pairs: " + ", ".join(
+        f"{k} {v} ({v / total * 100:.0f}%)" for k, v in motion_tally.items()))
+    if faults:
+        lines.extend(faults)
+        lines.append(f"    {len(faults)} fault(s)")
+    else:
+        lines.append("    no parallel or direct fifths/octaves between any pair")
+    return lines
+
+
 def seam_report(audio: np.ndarray, label: str, crossfade: float = 0.5) -> list[str]:
     """Simulate exactly what SoundBank.setBeds does at the wrap and measure it."""
     n = audio.shape[0]
@@ -1181,6 +1410,49 @@ def seam_report(audio: np.ndarray, label: str, crossfade: float = 0.5) -> list[s
     lines.append(f"    largest sample-to-sample step at the wrap {seam_step:.5f} "
                  f"vs {file_step:.5f} anywhere in the file")
     return lines
+
+
+def decode(path: Path) -> np.ndarray:
+    raw = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(path), "-f", "f32le", "-ac", "2",
+         "-ar", str(SR), "-"], capture_output=True, check=True).stdout
+    return np.frombuffer(raw, dtype="<f4").reshape(-1, 2).copy()
+
+
+def mp3_seam_report(path: Path, label: str, expected: float,
+                    crossfade: float = BED_CROSSFADE) -> tuple[list[str], np.ndarray]:
+    """Loop the SHIPPED file, not the intermediate WAV.
+
+    Everything upstream can be perfect and still ship a bad loop, because the
+    encoder is entitled to add delay and padding at both ends. This decodes the
+    mp3, checks it is still sample-exact, concatenates it to itself through the
+    same linear crossfade SoundBank uses, and measures the join.
+    """
+    a = decode(path)
+    xf = int(crossfade * SR)
+    want = int(round(expected * SR))
+    lines = [f"  {label}: shipped mp3 decodes to {a.shape[0]} samples "
+             f"({a.shape[0] / SR:.3f} s), expected {want} "
+             f"({'gapless' if abs(a.shape[0] - want) <= 1 else 'PADDED — loop will drift'})"]
+    period = a.shape[0] - xf
+    b = a.copy()
+    b[:xf] *= np.linspace(0.0, 1.0, xf)[:, None]
+    b[period:] *= np.linspace(1.0, 0.0, xf)[:, None]
+    two = np.zeros((period + a.shape[0], 2))
+    two[: a.shape[0]] += b
+    two[period:] += b
+    blk = int(0.05 * SR)
+    vals = np.array([20 * math.log10(
+        float(np.sqrt(np.mean(two[period + k * blk: period + (k + 1) * blk] ** 2))) + 1e-12)
+        for k in range(-40, 40)])
+    seam_step = float(np.max(np.abs(np.diff(two[period - 64: period + xf + 64], axis=0))))
+    file_step = float(np.max(np.abs(np.diff(a, axis=0))))
+    lines.append(f"    across the join: level {vals[:40].mean():.1f} -> {vals[40:].mean():.1f} dBFS, "
+                 f"largest 50 ms change {np.max(np.abs(np.diff(vals))):.2f} dB")
+    lines.append(f"    largest sample step at the join {seam_step:.5f} vs {file_step:.5f} "
+                 f"anywhere in the file "
+                 f"({'continuous' if seam_step < file_step else 'A CLICK'})")
+    return lines, two[max(period - 3 * SR, 0): period + 3 * SR]
 
 
 def pulse_report(audio: np.ndarray, label: str, *, floor: float = 1.5,
@@ -1348,10 +1620,11 @@ def main() -> int:
     analysis: list[str] = []
     panels: list[tuple[str, list[Event], float]] = []
     spectra: list[tuple[str, np.ndarray]] = []
+    seams: list[tuple[str, np.ndarray]] = []
 
     for name in names:
         cfg = PIECES[name]
-        events, length, log = cfg["score"]()
+        events, length, log, voices = cfg["score"]()
         text.extend(log)
         text.append("")
         text.append("-" * 72)
@@ -1378,6 +1651,8 @@ def main() -> int:
         write_wav(wav, audio)
         spectra.append((name, audio))
 
+        if voices:
+            analysis.extend(voice_leading_report(voices, name))
         analysis.extend(level_report(audio, name))
         analysis.extend(balance_report(audio, name))
         if cfg["loop"]:
@@ -1392,10 +1667,20 @@ def main() -> int:
             size = dst.stat().st_size
             analysis.append(f"  {name}: encoded {dst.name} {size / 1024:.1f} KB, "
                             f"integrated {after['input_i']} LUFS, true peak {after['input_tp']} dBTP")
+            shipped = decode(dst)
+            analysis.append(f"  {name}: shipped peak "
+                            f"{20 * math.log10(float(np.abs(shipped).max()) + 1e-12):.2f} dBFS, "
+                            f"clipped samples {int((np.abs(shipped) >= 0.999).sum())}")
+            if cfg["loop"]:
+                lines, seam = mp3_seam_report(dst, name, length + BED_CROSSFADE)
+                analysis.extend(lines)
+                seams.append((name, seam))
             analysis.append("")
 
     piano_roll(panels, CRIT / "music-score.png")
     analysis_image(spectra, CRIT / "music-spectra.png")
+    if seams:
+        analysis_image(seams, CRIT / "music-seams.png")
 
     text.append("MEASURED")
     text.extend(analysis)

@@ -43,7 +43,13 @@ const build = (parts: Part[]) => {
       new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)),
       new THREE.Vector3(s, sy ?? s, sz ?? s),
     )
-    return paint(g.applyMatrix4(matrix).toNonIndexed(), c)
+    // `mergeGeometries` needs every input to agree about indexing, and most of
+    // three's primitives are indexed while a few are not. Only convert the ones
+    // that need it -- calling `toNonIndexed` on a non-indexed geometry works but
+    // logs a warning per part, which was several hundred lines of console noise
+    // per board.
+    const flat = g.applyMatrix4(matrix)
+    return paint(flat.index ? flat.toNonIndexed() : flat, c)
   })
   const merged = mergeGeometries(prepared, false)
   if (!merged) throw new Error('terrain prop merge failed')
@@ -362,9 +368,18 @@ export const cragGeometry = (variant: number) => {
 
 export const sheepGeometry = () => {
   const rng = makeRng(1487)
-  const FLEECE = '#e9e4d6'
-  const FLEECE_LIT = '#f7f4ea'
-  const FACE = '#2e2822'
+  // Fleece is dirty cream, not white.
+  //
+  // The previous pass modelled a dark head, ears and legs and none of it
+  // survived to the screen, and the reason was not the modelling: at #e9e4d6
+  // under a 4.25 key the fleece sits well over the 0.68 bloom threshold, so
+  // every sheep grew a soft white halo that swallowed the four dark pixels next
+  // to it. Real fleece measures around 55-70% reflectance and is grubby at the
+  // bottom. Bringing it down to that puts the whole animal under the bloom knee
+  // and the head is suddenly visible for free.
+  const FLEECE = '#cfc7b2'
+  const FLEECE_LIT = '#e0d8c3'
+  const FACE = '#241f1a'
   const parts: Part[] = [
     { g: new THREE.IcosahedronGeometry(0.075, 1), c: FLEECE, y: 0.108, s: 1.5, sy: 1.02, sz: 1.12 },
   ]
@@ -380,14 +395,19 @@ export const sheepGeometry = () => {
     })
   }
   parts.push(
-    // Head: dark, and big enough to hold four or five pixels of its own.
-    { g: new THREE.IcosahedronGeometry(0.036, 1), c: FACE, x: 0.132, y: 0.096, sy: 1.15, sz: 0.88 },
-    { g: new THREE.SphereGeometry(0.021, 7, 5), c: '#211d18', x: 0.166, y: 0.086, sz: 0.85 },
+    // Neck: without it the head is a dark bead floating beside a white lump.
+    { g: new THREE.CylinderGeometry(0.026, 0.034, 0.05, 6), c: FACE, x: 0.114, y: 0.112, rz: -0.75 },
+    // Head, carried further out and further down than a body lump would sit.
+    // Grazing posture is most of the silhouette cue: a sheep with its head up
+    // is a lump, a sheep with its head at grass height is unmistakable.
+    { g: new THREE.IcosahedronGeometry(0.045, 1), c: FACE, x: 0.148, y: 0.082, sy: 1.1, sz: 0.86 },
+    { g: new THREE.IcosahedronGeometry(0.027, 1), c: '#1b1814', x: 0.186, y: 0.066, sy: 0.82, sz: 0.8 },
     // Ears, which is most of what makes a dark blob read as a head.
-    { g: new THREE.IcosahedronGeometry(0.017, 0), c: FACE, x: 0.118, y: 0.121, z: 0.036, s: 1.4, sy: 0.5, sz: 0.8, rz: 0.4 },
-    { g: new THREE.IcosahedronGeometry(0.017, 0), c: FACE, x: 0.118, y: 0.121, z: -0.036, s: 1.4, sy: 0.5, sz: 0.8, rz: 0.4 },
+    { g: new THREE.IcosahedronGeometry(0.019, 0), c: FACE, x: 0.132, y: 0.106, z: 0.042, s: 1.5, sy: 0.5, sz: 0.85, rz: 0.45 },
+    { g: new THREE.IcosahedronGeometry(0.019, 0), c: FACE, x: 0.132, y: 0.106, z: -0.042, s: 1.5, sy: 0.5, sz: 0.85, rz: 0.45 },
     // A tuft of fleece over the crown, so the head is joined to the body.
-    { g: new THREE.IcosahedronGeometry(0.03, 1), c: FLEECE_LIT, x: 0.104, y: 0.13, sy: 0.8 },
+    { g: new THREE.IcosahedronGeometry(0.03, 1), c: FLEECE_LIT, x: 0.104, y: 0.132, sy: 0.8 },
+    // Tail.
     { g: new THREE.IcosahedronGeometry(0.018, 0), c: FLEECE, x: -0.115, y: 0.115, s: 1.2, sy: 0.9 },
   )
   // Legs: longer and thicker than before, and dark all the way down, so the
@@ -404,7 +424,7 @@ export const sheepGeometry = () => {
   const color = geometry.getAttribute('color') as THREE.BufferAttribute
   for (let i = 0; i < color.count; i += 1) {
     const y = position.getY(i)
-    const k = 0.52 + 0.48 * Math.min(1, Math.max(0, (y - 0.02) / 0.14))
+    const k = 0.44 + 0.56 * Math.min(1, Math.max(0, (y - 0.02) / 0.14))
     color.setXYZ(i, color.getX(i) * k, color.getY(i) * k, color.getZ(i) * k)
   }
   color.needsUpdate = true
@@ -551,8 +571,24 @@ export const revetmentGeometry = () => build([
 // is exactly what a clay pit does not contain. The reference is unambiguously
 // ceramic -- cut blocks and broken bricks in a red that no amount of instance
 // tint would ever pull out of granite grey.
-const CLAY_FACE = ['#9c5333', '#93492b', '#a55e3b']
-const CLAY_CUT = ['#b1704e', '#a96641', '#bb7d59']
+//
+// Second pass on the palette. #9c5333 is a *mud* red and it sat a stop darker
+// than the baked pit floor, so the blocks read as dark maroon chips dropped on
+// orange ground -- the "confetti". Fired brick is brighter and more chromatic
+// than the earth it came from, which is the whole visual argument the tile has
+// to make. These are ceramic reds at or above the ground's value, and the third
+// entry is deliberately the pale under-fired one so a stack is not monochrome.
+// Third pass, and the reference settles the argument: in `04-terrain-hills.png`
+// the cut blocks are almost exactly the colour of the ground they were cut out
+// of. They read as blocks because of their form and their shadow, not because
+// they are a different red. Both of the previous passes tried to separate them
+// by hue -- dark maroon first, then bright ceramic -- and both produced the
+// confetti the client saw. So: one clay family, ground value, and let the
+// geometry do the work.
+const CLAY_FACE = ['#a2593a', '#96502f', '#af6a48']
+const CLAY_CUT = ['#bd7d5c', '#b1704e', '#c68f6d']
+/** Wet-cut clay: darker, far more saturated, and the freshest thing in the pit. */
+const CLAY_WET = ['#8e3a1e', '#7f3319', '#9c4726']
 
 /**
  * A quarried block sitting where it was cut. Boxy with a chamfered top so the
@@ -574,10 +610,15 @@ export const clayBlockGeometry = (variant: number) => {
   // bedded, and two shallow grooves is enough to say so at board distance.
   for (let i = 0; i < 2; i += 1) {
     parts.push({
-      g: new THREE.BoxGeometry(w * 0.99, 0.006, w * 0.73), c: '#8e3f1f',
+      g: new THREE.BoxGeometry(w * 0.99, 0.006, w * 0.73), c: CLAY_WET[variant % 3],
       y: h * (0.32 + i * 0.36), z: (rng() - 0.5) * 0.004,
     })
   }
+  // Wet base. Clay sitting on a pit floor wicks water up out of it, so the
+  // bottom centimetre of every block is a dark saturated red and the top is dry
+  // and chalky. That gradient is the difference between a fired ceramic block
+  // and a painted box, and it is one extra slab.
+  parts.push({ g: new THREE.BoxGeometry(w * 1.01, h * 0.26, w * 0.71), c: CLAY_WET[(variant + 1) % 3], y: h * 0.12 })
   return roughen(build(parts), 0.1, 811 + variant, 9)
 }
 

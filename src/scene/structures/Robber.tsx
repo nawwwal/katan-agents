@@ -73,9 +73,9 @@ const figureGeometry = lazy(() => {
       [0.069, 0.252],
       [0.062, 0.288],
     ],
-    36,
-    0.34,
-    9,
+    40,
+    0.52,
+    6,
     4242,
   )
   // The hem is pulled out to one side and dropped, which breaks the revolve
@@ -102,8 +102,8 @@ const figureGeometry = lazy(() => {
       [0.052, 0.118],
     ],
     32,
-    0.22,
-    7,
+    0.32,
+    6,
     771,
   )
 

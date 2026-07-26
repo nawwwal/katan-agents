@@ -6,6 +6,7 @@ import * as THREE from 'three'
 import { SUN_DIRECTION, HAZE_HIGH, HAZE_LOW } from './Sky'
 
 const atmosphereShader = /* glsl */`
+  uniform float exposure;
   uniform vec3 hazeLow;
   uniform vec3 hazeHigh;
   uniform float hazeStart;
@@ -60,23 +61,30 @@ const atmosphereShader = /* glsl */`
   }
 
   /**
-   * Sun shadow, marched through the depth buffer.
+   * Contact shadow, marched through the depth buffer.
    *
-   * The scene's shadow map is populated and its lookup matrix is correct, and
-   * it still puts no shadow on anything -- a defect that survived a full
-   * session of investigation by the terrain owner and a second one here. Rather
-   * than keep bisecting a black box, this walks from the shaded point toward
-   * the sun and asks the depth buffer directly whether anything is in the way.
+   * This began as a stand-in for the scene's cast shadows, which were missing
+   * for reasons that turned out to have nothing to do with the shadow map:
+   * the scene's environment intensity was set high enough that unshadowed sky
+   * outweighed the sun, so a correct shadow simply had nothing left to remove.
+   * With that fixed the shadow map does the real work and this is turned down
+   * to what it is actually good at.
    *
-   * It is not a general shadow solution: only occluders that are on screen can
-   * cast. For a board game viewed from above, where the whole island is in
-   * frame, that limitation costs almost nothing. It also does something the
-   * shadow map never could -- the ocean is a raw ShaderMaterial with no shadow
-   * chunks, so this is the only way the island gets to cast onto the water.
+   * What it is good at is the first fraction of a unit. A 2048 map over a 26
+   * unit frustum is a 13mm texel, which is wider than the gap between a tree
+   * trunk and the ground under it, so the shadow map softens exactly the
+   * contact the eye uses to decide whether an object is resting on a surface
+   * or hovering above it. A short march off the depth buffer sees that gap.
+   *
+   * Only occluders on screen can cast. For a board viewed from above, with the
+   * whole island in frame, that costs almost nothing.
    */
   float sunOcclusion(vec3 origin) {
     if (sunShadowStrength <= 0.0) return 0.0;
-    const int STEPS = 16;
+    // Eight taps. This was sixteen when the march had to reach two and a half
+    // units to put the island's shadow on the sea; over the 1.1 units it now
+    // covers, sixteen samples are half a texel apart and buy nothing.
+    const int STEPS = 8;
     // Interleaved gradient noise rather than a hash. Both break up the fixed
     // step length that would otherwise print concentric banding into the
     // image, but this one distributes its error at pixel frequency, which the
@@ -108,11 +116,20 @@ const atmosphereShader = /* glsl */`
   }
 
   void mainImage(const in vec4 inputColor, const in vec2 uv, const in float depth, out vec4 outputColor) {
+    // Exposure lives here because it has nowhere else to go. The renderer's
+    // own toneMappingExposure is dead the moment an EffectComposer mounts --
+    // react-postprocessing sets gl.toneMapping to NoToneMapping -- and
+    // postprocessing's ACES path takes no exposure argument. So the frame was
+    // running with no exposure control at all, feeding raw scene radiance
+    // straight into the curve. This is in HDR and ahead of bloom, which is
+    // where exposure belongs: it moves the bloom threshold with the image
+    // instead of leaving it stranded at a fixed radiance.
+    vec3 color = inputColor.rgb * exposure;
+
     if (depth > 0.9995) {
-      outputColor = inputColor;
+      outputColor = vec4(color, inputColor.a);
       return;
     }
-    vec3 color = inputColor.rgb;
     vec3 viewPosition = viewPositionAt(uv, depth);
 
     float sunShadow = sunOcclusion(viewPosition);
@@ -163,11 +180,19 @@ class AtmosphereEffect extends Effect {
       blendFunction: BlendFunction.NORMAL,
       attributes: EffectAttribute.DEPTH,
       uniforms: new Map<string, THREE.Uniform<unknown>>([
+        ['exposure', new THREE.Uniform(1.08)],
         ['hazeLow', new THREE.Uniform(HAZE_LOW.clone())],
         ['hazeHigh', new THREE.Uniform(HAZE_HIGH.clone())],
-        ['hazeStart', new THREE.Uniform(20)],
-        ['hazeDensity', new THREE.Uniform(0.026)],
-        ['hazeMax', new THREE.Uniform(0.6)],
+        // The board sits about 16 units from the default camera and the far
+        // corners of the ocean are past 40, so haze that only started at 20
+        // with a density of 0.026 reached a quarter strength at the frame edge
+        // and nothing at all on the island. Starting just behind the near rim
+        // and roughly doubling the density puts real distance between the
+        // foreground tiles and the far water, which is the atmospheric
+        // perspective the frame was missing.
+        ['hazeStart', new THREE.Uniform(16)],
+        ['hazeDensity', new THREE.Uniform(0.038)],
+        ['hazeMax', new THREE.Uniform(0.58)],
         ['invProjection', new THREE.Uniform(new THREE.Matrix4())],
         ['projection', new THREE.Uniform(new THREE.Matrix4())],
         ['camToWorld', new THREE.Uniform(new THREE.Matrix4())],
@@ -178,13 +203,14 @@ class AtmosphereEffect extends Effect {
         // dropping to grey -- the same reasoning as the fill light in
         // `Lighting`, applied to the cast shadow instead of the shaded side.
         ['sunShade', new THREE.Uniform(new THREE.Vector3(0.63, 0.69, 0.79))],
-        // Three and a half world units reaches from a cliff top to the water
-        // at this sun elevation, which is what lets the island shadow the sea.
-        ['sunShadowLength', new THREE.Uniform(2.6)],
+        // Contact range only. The long march that used to reach from a cliff
+        // top down to the sea is now the shadow map's job, and the sea catches
+        // it on a `ShadowMaterial` plane in `GameScene`.
+        ['sunShadowLength', new THREE.Uniform(1.1)],
         // How deep a depth-buffer hit still counts as a real occluder. Too
         // large and distant background geometry shadows the foreground.
         ['sunShadowThickness', new THREE.Uniform(0.62)],
-        ['sunShadowStrength', new THREE.Uniform(0.6)],
+        ['sunShadowStrength', new THREE.Uniform(0.24)],
         // Deep enough to read, cool enough to look like sky taking over from
         // sun. Pure grey here reads as a dirty lens.
         ['cloudShade', new THREE.Uniform(new THREE.Vector3(0.72, 0.78, 0.88))],
@@ -289,7 +315,12 @@ class GradeEffect extends Effect {
     super('GradeEffect', gradeShader, {
       blendFunction: BlendFunction.NORMAL,
       uniforms: new Map<string, THREE.Uniform<unknown>>([
-        ['saturation', new THREE.Uniform(1.12)],
+        // The ocean already leaves the water shader deeply saturated and the
+        // blue channel was the first thing to run out of headroom, so this
+        // barely lifts. Colour separation in the frame now comes from the
+        // warm/cool split below and from distance haze, not from a global
+        // saturation push that only makes the sea louder.
+        ['saturation', new THREE.Uniform(1.03)],
         ['contrast', new THREE.Uniform(1.12)],
         // Foam and snow live just above this; keeping it below the clip point is
         // the whole reason they hold texture.
@@ -331,7 +362,19 @@ export function PostFX({ mobile = false, reducedMotion = false }: { mobile?: boo
     <N8AO
       aoRadius={light ? 0.3 : 0.38}
       distanceFalloff={1.15}
-      intensity={light ? 1.05 : 1.35}
+      // Third pass at the same crease.
+      //
+      // The terrain's baked ARH textures already carry horizon-sweep occlusion
+      // in the red channel, bound as an aoMap, and the shadow map now darkens
+      // the same creases a second time. Screen-space AO on top was a third,
+      // and 1.35 of it was only ever there to fake the shadows that were
+      // missing. Stacked, tile seams and pit floors went to mud.
+      //
+      // What is left is the part the other two cannot do: the very short range
+      // contact between two separate objects, a barrel against a wall, a tree
+      // against a slope, where neither a baked map nor a 13mm shadow texel has
+      // any information.
+      intensity={light ? 0.24 : 0.32}
       quality="performance"
       halfRes
       denoiseRadius={light ? 6 : 10}
