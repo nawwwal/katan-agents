@@ -14,9 +14,18 @@ import {
   type PlayerView,
   type Resource,
   type Resources,
+  type TradeOffer,
+  type TradeOutcome,
 } from './types.js'
 
 const COLORS: PlayerColor[] = ['coral', 'blue', 'amber', 'ivory']
+
+/**
+ * Seat colours in seat order. The lobby needs these before a game exists, so they
+ * live here rather than being re-listed anywhere else.
+ */
+export const PLAYER_COLORS: readonly PlayerColor[] = COLORS
+export const playerColorForSeat = (index: number): PlayerColor => COLORS[index % COLORS.length]
 const NAMES = ['You', 'Marlow', 'Ansel', 'Solveig']
 const COSTS = {
   road: { brick: 1, lumber: 1 },
@@ -90,6 +99,98 @@ const tradeRatios = (state: GameState, player: Player, resource: Resource): Arra
 
 const canSupplyYearOfPlenty = (state: GameState) => RESOURCES.reduce((total, resource) => total + state.bank[resource], 0) >= 2
 
+/* ------------------------------------------------------------------ trade -- */
+
+const resourceTotalOf = (resources: Partial<Resources>) => RESOURCES.reduce((total, resource) => total + (resources[resource] ?? 0), 0)
+const canCover = (player: Player | undefined, bundle: Partial<Resources>) =>
+  Boolean(player) && RESOURCES.every((resource) => player!.resources[resource] >= (bundle[resource] ?? 0))
+const openRecipients = (offer: TradeOffer) => offer.toPlayerIds.filter((playerId) => !offer.declinedBy.includes(playerId))
+/** Ids are handed out from the game, so a room stored before offers existed still works. */
+const takeTradeId = (state: GameState) => {
+  const id = Number.isSafeInteger(state.nextTradeId) && state.nextTradeId > 0 ? state.nextTradeId : 1
+  state.nextTradeId = id + 1
+  return id
+}
+
+/**
+ * Keeps `pendingTrade` pointing at whoever is on the clock. Every consumer written
+ * before broadcast offers reads that field, so it has to stay true.
+ */
+const projectPendingTrade = (state: GameState) => {
+  const offer = state.tradeOffer
+  const nominated = offer && openRecipients(offer)[0]
+  state.pendingTrade = offer && nominated
+    ? { fromPlayerId: offer.fromPlayerId, toPlayerId: nominated, give: structuredClone(offer.give), receive: structuredClone(offer.receive) }
+    : undefined
+}
+
+const openOffer = (state: GameState, fromPlayerId: string, toPlayerIds: string[], give: Partial<Resources>, receive: Partial<Resources>) => {
+  state.tradeOffer = {
+    id: takeTradeId(state),
+    fromPlayerId,
+    toPlayerIds: [...toPlayerIds],
+    give: structuredClone(give),
+    receive: structuredClone(receive),
+    declinedBy: [],
+    openedAtRevision: state.revision + 1,
+  }
+  // `tradeResolution` is left alone on purpose. It always describes an older offer
+  // than `tradeOffer`, so the two never disagree and a client can match either by id.
+  state.phase = 'trade-response'
+  state.actingPlayerId = toPlayerIds[0]
+  projectPendingTrade(state)
+}
+
+/** Ends the offer, records how, and hands the turn back to whoever owns it. */
+const closeOffer = (state: GameState, outcome: TradeOutcome, acceptedBy?: string) => {
+  const offer = state.tradeOffer
+  if (!offer) return
+  state.tradeResolution = {
+    id: offer.id,
+    outcome,
+    fromPlayerId: offer.fromPlayerId,
+    toPlayerIds: [...offer.toPlayerIds],
+    give: structuredClone(offer.give),
+    receive: structuredClone(offer.receive),
+    declinedBy: [...offer.declinedBy],
+    acceptedBy,
+    revision: state.revision + 1,
+  }
+  state.tradeOffer = undefined
+  state.pendingTrade = undefined
+  state.phase = 'action'
+  state.actingPlayerId = currentPlayer(state).id
+}
+
+/**
+ * An offer nobody can take is not an offer. If the offerer stopped holding what
+ * they promised, or every seat has refused, the table clears itself rather than
+ * leaving a dead card in front of everyone.
+ */
+const settleOffer = (state: GameState, events: GameEvent[]) => {
+  const offer = state.tradeOffer
+  if (!offer) return
+  const offerer = playerById(state, offer.fromPlayerId)
+  if (!canCover(offerer, offer.give)) {
+    closeOffer(state, 'invalidated')
+    events.push(addEvent(state, 'trade-invalidated', `${offerer?.name ?? 'The offerer'} no longer holds that offer, so it came off the table.`, offer.fromPlayerId))
+    return
+  }
+  const open = openRecipients(offer)
+  if (!open.length) {
+    const noTakers = everyRivalRefused(state, offer)
+    closeOffer(state, noTakers ? 'no-takers' : 'declined')
+    if (noTakers) events.push(addEvent(state, 'trade-no-takers', `Nobody took ${offerer?.name ?? 'that player'}'s offer.`, offer.fromPlayerId))
+    return
+  }
+  if (!open.includes(currentActorId(state))) state.actingPlayerId = open[0]
+  projectPendingTrade(state)
+}
+
+/** True when nobody else at the table is left to ask about this exact bundle. */
+const everyRivalRefused = (state: GameState, offer: TradeOffer) =>
+  state.players.every((player) => player.id === offer.fromPlayerId || offer.declinedBy.includes(player.id))
+
 const defaultDiscard = (player: Player, amount: number): Partial<Resources> => {
   const result: Partial<Resources> = {}
   const ordered = [...RESOURCES].sort((a, b) => player.resources[b] - player.resources[a])
@@ -102,8 +203,45 @@ const defaultDiscard = (player: Player, amount: number): Partial<Resources> => {
   return result
 }
 
+/**
+ * What a seat may say about the offer on the table.
+ *
+ * Every open recipient gets the explicit `accept-trade` / `decline-trade` pair, so
+ * the engine is already right when several seats answer at once. The seat that is
+ * on the clock also gets the older `respond-trade` and `counter-trade` shapes, so
+ * clients written before broadcast offers keep working unchanged.
+ */
+const tradeResponseActions = (state: GameState, offer: TradeOffer, playerId: string): GameAction[] => {
+  const player = playerById(state, playerId)
+  if (!player) return []
+  if (playerId === offer.fromPlayerId) return [{ type: 'withdraw-trade', offerId: offer.id, playerId }]
+  if (!offer.toPlayerIds.includes(playerId) || offer.declinedBy.includes(playerId)) return []
+  const initiator = playerById(state, offer.fromPlayerId)
+  const canAccept = canCover(player, offer.receive) && canCover(initiator, offer.give)
+  const onTheClock = currentActorId(state) === playerId
+  const actions: GameAction[] = []
+  if (onTheClock) {
+    if (canAccept) actions.push({ type: 'respond-trade', accept: true })
+    actions.push({ type: 'respond-trade', accept: false })
+  }
+  if (canAccept) actions.push({ type: 'accept-trade', offerId: offer.id, playerId })
+  actions.push({ type: 'decline-trade', offerId: offer.id, playerId })
+  if (onTheClock && initiator) {
+    for (const give of RESOURCES) {
+      if (player.resources[give] < 1) continue
+      for (const receive of RESOURCES) {
+        if (receive !== give) actions.push({ type: 'counter-trade', trade: { fromPlayerId: player.id, toPlayerId: initiator.id, give: { [give]: 1 }, receive: { [receive]: 1 } } })
+      }
+    }
+  }
+  return actions
+}
+
 export const legalActionsForPlayer = (state: GameState, playerId: string): GameAction[] => {
   if (state.phase === 'game-over') return [{ type: 'restart', seed: state.seed + 1 }]
+  // An open offer is the one place several seats have something to say at once, so
+  // it is answered before the single-actor gate below.
+  if (state.phase === 'trade-response' && state.tradeOffer) return tradeResponseActions(state, state.tradeOffer, playerId)
   if (currentActorId(state) !== playerId) return []
   const player = playerById(state, playerId)
   if (!player) return []
@@ -121,24 +259,6 @@ export const legalActionsForPlayer = (state: GameState, playerId: string): GameA
   if (state.phase === 'discard') {
     const amount = state.discardRemaining[playerId] ?? 0
     return amount ? [{ type: 'discard', resources: defaultDiscard(player, amount) }] : []
-  }
-  if (state.phase === 'trade-response') {
-    const trade = state.pendingTrade
-    if (!trade || trade.toPlayerId !== playerId) return []
-    const initiator = playerById(state, trade.fromPlayerId)
-    const canAccept = Boolean(initiator && RESOURCES.every((resource) =>
-      player.resources[resource] >= (trade.receive[resource] ?? 0)
-      && initiator.resources[resource] >= (trade.give[resource] ?? 0)))
-    const counters: GameAction[] = []
-    if (initiator) {
-      for (const give of RESOURCES) {
-        if (player.resources[give] < 1) continue
-        for (const receive of RESOURCES) {
-          if (receive !== give) counters.push({ type: 'counter-trade', trade: { fromPlayerId: player.id, toPlayerId: initiator.id, give: { [give]: 1 }, receive: { [receive]: 1 } } })
-        }
-      }
-    }
-    return [...(canAccept ? [{ type: 'respond-trade', accept: true } as const] : []), { type: 'respond-trade', accept: false }, ...counters]
   }
   if (state.phase === 'move-robber') {
     return state.board.hexes.filter((hex) => hex.id !== state.board.robberHexId).map((hex) => ({ type: 'move-robber', hexId: hex.id }))
@@ -199,6 +319,12 @@ export const legalActionsForPlayer = (state: GameState, playerId: string): GameA
       for (const receive of RESOURCES) {
         if (receive !== give) actions.push({ type: 'offer-trade', trade: { fromPlayerId: player.id, toPlayerId: other.id, give: { [give]: 1 }, receive: { [receive]: 1 } } })
       }
+    }
+  }
+  for (const give of RESOURCES) {
+    if (player.resources[give] < 1) continue
+    for (const receive of RESOURCES) {
+      if (receive !== give) actions.push({ type: 'broadcast-trade', trade: { fromPlayerId: player.id, give: { [give]: 1 }, receive: { [receive]: 1 } } })
     }
   }
   actions.push({ type: 'end-turn' })
@@ -288,6 +414,7 @@ export const publicScorePlayer = (state: GameState, playerId: string) => {
 }
 
 const finish = (state: GameState, newEvents: GameEvent[]): ApplyResult => {
+  settleOffer(state, newEvents)
   updateAwards(state)
   const active = currentPlayer(state)
   if (!state.winnerId && !state.phase.startsWith('setup') && scorePlayer(state, active.id) >= 10) {
@@ -435,6 +562,7 @@ export const createGame = (options: CreateGameOptions = {}): GameState => {
     robberVictims: [],
     pendingRoads: 0,
     playedDevelopmentThisTurn: false,
+    nextTradeId: 1,
     events: [{ id: 'ev-0-0', revision: 0, type: 'start', message: `${players[startingIndex].name} rolled highest and places first.` }],
     legalActions: [],
   }
@@ -696,47 +824,86 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
     if (RESOURCES.some((resource) => actor.resources[resource] < (trade.give[resource] ?? 0))) return fail('You do not hold everything in that offer.')
     const givesOnlySame = RESOURCES.every((resource) => !(trade.give[resource] && trade.receive[resource]))
     if (!givesOnlySame) return fail('You cannot ask for what you are giving.')
-    state.pendingTrade = structuredClone(trade)
-    state.phase = 'trade-response'
-    state.actingPlayerId = other.id
-    events.push(addEvent(state, 'trade-offered', `${actor.name} offered a trade to ${other.name}.`, actor.id, { toPlayerId: other.id }, trade))
+    openOffer(state, actor.id, [other.id], trade.give, trade.receive)
+    events.push(addEvent(state, 'trade-offered', `${actor.name} offered a trade to ${other.name}.`, actor.id, { toPlayerId: other.id, offerId: state.tradeOffer!.id }, trade))
     return finish(state, events)
   }
 
-  if (action.type === 'respond-trade') {
-    const trade = state.pendingTrade
-    if (state.phase !== 'trade-response' || !trade || trade.toPlayerId !== actor.id) return fail('No trade is waiting on you.')
-    const initiator = playerById(state, trade.fromPlayerId)
+  if (action.type === 'broadcast-trade') {
+    const { trade } = action
+    const rivals = state.players.filter((player) => player.id !== actor.id).map((player) => player.id)
+    if (state.phase !== 'action' || actor.id !== currentPlayer(state).id || trade.fromPlayerId !== actor.id || !rivals.length
+      || !validResourceMap(trade.give) || !validResourceMap(trade.receive)
+      || !resourceTotalOf(trade.give) || !resourceTotalOf(trade.receive)) return fail('Put at least one card on each side of the offer.')
+    if (!canCover(actor, trade.give)) return fail('You do not hold everything in that offer.')
+    if (RESOURCES.some((resource) => (trade.give[resource] ?? 0) > 0 && (trade.receive[resource] ?? 0) > 0)) return fail('You cannot ask for what you are giving.')
+    openOffer(state, actor.id, rivals, trade.give, trade.receive)
+    events.push(addEvent(state, 'trade-broadcast', `${actor.name} put an offer to the table.`, actor.id, { offerId: state.tradeOffer!.id }, { ...trade, toPlayerId: rivals[0] }))
+    return finish(state, events)
+  }
+
+  if (action.type === 'respond-trade' || action.type === 'accept-trade' || action.type === 'decline-trade') {
+    const offer = state.tradeOffer
+    // `respond-trade` carries no author, so it can only speak for the seat on the
+    // clock. The explicit pair names its author, which is what lets two seats
+    // answer the same broadcast without the engine guessing who said what.
+    const responderId = action.type === 'respond-trade' ? actor.id : action.playerId
+    const responder = playerById(state, responderId)
+    const accept = action.type === 'respond-trade' ? action.accept : action.type === 'accept-trade'
+    // Answering an offer that has already ended is the ordinary case in a race, not
+    // a client bug, so it gets its own line rather than a puzzled one.
+    if (action.type !== 'respond-trade' && action.offerId !== offer?.id) return fail('That offer is already settled. The table has moved on.')
+    if (state.phase !== 'trade-response' || !offer || !responder) return fail('No trade is waiting on you.')
+    if (!offer.toPlayerIds.includes(responderId) || offer.declinedBy.includes(responderId)) return fail('No trade is waiting on you.')
+    const initiator = playerById(state, offer.fromPlayerId)
     if (!initiator) return fail('The other seat is gone. The offer is dead.')
-    if (action.accept && RESOURCES.some((resource) => actor.resources[resource] < (trade.receive[resource] ?? 0) || initiator.resources[resource] < (trade.give[resource] ?? 0))) return fail('One of you no longer holds those cards. The offer is dead.')
-    if (action.accept) {
-      for (const resource of RESOURCES) {
-        const give = trade.give[resource] ?? 0
-        const receive = trade.receive[resource] ?? 0
-        initiator.resources[resource] += receive - give
-        actor.resources[resource] += give - receive
-      }
+    const terms = { fromPlayerId: offer.fromPlayerId, toPlayerId: responderId, give: structuredClone(offer.give), receive: structuredClone(offer.receive) }
+    if (!accept) {
+      offer.declinedBy.push(responderId)
+      events.push(addEvent(state, 'trade-rejected', `${responder.name} declined ${initiator.name}'s trade.`, responderId, { fromPlayerId: initiator.id, offerId: offer.id }, terms))
+      // `settleOffer` inside `finish` moves the clock on, or ends the offer when
+      // the last rival has passed.
+      return finish(state, events)
     }
-    state.pendingTrade = undefined
-    state.phase = 'action'
-    state.actingPlayerId = currentPlayer(state).id
-    events.push(addEvent(state, action.accept ? 'trade-accepted' : 'trade-rejected', `${actor.name} ${action.accept ? 'accepted' : 'declined'} ${initiator.name}'s trade.`, actor.id, { fromPlayerId: initiator.id }, trade))
+    if (!canCover(responder, offer.receive) || !canCover(initiator, offer.give)) return fail('One of you no longer holds those cards. The offer is dead.')
+    for (const resource of RESOURCES) {
+      const give = offer.give[resource] ?? 0
+      const receive = offer.receive[resource] ?? 0
+      initiator.resources[resource] += receive - give
+      responder.resources[resource] += give - receive
+    }
+    closeOffer(state, 'accepted', responderId)
+    events.push(addEvent(state, 'trade-accepted', `${responder.name} accepted ${initiator.name}'s trade.`, responderId, { fromPlayerId: initiator.id, offerId: state.tradeResolution!.id }, terms))
+    return finish(state, events)
+  }
+
+  if (action.type === 'withdraw-trade') {
+    const offer = state.tradeOffer
+    if (state.phase !== 'trade-response' || !offer || offer.id !== action.offerId) return fail('There is no offer of yours to take back.')
+    if (offer.fromPlayerId !== action.playerId) return fail('Only the seat that made the offer can take it back.')
+    const offerer = playerById(state, offer.fromPlayerId)
+    closeOffer(state, 'withdrawn')
+    events.push(addEvent(state, 'trade-withdrawn', `${offerer?.name ?? 'The offerer'} took the offer back.`, offer.fromPlayerId))
     return finish(state, events)
   }
 
   if (action.type === 'counter-trade') {
-    const previous = state.pendingTrade
+    const previous = state.tradeOffer
     const { trade } = action
     const other = playerById(state, trade.toPlayerId)
-    const giveTotal = RESOURCES.reduce((sum, resource) => sum + (trade.give[resource] ?? 0), 0)
-    const receiveTotal = RESOURCES.reduce((sum, resource) => sum + (trade.receive[resource] ?? 0), 0)
+    const giveTotal = resourceTotalOf(trade.give)
+    const receiveTotal = resourceTotalOf(trade.receive)
     const participantsIncludeCurrent = [trade.fromPlayerId, trade.toPlayerId].includes(currentPlayer(state).id)
-    if (state.phase !== 'trade-response' || !previous || previous.toPlayerId !== actor.id || previous.fromPlayerId !== trade.toPlayerId || trade.fromPlayerId !== actor.id || !other || !participantsIncludeCurrent || !validResourceMap(trade.give) || !validResourceMap(trade.receive) || !giveTotal || !receiveTotal) return fail('Put at least one card on each side of the counteroffer.')
-    if (RESOURCES.some((resource) => actor.resources[resource] < (trade.give[resource] ?? 0))) return fail('You do not hold everything in that counteroffer.')
+    if (state.phase !== 'trade-response' || !previous || !previous.toPlayerIds.includes(actor.id) || previous.declinedBy.includes(actor.id)
+      || previous.fromPlayerId !== trade.toPlayerId || trade.fromPlayerId !== actor.id || !other || !participantsIncludeCurrent
+      || !validResourceMap(trade.give) || !validResourceMap(trade.receive) || !giveTotal || !receiveTotal) return fail('Put at least one card on each side of the counteroffer.')
+    if (!canCover(actor, trade.give)) return fail('You do not hold everything in that counteroffer.')
     if (!RESOURCES.every((resource) => !(trade.give[resource] && trade.receive[resource]))) return fail('You cannot ask for what you are giving.')
-    state.pendingTrade = structuredClone(trade)
-    state.actingPlayerId = other.id
-    events.push(addEvent(state, 'trade-countered', `${actor.name} made a counteroffer to ${other.name}.`, actor.id, { toPlayerId: other.id }, trade))
+    // A counteroffer answers the old offer and replaces it, so the old one gets a
+    // resolution of its own rather than disappearing.
+    closeOffer(state, 'countered', actor.id)
+    openOffer(state, actor.id, [other.id], trade.give, trade.receive)
+    events.push(addEvent(state, 'trade-countered', `${actor.name} made a counteroffer to ${other.name}.`, actor.id, { toPlayerId: other.id, offerId: state.tradeOffer!.id }, trade))
     return finish(state, events)
   }
 
@@ -797,6 +964,10 @@ export const getPlayerView = (state: GameState, playerId: string): PlayerView =>
     pendingRoads: state.pendingRoads,
     playedDevelopmentThisTurn: state.playedDevelopmentThisTurn,
     pendingTrade: state.pendingTrade ? structuredClone(state.pendingTrade) : undefined,
+    // Both are public: an offer's terms and its answer are things the whole table
+    // hears. Neither carries a hand, so neither leaks one.
+    tradeOffer: state.tradeOffer ? structuredClone(state.tradeOffer) : undefined,
+    tradeResolution: state.tradeResolution ? structuredClone(state.tradeResolution) : undefined,
     lastRoll: state.lastRoll ? [...state.lastRoll] as [number, number] : undefined,
     longestRoad: state.longestRoad ? { ...state.longestRoad } : undefined,
     largestArmy: state.largestArmy ? { ...state.largestArmy } : undefined,

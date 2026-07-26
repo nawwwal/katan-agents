@@ -154,6 +154,66 @@ export type DomesticTrade = {
   receive: Partial<Resources>
 }
 
+/** A trade put to the whole table. Same shape as a domestic trade minus the target. */
+export type BroadcastTrade = {
+  fromPlayerId: string
+  give: Partial<Resources>
+  receive: Partial<Resources>
+}
+
+/**
+ * An offer sitting on the table. A directed offer names one seat; a broadcast
+ * offer names every rival and the first of them to accept takes it.
+ *
+ * `id` never repeats and only ever increases within a game, which is what lets a
+ * client tell a fresh answer from one it has already shown. Revisions cannot do
+ * that job: a revision stops moving once the trade resolves, so anything keyed on
+ * "the current revision" reads the same answer forever.
+ */
+export type TradeOffer = {
+  id: number
+  fromPlayerId: string
+  /** Seats the offer is open to, in seat order. One entry for a directed offer. */
+  toPlayerIds: string[]
+  give: Partial<Resources>
+  receive: Partial<Resources>
+  /** Seats that have said no. A seat in here can no longer accept. */
+  declinedBy: string[]
+  openedAtRevision: number
+}
+
+export type TradeOutcome =
+  /** Someone took it. `acceptedBy` names them. */
+  | 'accepted'
+  /** Every seat it was offered to said no, but seats at the table were never asked. */
+  | 'declined'
+  /** Every rival at the table refused this exact bundle. */
+  | 'no-takers'
+  /** A recipient answered with an offer of their own. */
+  | 'countered'
+  /** The offerer took it back. */
+  | 'withdrawn'
+  /** The offerer stopped holding what they promised, so the offer died on the table. */
+  | 'invalidated'
+
+/**
+ * How the last offer ended. This is the channel a client should read for a trade
+ * outcome; the event log is a log, not an event channel.
+ */
+export type TradeResolution = {
+  /** The id of the offer this resolves. */
+  id: number
+  outcome: TradeOutcome
+  fromPlayerId: string
+  toPlayerIds: string[]
+  give: Partial<Resources>
+  receive: Partial<Resources>
+  declinedBy: string[]
+  acceptedBy?: string
+  /** The revision the answer landed at. */
+  revision: number
+}
+
 export type GameAction =
   | { type: 'place-settlement'; vertexId: string }
   | { type: 'place-road'; edgeId: string }
@@ -171,8 +231,14 @@ export type GameAction =
   | { type: 'choose-monopoly'; resource: Resource }
   | { type: 'maritime-trade'; give: Resource; receive: Resource; ratio: 2 | 3 | 4 }
   | { type: 'offer-trade'; trade: DomesticTrade }
+  /** Puts one offer in front of every rival at once. First to accept takes it. */
+  | { type: 'broadcast-trade'; trade: BroadcastTrade }
   | { type: 'counter-trade'; trade: DomesticTrade }
   | { type: 'respond-trade'; accept: boolean }
+  /** Answers whichever offer is open, naming the seat that answers. */
+  | { type: 'accept-trade'; offerId: number; playerId: string }
+  | { type: 'decline-trade'; offerId: number; playerId: string }
+  | { type: 'withdraw-trade'; offerId: number; playerId: string }
   | { type: 'end-turn' }
   | { type: 'restart'; seed?: number }
 
@@ -209,7 +275,18 @@ export type GameState = {
   robberVictims: string[]
   pendingRoads: number
   playedDevelopmentThisTurn: boolean
+  /**
+   * The seat currently on the clock for the open offer, in the old one-target
+   * shape. Derived from `tradeOffer` so every consumer written before broadcast
+   * offers existed keeps working; read `tradeOffer` for the whole picture.
+   */
   pendingTrade?: DomesticTrade
+  /** The offer on the table, if any. */
+  tradeOffer?: TradeOffer
+  /** How the last offer ended. Survives until the next offer opens. */
+  tradeResolution?: TradeResolution
+  /** Hands out offer ids. Bookkeeping, never sent to a player. */
+  nextTradeId: number
   lastRoll?: [number, number]
   longestRoad?: { playerId: string; length: number }
   largestArmy?: { playerId: string; size: number }
@@ -218,7 +295,7 @@ export type GameState = {
   legalActions: GameAction[]
 }
 
-export type PublicGameState = Omit<GameState, 'players' | 'developmentDeck' | 'legalActions' | 'seed' | 'privateRandomSeed'> & {
+export type PublicGameState = Omit<GameState, 'players' | 'developmentDeck' | 'legalActions' | 'seed' | 'privateRandomSeed' | 'nextTradeId'> & {
   players: PublicPlayer[]
   developmentDeckCount: number
 }

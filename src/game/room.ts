@@ -1,5 +1,6 @@
+import { playerColorForSeat } from './engine.js'
 import { RESOURCES, emptyResources } from './types.js'
-import type { BoardOptions, Controller, GameAction, GameDisplayState, PlayerView, Resources } from './types.js'
+import type { BoardOptions, Controller, GameAction, GameDisplayState, PlayerColor, PlayerView, Resources } from './types.js'
 
 export type RoomStatus = 'lobby' | 'playing' | 'finished'
 
@@ -8,6 +9,11 @@ export type RoomSeat = {
   name: string
   controller: Controller
   isHost: boolean
+  /**
+   * The colour this seat plays. Optional only so a room stored before seats
+   * carried one still parses; fill it with `seatsWithColor` on the way out.
+   */
+  color?: PlayerColor
 }
 
 export type RoomView = {
@@ -87,22 +93,34 @@ const validDiscard = (view: PlayerView, action: Record<string, unknown>): action
     && RESOURCES.every((resource) => (resources[resource] ?? 0) <= view.privateState.resources[resource])
 }
 
+/** Shared shape checks for the give and receive halves of any offer. */
+const validBundle = (give: unknown, receive: unknown, view: PlayerView): give is Partial<Resources> => {
+  if (!validResourceMap(give) || !validResourceMap(receive)) return false
+  if (!resourceTotal(give) || !resourceTotal(receive)) return false
+  if (RESOURCES.some((resource) => (give[resource] ?? 0) > 0 && (receive[resource] ?? 0) > 0)) return false
+  return RESOURCES.every((resource) => (give[resource] ?? 0) <= view.privateState.resources[resource])
+}
+
 const validTrade = (view: PlayerView, action: Record<string, unknown>): action is Extract<GameAction, { type: 'offer-trade' | 'counter-trade' }> => {
   if (!['offer-trade', 'counter-trade'].includes(String(action.type)) || !exactKeys(action, ['type', 'trade']) || !isRecord(action.trade)) return false
   const trade = action.trade
   if (!exactKeys(trade, ['fromPlayerId', 'toPlayerId', 'give', 'receive'])) return false
-  const give = trade.give
-  const receive = trade.receive
-  if (!validResourceMap(give) || !validResourceMap(receive)) return false
   if (trade.fromPlayerId !== view.playerId || typeof trade.toPlayerId !== 'string' || trade.toPlayerId === view.playerId) return false
-  if (!resourceTotal(give) || !resourceTotal(receive)) return false
-  if (RESOURCES.some((resource) => (give[resource] ?? 0) > 0 && (receive[resource] ?? 0) > 0)) return false
-  if (RESOURCES.some((resource) => (give[resource] ?? 0) > view.privateState.resources[resource])) return false
+  if (!validBundle(trade.give, trade.receive, view)) return false
   if (action.type === 'counter-trade') {
-    return view.publicState.pendingTrade?.fromPlayerId === trade.toPlayerId
-      && view.publicState.pendingTrade.toPlayerId === trade.fromPlayerId
+    const offer = view.publicState.tradeOffer
+    return offer?.fromPlayerId === trade.toPlayerId && offer.toPlayerIds.includes(String(trade.fromPlayerId)) && !offer.declinedBy.includes(String(trade.fromPlayerId))
   }
   return view.publicState.players.some((player) => player.id === trade.toPlayerId)
+}
+
+/** A broadcast offer is the same bundle with nobody named on the other side. */
+const validBroadcast = (view: PlayerView, action: Record<string, unknown>): action is Extract<GameAction, { type: 'broadcast-trade' }> => {
+  if (!exactKeys(action, ['type', 'trade']) || !isRecord(action.trade)) return false
+  const trade = action.trade
+  if (!exactKeys(trade, ['fromPlayerId', 'give', 'receive'])) return false
+  if (trade.fromPlayerId !== view.playerId) return false
+  return validBundle(trade.give, trade.receive, view)
 }
 
 export const parsePlayerAction = (view: PlayerView, value: unknown): GameAction | undefined => {
@@ -111,8 +129,19 @@ export const parsePlayerAction = (view: PlayerView, value: unknown): GameAction 
   if (exact) return exact
   if (value.type === 'discard' && view.legalActions.some((action) => action.type === 'discard') && validDiscard(view, value)) return value
   if (['offer-trade', 'counter-trade'].includes(value.type) && view.legalActions.some((action) => action.type === value.type) && validTrade(view, value)) return value
+  if (value.type === 'broadcast-trade' && view.legalActions.some((action) => action.type === 'broadcast-trade') && validBroadcast(view, value)) return value
   return undefined
 }
+
+/**
+ * Puts a colour on every seat. While a game is running the running game is the
+ * source, so the lobby and the board can never drift; before it starts the colour
+ * comes from the seat order the game will use anyway.
+ */
+export const seatsWithColor = (seats: RoomSeat[], game?: PlayerView): RoomSeat[] => seats.map((seat, index) => ({
+  ...seat,
+  color: game?.publicState.players.find((player) => player.id === seat.id)?.color ?? seat.color ?? playerColorForSeat(index),
+}))
 
 export const toDisplayState = (view: PlayerView): GameDisplayState => ({
   ...view.publicState,

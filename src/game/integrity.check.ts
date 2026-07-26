@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { chooseSimulationAction } from './simulationPolicy'
-import { applyAction, createGame, getPlayerView } from './engine'
+import { applyAction, createGame, getPlayerView, legalActionsForPlayer, playerColorForSeat } from './engine'
+import { parsePlayerAction, seatsWithColor } from './room'
+import type { GameAction, GameState } from './types'
 
 const hiddenCardGame = createGame({ seed: 41, controllers: ['human', 'agent', 'agent'] })
 hiddenCardGame.players[1].development = ['victory-point']
@@ -96,6 +98,175 @@ if (!acceptedCounter.ok) throw new Error('expected accepted counteroffer')
 assert.equal(acceptedCounter.state.actingPlayerId, 'p0', 'the original active player must resume after any trade chain')
 assert.equal(acceptedCounter.state.players[0].resources.wool, 1)
 assert.equal(acceptedCounter.state.players[1].resources.ore, 1)
+
+/* ------------------------------------------------- trading more than once -- */
+
+const tableAt = (seed: number, seats = 3) => {
+  const state = createGame({ seed, controllers: Array<'agent'>(seats).fill('agent') })
+  state.phase = 'action'
+  state.activePlayerIndex = 0
+  state.actingPlayerId = 'p0'
+  state.lastRoll = [3, 4]
+  return state
+}
+const play = (state: GameState, action: GameAction, label: string) => {
+  const result = applyAction(state, action)
+  assert.equal(result.ok, true, `${label}: ${result.ok ? '' : result.message}`)
+  if (!result.ok) throw new Error(label)
+  return result.state
+}
+const offerLegal = (state: GameState, playerId = 'p0') =>
+  legalActionsForPlayer(state, playerId).some((action) => action.type === 'offer-trade')
+
+// Catan lets you trade as often as you like on your own turn, in any mix of bank,
+// harbour and player. This walks eight trades through one turn and checks the
+// engine never closes the door, and that every answer is separately identifiable.
+const manyTrades = tableAt(211)
+const harbor = manyTrades.board.harbors.find((candidate) => candidate.ratio === 3)!
+manyTrades.players[0].ports = [harbor.id]
+// Fourteen brick pays for two 4:1 bank trades and two 3:1 harbour trades; the ore
+// comes off the rivals. Everything is taken out of the bank so the 19-card supply
+// still balances.
+manyTrades.players[0].resources = { brick: 14, lumber: 0, ore: 0, grain: 0, wool: 0 }
+manyTrades.players[1].resources = { brick: 0, lumber: 0, ore: 4, grain: 0, wool: 0 }
+manyTrades.players[2].resources = { brick: 0, lumber: 0, ore: 4, grain: 0, wool: 0 }
+manyTrades.bank.brick -= 14
+manyTrades.bank.ore -= 8
+
+let table = manyTrades
+const resolutions: number[] = []
+for (const [index, partner] of ['p1', 'p2', 'p1', 'p2'].entries()) {
+  // bank at 4:1, then the harbour at 3:1, then a player, over and over
+  table = play(table, { type: 'maritime-trade', give: 'brick', receive: 'grain', ratio: index % 2 ? 3 : 4 }, `bank trade ${index}`)
+  assert.equal(table.phase, 'action', 'a bank trade never leaves the action phase')
+  assert.equal(offerLegal(table), true, 'a bank trade must not retire player trading')
+  table = play(table, { type: 'offer-trade', trade: { fromPlayerId: 'p0', toPlayerId: partner, give: { grain: 1 }, receive: { ore: 1 } } }, `offer ${index}`)
+  assert.equal(table.phase, 'trade-response')
+  table = play(table, { type: 'respond-trade', accept: true }, `accept ${index}`)
+  assert.equal(table.phase, 'action', 'an answered trade hands the turn straight back')
+  assert.equal(table.actingPlayerId, 'p0')
+  assert.equal(table.pendingTrade, undefined, 'a settled offer leaves nothing pending')
+  assert.equal(table.tradeOffer, undefined, 'a settled offer leaves nothing on the table')
+  assert.equal(table.tradeResolution?.outcome, 'accepted')
+  assert.equal(table.tradeResolution?.acceptedBy, partner)
+  resolutions.push(table.tradeResolution!.id)
+  assert.equal(offerLegal(table), true, `trade ${index + 1} must not be the last one this turn`)
+}
+assert.deepEqual(resolutions, [...resolutions].toSorted((a, b) => a - b), 'offer ids only ever climb')
+assert.equal(new Set(resolutions).size, resolutions.length, 'no two answers in a turn share an id')
+assert.equal(table.players[0].resources.ore, 4, 'four player trades landed four ore')
+assert.equal(legalActionsForPlayer(table, 'p0').some((action) => action.type === 'end-turn'), true)
+
+// The bug the client hit: nothing about a completed trade may look like a live one.
+const afterAccept = table
+assert.equal(afterAccept.tradeResolution!.id < afterAccept.nextTradeId, true, 'the last answer always names an offer that is already closed')
+assert.equal(afterAccept.tradeOffer, undefined)
+
+/* ------------------------------------------------------- broadcast offers -- */
+
+const broadcast = tableAt(212, 4)
+broadcast.players[0].resources = { brick: 2, lumber: 0, ore: 0, grain: 0, wool: 0 }
+for (const seat of [1, 2, 3]) broadcast.players[seat].resources = { brick: 0, lumber: 0, ore: 2, grain: 0, wool: 0 }
+const opened = play(broadcast, { type: 'broadcast-trade', trade: { fromPlayerId: 'p0', give: { brick: 1 }, receive: { ore: 1 } } }, 'broadcast')
+assert.deepEqual(opened.tradeOffer?.toPlayerIds, ['p1', 'p2', 'p3'], 'a broadcast offer is open to every rival at once')
+assert.equal(opened.pendingTrade?.toPlayerId, 'p1', 'the old one-target field points at whoever is on the clock')
+for (const seat of ['p1', 'p2', 'p3']) {
+  const actions = legalActionsForPlayer(opened, seat)
+  assert.equal(actions.some((action) => action.type === 'accept-trade' && action.playerId === seat), true, `${seat} can take a broadcast offer`)
+  assert.equal(actions.some((action) => action.type === 'decline-trade' && action.playerId === seat), true, `${seat} can refuse a broadcast offer`)
+}
+assert.deepEqual(legalActionsForPlayer(opened, 'p0'), [{ type: 'withdraw-trade', offerId: opened.tradeOffer!.id, playerId: 'p0' }], 'the offerer can only take it back')
+
+// Two seats reach for the same offer. The engine is a reducer over one ordered
+// stream, so the first one applied wins and the second is told plainly.
+const offerId = opened.tradeOffer!.id
+const firstAccept = play(opened, { type: 'accept-trade', offerId, playerId: 'p2' }, 'p2 accepts first')
+assert.equal(firstAccept.tradeResolution?.acceptedBy, 'p2')
+assert.equal(firstAccept.players[2].resources.brick, 1)
+const lateAccept = applyAction(firstAccept, { type: 'accept-trade', offerId, playerId: 'p1' })
+assert.equal(lateAccept.ok, false, 'a second acceptance of a settled offer is refused')
+assert.equal(lateAccept.ok === false && lateAccept.message.includes('already settled'), true)
+assert.equal(firstAccept.players[1].resources.ore, 2, 'the seat that lost the race keeps its cards')
+// A stale client that replays the winner's own acceptance is refused the same way.
+assert.equal(applyAction(firstAccept, { type: 'accept-trade', offerId, playerId: 'p2' }).ok, false)
+
+// Every rival refusing the same bundle is a state the engine knows, not one the
+// interface has to add up.
+let refused = play(broadcast, { type: 'broadcast-trade', trade: { fromPlayerId: 'p0', give: { brick: 1 }, receive: { ore: 1 } } }, 'broadcast again')
+const refusedId = refused.tradeOffer!.id
+refused = play(refused, { type: 'decline-trade', offerId: refusedId, playerId: 'p1' }, 'p1 declines')
+assert.equal(refused.phase, 'trade-response', 'one refusal does not end an offer to the table')
+assert.equal(refused.pendingTrade?.toPlayerId, 'p2', 'the clock moves to the next seat that has not answered')
+refused = play(refused, { type: 'decline-trade', offerId: refusedId, playerId: 'p2' }, 'p2 declines')
+refused = play(refused, { type: 'decline-trade', offerId: refusedId, playerId: 'p3' }, 'p3 declines')
+assert.equal(refused.phase, 'action')
+assert.equal(refused.actingPlayerId, 'p0')
+assert.equal(refused.tradeResolution?.outcome, 'no-takers', 'the engine reports no takers itself')
+assert.deepEqual(refused.tradeResolution?.declinedBy, ['p1', 'p2', 'p3'])
+assert.equal(offerLegal(refused), true, 'a refused offer leaves you free to try another')
+
+// A directed offer that one seat refuses is a decline, not no-takers: the rest of
+// the table was never asked.
+const oneRefusal = play(broadcast, { type: 'offer-trade', trade: { fromPlayerId: 'p0', toPlayerId: 'p1', give: { brick: 1 }, receive: { ore: 1 } } }, 'directed offer')
+const declined = play(oneRefusal, { type: 'respond-trade', accept: false }, 'p1 declines')
+assert.equal(declined.tradeResolution?.outcome, 'declined')
+assert.deepEqual(declined.tradeResolution?.declinedBy, ['p1'])
+
+// The offerer can take an offer back while it is open.
+const withdrawn = play(opened, { type: 'withdraw-trade', offerId, playerId: 'p0' }, 'withdraw')
+assert.equal(withdrawn.phase, 'action')
+assert.equal(withdrawn.tradeResolution?.outcome, 'withdrawn')
+assert.equal(withdrawn.players[0].resources.brick, 2, 'taking an offer back moves no cards')
+assert.equal(applyAction(opened, { type: 'withdraw-trade', offerId, playerId: 'p1' }).ok, false, 'only the offerer can take it back')
+
+// An offer the offerer can no longer cover comes off the table instead of sitting
+// there as a promise nobody can keep.
+const stale = structuredClone(opened)
+stale.players[0].resources.brick = 0
+const invalidated = play(stale, { type: 'decline-trade', offerId, playerId: 'p1' }, 'decline against an empty hand')
+assert.equal(invalidated.tradeResolution?.outcome, 'invalidated')
+assert.equal(invalidated.phase, 'action')
+assert.equal(invalidated.actingPlayerId, 'p0')
+assert.equal(legalActionsForPlayer(stale, 'p2').some((action) => action.type === 'accept-trade'), false, 'nobody is offered a trade the offerer cannot pay')
+
+// A counteroffer answers the old offer and opens a new one, so both are legible.
+const countered = play(opened, { type: 'counter-trade', trade: { fromPlayerId: 'p1', toPlayerId: 'p0', give: { ore: 1 }, receive: { brick: 2 } } }, 'counter a broadcast')
+assert.equal(countered.tradeResolution?.outcome, 'countered')
+assert.equal(countered.tradeResolution?.id, offerId)
+assert.equal(countered.tradeOffer?.id, offerId + 1, 'the counteroffer is an offer of its own')
+assert.deepEqual(countered.tradeOffer?.toPlayerIds, ['p0'])
+assert.equal(countered.actingPlayerId, 'p0')
+assert.equal(countered.tradeResolution!.id < countered.tradeOffer!.id, true, 'an answer always names an older offer than the one on the table')
+
+/* --------------------------------------------------- broadcast and secrets -- */
+
+const broadcastView = JSON.stringify(getPlayerView(opened, 'p1'))
+assert.equal(broadcastView.includes('"ore":2') && getPlayerView(opened, 'p1').privateState.resources.ore === 2, true)
+const rivalHands = getPlayerView(opened, 'p1').publicState.players.filter((player) => player.id !== 'p1')
+assert.equal(rivalHands.every((player) => !('resources' in player) && !('development' in player)), true, 'an open offer must not hand out a rival hand')
+assert.equal(getPlayerView(opened, 'p3').legalActions.every((action) => action.type !== 'accept-trade' || action.playerId === 'p3'), true, 'a seat is only ever offered its own answer')
+
+// The transport still decides who may speak: an action that is not in a seat's own
+// legal list is not parseable, so a seat cannot answer for anybody else.
+assert.equal(parsePlayerAction(getPlayerView(opened, 'p1'), { type: 'accept-trade', offerId, playerId: 'p2' }), undefined, 'one seat cannot accept on behalf of another')
+assert.equal(parsePlayerAction(getPlayerView(opened, 'p1'), { type: 'accept-trade', offerId, playerId: 'p1' })?.type, 'accept-trade')
+assert.equal(parsePlayerAction(getPlayerView(broadcast, 'p0'), { type: 'broadcast-trade', trade: { fromPlayerId: 'p0', give: { brick: 2 }, receive: { ore: 3 } } })?.type, 'broadcast-trade', 'a broadcast bundle bigger than one card still parses')
+assert.equal(parsePlayerAction(getPlayerView(broadcast, 'p0'), { type: 'broadcast-trade', trade: { fromPlayerId: 'p0', give: { brick: 9 }, receive: { ore: 1 } } }), undefined, 'you cannot offer cards you do not hold')
+
+/* --------------------------------------------------------- seats and colour -- */
+
+const seatColors = seatsWithColor([
+  { id: 'p0', name: 'You', controller: 'human', isHost: true },
+  { id: 'p1', name: 'Marlow', controller: 'agent', isHost: false },
+  { id: 'p2', name: 'Ansel', controller: 'agent', isHost: false },
+])
+assert.deepEqual(seatColors.map((seat) => seat.color), [playerColorForSeat(0), playerColorForSeat(1), playerColorForSeat(2)])
+const seatedGame = getPlayerView(broadcast, 'p0')
+assert.deepEqual(
+  seatsWithColor(seatColors.slice(0, 3), seatedGame).map((seat) => seat.color),
+  seatedGame.publicState.players.slice(0, 3).map((player) => player.color),
+  'once a game is running the seat colour is the one the board is already using',
+)
 
 const monopolyGame = createGame({ seed: 43, controllers: ['agent', 'agent', 'agent'] })
 monopolyGame.phase = 'monopoly'
