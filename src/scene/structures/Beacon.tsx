@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { BEACON_FRAME } from '../playerColors'
-import { box, cyl, merge, prism } from './geometry'
+import { box, cyl, merge, prism, type Part } from './geometry'
 import { beaconPoolTexture } from './textures'
 
 // ---------------------------------------------------------------------------
@@ -209,37 +209,108 @@ export const ROBBER_MARK = '#ff4d2e'
 /** Faster than the placement pulse: one set of answers to one urgent question. */
 export const ROBBER_PERIOD = 1.05
 
-const hexPrism = (inner: number, outer: number, height: number) => {
-  const corners = (radius: number) => Array.from({ length: 6 }, (_, index) => {
-    const angle = Math.PI / 6 + (index * Math.PI) / 3
-    return new THREE.Vector2(Math.cos(angle) * radius, Math.sin(angle) * radius)
-  })
-  const shape = new THREE.Shape(corners(outer))
-  shape.holes.push(new THREE.Path(corners(inner).reverse()))
-  const geometry = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false })
-  // Authored in XY and extruded along +Z; this stands it up on the ground plane.
-  geometry.rotateX(-Math.PI / 2)
-  return geometry
-}
+/**
+ * Why this is six brackets and not a ring.
+ *
+ * The first version was a continuous kerb-and-band annulus laid along the hex
+ * seam and raised to nineteen centimetres so it would clear a built road. It
+ * was legible, and it was wrong. Eighteen of nineteen tiles are legal on a
+ * seven, so the whole island went to a closed red honeycomb, and because the
+ * honeycomb ran along the seams — which is exactly where roads are — every
+ * road on the board went under it. That is the single worst frame to lose road
+ * information in: choosing where the robber goes is choosing whose settlements
+ * you are throttling, and you read that off the road network.
+ *
+ * Three changes, all pulling the same way.
+ *
+ * The mark comes off the seam. Corners are inset to eighty percent of the
+ * circumradius, which puts the arms seventeen centimetres inside the apothem —
+ * clear of a road deck's half-width with room to spare — so no marker and no
+ * road ever occupy the same ground.
+ *
+ * The mark drops below the deck. Nothing has to clear a road any more, so the
+ * top face comes down from 0.185 to 0.12, under a road's 0.163. Where the two
+ * are near each other in screen space the road now stands over the marker
+ * instead of the other way round.
+ *
+ * And the mark stops being closed. Two short arms at each corner state the hex
+ * as clearly as a full outline does — the eye completes a hexagon from six
+ * corners without being asked — while removing something like sixty percent of
+ * the red ink. Eighteen bracketed hexes read as eighteen offers. Eighteen
+ * ringed hexes read as a lattice, which is a texture, not a set.
+ *
+ * The bracket is also the robber's letter in the shape alphabet the rest of
+ * the board already speaks: caret down for "found here", bar for "pave here",
+ * caret lifting for "raise this", corner brackets for "the robber lands here".
+ */
+const BRACKET_INSET = 0.8
+const BRACKET_ARM = 0.3
+const KERB_BASE = -0.06
+const KERB_TOP = 0.12
+const KERB_WIDTH = 0.105
+const BAND_WIDTH = 0.055
 
 /**
- * The kerb has to clear everything already standing on a hex seam: the sand
- * path, its two rows of kerbstones and, on most of the northern half of this
- * board, a built road whose deck tops out sixteen centimetres above the
- * plateau. At fifteen the ring was visible only on the tiles nobody had paved
- * yet, which is the wrong half of the board twice over.
+ * Two arms per corner, each running back along one of the edges that meets
+ * there. Built once as one buffer, drawn as one instance per hex.
  */
-const KERB_BASE = -0.05
-const KERB_TOP = 0.185
+const bracketRing = (width: number, height: number, base: number) => {
+  const corner = (index: number) => {
+    const angle = Math.PI / 6 + (index * Math.PI) / 3
+    return [Math.cos(angle) * BRACKET_INSET, Math.sin(angle) * BRACKET_INSET] as const
+  }
+  const parts: Part[] = []
+  for (let index = 0; index < 6; index += 1) {
+    const [ax, az] = corner(index)
+    const [bx, bz] = corner((index + 1) % 6)
+    const length = Math.hypot(bx - ax, bz - az)
+    const yaw = -Math.atan2(bz - az, bx - ax)
+    // One arm from each end of this edge, leaving the middle of the side open.
+    for (const from of [0, 1]) {
+      const t = from === 0 ? BRACKET_ARM / 2 / length : 1 - BRACKET_ARM / 2 / length
+      parts.push({
+        geo: box(BRACKET_ARM, height, width),
+        pos: [ax + (bx - ax) * t, base + height / 2, az + (bz - az) * t],
+        rot: [0, yaw, 0],
+      })
+    }
+  }
+  return merge(parts)
+}
 
-export const robberKerbGeometry = lazy(() => {
-  const geometry = hexPrism(0.862, 0.988, KERB_TOP - KERB_BASE)
-  geometry.translate(0, KERB_BASE, 0)
+/** The near-black half: a low kerb, sunk into the turf so it beds rather than floats. */
+export const robberKerbGeometry = lazy(() => bracketRing(KERB_WIDTH, KERB_TOP - KERB_BASE, KERB_BASE))
+
+/** The bright half, inlaid along the kerb's top face. */
+export const robberBandGeometry = lazy(() => bracketRing(BAND_WIDTH, 0.02, KERB_TOP))
+
+// ------------------------------------------------------------- robber aura
+
+/**
+ * The halo under the robber itself — the client's "aura", and the only piece of
+ * the language that marks a thing rather than a place.
+ *
+ * It has to say two different things at two different moments, so it is one
+ * geometry driven at two strengths rather than two objects: at rest it is the
+ * "this is movable, and here it is" mark that answers a live finding from the
+ * audit, which is that the robber could not be located on the board at all. Once
+ * the piece is picked up it becomes the contact shadow — the reason the player
+ * can still tell where the robber currently stands while it is thirty-five
+ * centimetres in the air and following their finger.
+ */
+export const AURA_RADIUS = 0.44
+
+export const robberAuraGeometry = lazy(() => {
+  const geometry = new THREE.TorusGeometry(AURA_RADIUS, 0.036, 8, 44)
+  geometry.rotateX(Math.PI / 2)
+  geometry.scale(1, 0.55, 1)
   return geometry
 })
 
-export const robberBandGeometry = lazy(() => {
-  const geometry = hexPrism(0.888, 0.962, 0.022)
-  geometry.translate(0, KERB_TOP, 0)
+export const robberAuraBandGeometry = lazy(() => {
+  const geometry = new THREE.TorusGeometry(AURA_RADIUS, 0.018, 8, 44)
+  geometry.rotateX(Math.PI / 2)
+  geometry.scale(1, 0.6, 1)
+  geometry.translate(0, 0.016, 0)
   return geometry
 })
