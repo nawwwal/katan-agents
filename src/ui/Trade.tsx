@@ -286,7 +286,7 @@ function HarborRail({ game, humanId, onAction, onClose }: TradeProps) {
         ><ResourceGlyph resource={resource} /></button>)}
       </div>
       <p className="harbor-note">{!maritime.length
-        ? 'The harbor opens on your turn.'
+        ? resourceTotal(held) ? 'The harbor opens on your turn.' : 'The bank wants a full stack. You hold none.'
         : give ? `Pick what to take for ${rateFor(give)} ${RESOURCE_LABEL[give].toLowerCase()}.` : 'Pick a stack to give first.'}</p>
     </div>
   </aside>
@@ -349,6 +349,8 @@ export function TradeTable({ game, humanId, onClose, onAction }: TradeProps) {
   const askTotal = resourceTotal(wanted)
   const overlap = anyOverlap(give, ask)
   const partner = game.players.find((candidate) => candidate.id === (outgoing?.toPlayerId ?? answer?.by ?? target))
+  const decliner = game.players.find((candidate) => candidate.id === answer?.by)
+  const nextSeat = game.players.find((candidate) => candidate.id === target)
 
   // Editing the offer retires the last answer: a changed offer is a new offer.
   const edit = (next: () => void) => { next(); setAnswer(undefined); setRefused([]) }
@@ -369,7 +371,7 @@ export function TradeTable({ game, humanId, onClose, onAction }: TradeProps) {
   const status = state === 'sent' ? `${partner?.name ?? 'They'} is considering.`
     : state === 'accepted' ? `${partner?.name ?? 'They'} accepted.`
       : state === 'no-takers' ? 'No takers. Change the offer, or trade with the harbor.'
-        : state === 'declined' ? `${partner?.name ?? 'They'} declined. The offer is still on the table.`
+        : state === 'declined' ? `${decliner?.name ?? 'They'} declined. Send the same offer to ${nextSeat?.name ?? 'the other seat'}, or change it.`
           : state === 'empty' ? 'Your hand is empty. There is nothing to offer until you produce.'
             : overlap ? 'You cannot ask for what you are giving.'
               : giveTotal && askTotal ? `You give ${describeResources(shown)} for ${describeResources(wanted)}.`
@@ -399,22 +401,26 @@ export function TradeTable({ game, humanId, onClose, onAction }: TradeProps) {
           disabled={state === 'sent' || state === 'accepted'}
           retarget={retarget}
         />
-        <AskZone
-          values={wanted}
-          onRemove={dropAsk}
-          onAdd={addAsk}
-          blocked={(resource) => !composing && !retarget ? true : give[resource] > 0}
-        />
-        <div
-          className="give-drop"
-          onDragOver={(event) => { if (composing || retarget) event.preventDefault() }}
-          onDrop={(event) => {
-            event.preventDefault()
-            const resource = event.dataTransfer.getData('text/plain') as Resource
-            if (RESOURCES.includes(resource)) stage(resource)
-          }}
-        >
-          <FaceStack values={shown} label="You give" tone="give" onTakeBack={composing || retarget ? unstage : undefined} />
+        {/* Both halves of the offer travel as one element with one transform, so
+            the ask and the give never land on top of each other in flight. */}
+        <div className="table-offer">
+          <AskZone
+            values={wanted}
+            onRemove={dropAsk}
+            onAdd={addAsk}
+            blocked={(resource) => !composing && !retarget ? true : give[resource] > 0}
+          />
+          <div
+            className="give-drop"
+            onDragOver={(event) => { if (composing || retarget) event.preventDefault() }}
+            onDrop={(event) => {
+              event.preventDefault()
+              const resource = event.dataTransfer.getData('text/plain') as Resource
+              if (RESOURCES.includes(resource)) stage(resource)
+            }}
+          >
+            <FaceStack values={shown} label="You give" tone="give" onTakeBack={composing || retarget ? unstage : undefined} />
+          </div>
         </div>
         <p className="table-status" role="status">{status}</p>
         <div className="table-actions">
@@ -423,7 +429,7 @@ export function TradeTable({ game, humanId, onClose, onAction }: TradeProps) {
             type="button"
             className="table-send"
             data-weight="deep"
-            disabled={state === 'sent' || accepted || !sendable || !legalTo(outgoing?.toPlayerId ?? target)}
+            disabled={state === 'sent' || accepted || state === 'no-takers' || !sendable || !legalTo(outgoing?.toPlayerId ?? target)}
             onClick={() => send(target)}
             aria-label={sendable && partner ? `Send offer to ${partner.name}: give ${describeResources(shown)} for ${describeResources(wanted)}` : 'Send offer'}
           ><CheckIcon />Send offer</button>
@@ -470,11 +476,11 @@ export function TradeResponse({ game, humanId, onAction }: Omit<TradeProps, 'onC
     ? overlap ? 'You cannot ask for what you are giving.'
       : canCounter ? `You give ${describeResources(give)} for ${describeResources(ask)}.`
         : 'Set what you give and what you want.'
-    : `${from?.name ?? 'They'} gives ${describeResources(get)} for ${describeResources(owe)}. Nothing about your hand is revealed either way.`
+    : `${from?.name ?? 'They'} gives ${describeResources(get)} for ${describeResources(owe)}.`
 
   return <TableShell title={title} state={countering ? 'countering' : 'responding'} locked onClose={() => {}}>
     <TableHeader title={title} />
-    <div className="table-body">
+    <div className="table-body solo">
       <div className="table-play">
         <div className="partner-seats one">
           <span className={`partner-seat ${from?.color ?? 'ivory'} selected`}>

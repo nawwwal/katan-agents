@@ -11,6 +11,9 @@ import { Journey, type JourneyStage } from './ui/Journey'
 
 const freshBoardSeed = () => Math.floor(Math.random() * 0x1_00_00_00_00)
 const boardActionTypes = new Set<GameAction['type']>(['place-settlement', 'place-road', 'build-road', 'build-settlement', 'build-city', 'move-robber'])
+/** Board actions are identified by their target, which is all a staged one carries. */
+const targetOf = (action: GameAction) => 'vertexId' in action ? action.vertexId : 'edgeId' in action ? action.edgeId : 'hexId' in action ? action.hexId : undefined
+const sameTarget = (left: GameAction, right: GameAction) => left.type === right.type && targetOf(left) === targetOf(right)
 /** All six terrains, or screen readers hear two vocabularies in one sentence. */
 const TERRAIN_NAME: Record<string, string> = { lumber: 'forest', wool: 'pasture', brick: 'hills', grain: 'fields', ore: 'mountains', desert: 'desert' }
 const terrainName = (terrain: string) => TERRAIN_NAME[terrain] ?? terrain
@@ -26,9 +29,9 @@ const boardSector = (x: number, z: number) => {
  * and summary work can be screenshotted. Stripped from production builds by
  * the `import.meta.env.DEV` guard and never reachable from the shipped app.
  */
-type UiPreviewStage = 'match' | 'trade' | 'trade-sent' | 'trade-declined' | 'trade-no-takers' | 'trade-empty' | 'trade-response' | 'trade-watch'
+type UiPreviewStage = 'match' | 'trade' | 'trade-sent' | 'trade-declined' | 'trade-no-takers' | 'trade-accepted' | 'trade-empty' | 'trade-response' | 'trade-watch'
   | 'cards' | 'rules' | 'history' | 'summary' | 'introduction'
-const UI_PREVIEW_STAGES: UiPreviewStage[] = ['match', 'trade', 'trade-sent', 'trade-declined', 'trade-no-takers', 'trade-empty', 'trade-response', 'trade-watch',
+const UI_PREVIEW_STAGES: UiPreviewStage[] = ['match', 'trade', 'trade-sent', 'trade-declined', 'trade-no-takers', 'trade-accepted', 'trade-empty', 'trade-response', 'trade-watch',
   'cards', 'rules', 'history', 'summary', 'introduction']
 
 const uiPreviewStage = (): UiPreviewStage | undefined => {
@@ -88,6 +91,9 @@ const buildUiPreview = (stage: UiPreviewStage) => {
   if (stage === 'trade-no-takers') {
     state.events.push({ id: `ev-${state.revision}-10`, revision: state.revision, type: 'trade-rejected', message: `${ember.name} declined ${you.name}'s trade.`, playerId: ember.id, trade: { ...offer, toPlayerId: ember.id } })
   }
+  if (stage === 'trade-accepted') {
+    state.events.push({ id: `ev-${state.revision}-9`, revision: state.revision, type: 'trade-accepted', message: `${atlas.name} accepted ${you.name}'s trade.`, playerId: atlas.id, trade: offer })
+  }
   if (stage === 'trade-empty') state.players[0].resources = { brick: 0, lumber: 0, ore: 0, grain: 0, wool: 0 }
   if (stage === 'trade-response') {
     state.pendingTrade = { fromPlayerId: atlas.id, toPlayerId: you.id, give: { ore: 3 }, receive: { grain: 1, wool: 1 } }
@@ -126,8 +132,13 @@ export default function App() {
   const displayedGame = game ?? previewState?.game ?? previewGame
   const actorId = game ? currentActorId(game) : undefined
   const viewerMustAct = Boolean(game && actorId === viewerPlayerId && game.phase !== 'game-over')
-  const interactive = stage === 'match' && room?.status === 'playing' && viewerMustAct && connectionState === 'connected' && !submitting
-  const boardActions = interactive && game ? game.legalActions.filter((action) => boardActionTypes.has(action.type)) : []
+  // Two different questions. `yourMove` is "the board is yours to act on", which
+  // stays true across a submit so the affordance layer holds instead of blinking
+  // out for the length of a round trip. `interactive` is "a new action will be
+  // accepted right now", which is what actually guards the send.
+  const yourMove = stage === 'match' && room?.status === 'playing' && viewerMustAct && connectionState === 'connected'
+  const interactive = yourMove && !submitting
+  const boardActions = yourMove && game ? game.legalActions.filter((action) => boardActionTypes.has(action.type)) : []
   // The old call passed `stage === 'summary'` as "victorious", so the fanfare
   // played at everyone who reached the end screen, winner or not. Split the two
   // and tell the hook which part of the app it is scoring so the ambience beds
@@ -173,7 +184,13 @@ export default function App() {
     if (!viewerMustAct) setPendingAction(undefined)
   }, [game?.phase, viewerMustAct])
 
-  useEffect(() => setPendingAction(undefined), [game?.revision])
+  // Clear a staged placement when the server has made it impossible, never on
+  // every revision. Any other seat acting used to wipe a human's mid-decision
+  // preview, which is the same class of bug the discard dialog had.
+  useEffect(() => {
+    if (!pendingAction || !game) return
+    if (!game.legalActions.some((action) => sameTarget(action, pendingAction))) setPendingAction(undefined)
+  }, [game?.revision])
 
   const act = (action: GameAction) => {
     if (!interactive) return false
@@ -250,7 +267,7 @@ export default function App() {
   return <main className="game-shell">
     <div className="ocean-layer" />
     <div className="vignette" />
-    <GameScene game={displayedGame} placementMode={placementMode} pendingAction={pendingAction} presentation={presentation} cinematic={stage !== 'match'} onAction={act} interactive={interactive} />
+    <GameScene game={displayedGame} placementMode={placementMode} pendingAction={pendingAction} presentation={presentation} cinematic={stage !== 'match'} onAction={act} interactive={yourMove} />
     {stage === 'match' && (game ?? previewState?.game) && (viewerPlayerId ?? previewState?.viewerPlayerId) ? <><Hud
       game={(game ?? previewState!.game)}
       humanId={(viewerPlayerId ?? previewState!.viewerPlayerId)}
@@ -271,7 +288,7 @@ export default function App() {
       onExitMatch={returnToTitle}
     />
     <Dialogs game={(game ?? previewState!.game)} humanId={(viewerPlayerId ?? previewState!.viewerPlayerId)} dialog={dialog} agentStatuses={agentStatuses} onClose={() => setDialog(null)} onAction={act} /></> : null}
-    {interactive && game ? <div className="sr-only board-targets" role="group" aria-label="Board targets">
+    {yourMove && game ? <div className="sr-only board-targets" role="group" aria-label="Board targets">
       {boardActions.map((action, index) => {
         const target = 'vertexId' in action ? action.vertexId : 'edgeId' in action ? action.edgeId : 'hexId' in action ? action.hexId : index
         return <button key={`${action.type}-${target}`} onClick={() => act(action)}>{describeBoardAction(action, index, boardActions.length)}</button>

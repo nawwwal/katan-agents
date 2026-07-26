@@ -848,7 +848,11 @@ button { -webkit-tap-highlight-color: transparent; }
 .trade-table {
   --table-card: clamp(52px, 6.4vh, 74px);
   --table-strip: max(44px, calc(var(--table-card) * .78));
-  --cross: 184px;
+  /* The seats sit directly above the offer, so the travel is a short lift and a
+     recede rather than a long slide. The running hairline under the partner's
+     seat and the line under the table carry the rest of "it is with them now". */
+  --cross: 26px;
+  --exit: 150px;
   position: absolute; left: 0; right: 0; bottom: 0; height: min(76dvh, 860px);
   display: grid; grid-template-rows: auto 1fr; gap: 4px; padding: 44px 0 22px; pointer-events: auto;
   /* A pool of light on the table over a dark rise from the bottom edge. The
@@ -865,6 +869,8 @@ button { -webkit-tap-highlight-color: transparent; }
 .icon-button-spacer { width: 44px; height: 44px; }
 
 .table-body { width: min(1136px, 100%); min-height: 0; margin: 0 auto; display: grid; grid-template-columns: 268px minmax(0, 1fr); gap: 28px; padding: 0 24px; }
+/* Answering an offer has no harbor beside it, so the table is one column. */
+.table-body.solo { grid-template-columns: minmax(0, 1fr); }
 /* The hand is pushed to the near edge of the table, everything else stacks from
    the far edge down, so the seating reads at any table height. */
 .table-play { min-width: 0; height: 100%; display: flex; flex-direction: column; align-items: center; gap: 16px; }
@@ -890,7 +896,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .partner-seat small b { display: inline-flex; align-items: center; gap: 3px; color: var(--fg-muted); font-size: var(--t-micro); font-weight: 700; }
 .partner-seat small svg { width: 11px; height: 11px; opacity: .85; }
 .partner-seat:hover:not(:disabled) { transform: translateY(-2px); }
-.partner-seat.selected { border-color: var(--brass-hi); box-shadow: 0 0 0 1px var(--brass-hi), var(--rim-light), var(--lift-1); }
+.partner-seat.selected:not(.struck) { border-color: var(--brass-hi); box-shadow: 0 0 0 1px var(--brass-hi), var(--rim-light), var(--lift-1); }
 .partner-seat:disabled { cursor: not-allowed; }
 /* A refused seat is struck through, not removed: you still need to see who said no. */
 .partner-seat.struck { opacity: .52; }
@@ -949,6 +955,7 @@ button.table-card:hover, button.table-card:focus-visible { z-index: 5; transform
 .ask-picker button:disabled { opacity: .28; cursor: not-allowed; }
 .ask-picker .resource-glyph { width: 22px; height: 22px; }
 
+.table-offer { display: grid; justify-items: center; gap: 16px; }
 .give-drop { display: grid; justify-items: center; }
 .table-status { min-height: 20px; margin: 2px 0 0; color: var(--fg); font-size: var(--t-ui); font-weight: 600; text-align: center; text-wrap: balance; }
 .trade-table[data-state="no-takers"] .table-status, .trade-table[data-state="declined"] .table-status { color: var(--brass-hi); }
@@ -1018,13 +1025,15 @@ button.table-card:hover, button.table-card:focus-visible { z-index: 5; transform
 .table-tabs button[aria-selected="true"] { color: #2a1a06; background: linear-gradient(180deg, #f4d484, #c4913a); }
 
 /* The offer travels as one element with one transform, never as N cards. */
-.trade-table[data-state="sent"] .offer-zone.give { animation: offer-cross var(--dur-4) var(--ease-out) both; }
-.trade-table[data-state="sent"] .ask-slots { opacity: .55; }
+.trade-table[data-state="sent"] .table-offer { animation: offer-cross var(--dur-4) var(--ease-out) both; }
+/* Composing controls have nothing to say while the offer is out. */
+.trade-table[data-state="sent"] .ask-picker, .trade-table[data-state="accepted"] .ask-picker { opacity: 0; pointer-events: none; }
 /* Nothing to do while they think, and the row holds its place rather than reflowing. */
 .trade-table[data-state="sent"] .table-actions, .trade-table[data-state="accepted"] .table-actions { opacity: .26; }
-.trade-table[data-state="declined"] .offer-zone.give { animation: offer-return var(--dur-4) var(--ease-out) both; }
+.trade-table[data-state="declined"] .table-offer { animation: offer-return var(--dur-4) var(--ease-out) both; }
 .trade-table[data-state="accepted"] .offer-zone.give { animation: offer-land var(--dur-4) var(--ease-out) both; }
-.trade-table[data-state="accepted"] .ask-slots { animation: ask-land var(--dur-4) var(--ease-out) both; }
+.trade-table[data-state="accepted"] .table-offer { opacity: .9; }
+.trade-table[data-state="accepted"] .offer-zone.ask { animation: ask-land var(--dur-4) var(--ease-out) both; }
 
 /* Spectating a rival's trade. Two thirds of a match is watching. */
 .trade-watch {
@@ -1034,6 +1043,8 @@ button.table-card:hover, button.table-card:focus-visible { z-index: 5; transform
   box-shadow: var(--rim-light), var(--lift-1); pointer-events: none;
   animation: toast-in var(--dur-3) var(--ease-out) both;
 }
+/* The pill is a capsule, so the waiting sweep is inset to where it can be seen. */
+.trade-watch .hairline-run { left: 16px; right: 16px; bottom: 5px; opacity: 1; }
 .trade-watch .player-crest { width: 28px; height: 28px; flex-basis: 28px; font-size: 12px; }
 .trade-watch > div { display: flex; align-items: center; gap: 10px; }
 .watch-side { display: flex; gap: 7px; }
@@ -1146,10 +1157,10 @@ button.table-card:hover, button.table-card:focus-visible { z-index: 5; transform
 @keyframes summary-pulse { 50% { opacity: .55; transform: scale(1.08); } }
 @keyframes table-rise { from { opacity: 0; transform: translateY(20px); } }
 /* Send, decline and accept, each one transform on one element. */
-@keyframes offer-cross { to { transform: translateY(calc(-1 * var(--cross))) scale(.82); opacity: .5; } }
-@keyframes offer-return { from { transform: translateY(calc(-1 * var(--cross))) scale(.82); opacity: .5; } }
-@keyframes offer-land { to { transform: translateY(calc(-1.3 * var(--cross))) scale(.86); opacity: 0; } }
-@keyframes ask-land { to { transform: translateY(calc(.7 * var(--cross))) scale(.86); opacity: 0; } }
+@keyframes offer-cross { to { transform: translateY(calc(-1 * var(--cross))) scale(.88); opacity: .55; } }
+@keyframes offer-return { from { transform: translateY(calc(-1 * var(--cross))) scale(.88); opacity: .55; } }
+@keyframes offer-land { to { transform: translateY(calc(-1 * var(--exit))) scale(.86); opacity: 0; } }
+@keyframes ask-land { to { transform: translateY(var(--exit)) scale(.86); opacity: 0; } }
 
 /* ------------------------------------------------------------ responsive */
 
@@ -1251,7 +1262,16 @@ button.table-card:hover, button.table-card:focus-visible { z-index: 5; transform
   .dev-control .modal-primary { width: 100%; }
   .trade-bundle > div { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   /* Full-height sheet, Players first and default, Harbor behind the second tab. */
-  .trade-table { height: 100dvh; grid-template-rows: auto auto 1fr; padding: 10px 0 10px; gap: 2px; --table-card: clamp(46px, 8vh, 62px); --cross: 140px; }
+  /* A full-height sheet is opaque at the top: at 390px there is no island left
+     to see behind it, and the turn panel showing through is just a collision. */
+  .table-offer { gap: 8px; }
+  .trade-table {
+    top: 0; height: 100dvh; grid-template-rows: auto auto 1fr; padding: 14px 0 10px; gap: 2px;
+    --table-card: clamp(46px, 8vh, 62px); --cross: 20px; --exit: 110px;
+    background:
+      radial-gradient(88% 52% at 50% 104%, rgba(38, 54, 60, .5) 0%, rgba(20, 30, 35, .22) 48%, transparent 76%),
+      linear-gradient(to top, rgba(1, 6, 10, .98) 0%, rgba(1, 6, 10, .96) 74%, rgba(1, 6, 10, .94) 100%);
+  }
   .table-header { grid-template-columns: 22px minmax(0, 1fr) auto; padding: 0 10px 8px; }
   .table-header h2 { font-size: 18px; }
   .table-header .privacy-mark { display: none; }
