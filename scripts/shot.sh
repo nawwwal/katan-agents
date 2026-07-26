@@ -11,6 +11,10 @@
 # Requires `npm run dev` on 127.0.0.1:5173. Fails loudly on WebGL/console errors.
 set -euo pipefail
 
+# Parallel agents must not share one browser session. Set AGENT_BROWSER_SESSION
+# (agent-browser reads it directly) to an owner-specific name before calling.
+export AGENT_BROWSER_SESSION="${AGENT_BROWSER_SESSION:-katan-shot}"
+
 OUT="${1:?usage: shot.sh <out.png> [query] [WxH] [settle]}"
 QUERY="${2:-}"
 SIZE="${3:-1920x1200}"

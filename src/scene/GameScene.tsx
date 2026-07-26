@@ -1,15 +1,21 @@
 import { useCursor } from '@react-three/drei'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import type { BoardEdge, GameAction, GameDisplayState, PlayerColor } from '../game/types'
 import type { GamePresentation } from '../game/useGame'
 import { ActionEffects } from './ActionEffects'
 import { CameraRig } from './CameraRig'
 import { Island } from './Island'
+import { Lighting } from './Lighting'
+import { FrameStats } from './loading/FrameStats'
+import { LoadingScreen } from './loading/LoadingScreen'
+import { ScenePrecompile } from './loading/precompile'
+import { useCompiledFlag, useSceneReady } from './loading/useSceneReady'
 import { Building, Road, VertexTargets } from './Pieces'
 import { PLAYER_COLORS } from './playerColors'
+import { PostFX } from './PostFX'
+import { Sky } from './Sky'
 import { useReducedMotion } from './useReducedMotion'
 import { Water } from './Water'
 
@@ -23,24 +29,6 @@ type SceneProps = {
   cinematic?: boolean
   onAction: (action: GameAction) => void
   interactive: boolean
-}
-
-function SceneEnvironment() {
-  const { gl, scene } = useThree()
-  useEffect(() => {
-    const room = new RoomEnvironment()
-    const generator = new THREE.PMREMGenerator(gl)
-    const target = generator.fromScene(room, 0.04)
-    scene.environment = target.texture
-    scene.environmentIntensity = 0.18
-    return () => {
-      scene.environment = null
-      target.dispose()
-      generator.dispose()
-      room.dispose()
-    }
-  }, [gl, scene])
-  return null
 }
 
 function SceneContent({ game, placementMode, pendingAction, presentation, cinematic, onAction, interactive, reducedMotion }: SceneProps & { reducedMotion: boolean }) {
@@ -76,12 +64,8 @@ function SceneContent({ game, placementMode, pendingAction, presentation, cinema
   }, [game.board, presentation])
 
   return <>
-    <fog attach="fog" args={['#123e54', 18, 39]} />
-    <SceneEnvironment />
-    <ambientLight intensity={0.08} />
-    <hemisphereLight color="#fff0ca" groundColor="#0a4250" intensity={0.52} />
-    <directionalLight castShadow={!mobile} position={[-8, 12, 5]} intensity={2.35} color="#ffd39d" shadow-mapSize-width={mobile ? 1024 : 2048} shadow-mapSize-height={mobile ? 1024 : 2048} shadow-camera-near={1} shadow-camera-far={32} shadow-camera-left={-10} shadow-camera-right={10} shadow-camera-top={10} shadow-camera-bottom={-10} shadow-bias={-0.00022} shadow-normalBias={0.025} />
-    <directionalLight position={[6, 7, -5]} intensity={0.44} color="#84c9dc" />
+    <Sky />
+    <Lighting mobile={mobile} />
     <Water reducedMotion={reducedMotion} />
     <group rotation={[0, -0.04, 0]}>
       <Island game={game} robberActions={robberActions} onAction={onAction} />
@@ -95,28 +79,74 @@ function SceneContent({ game, placementMode, pendingAction, presentation, cinema
       <ActionEffects game={game} presentation={presentation} reducedMotion={reducedMotion} />
     </group>
     <CameraRig cinematic={cinematic} reducedMotion={reducedMotion} focus={cameraFocus} focusRevision={presentation?.revision} />
+    <PostFX mobile={mobile} reducedMotion={reducedMotion} />
   </>
 }
 
+// Roughly 5.6 million rendered pixels. A 16-inch retina panel at its default
+// scaling is about 2.9M CSS pixels, so it gets the full 2x it is built for; a
+// 4K window would otherwise ask for 33M and is clamped instead.
+const PIXEL_BUDGET = 5_600_000
+
+/**
+ * Resolution, spent where it is actually visible.
+ *
+ * The previous cap of 1.5 was the single largest cause of the "not sharp"
+ * verdict: on a retina display it renders at three quarters of the linear
+ * resolution the panel shows and the browser upscales the difference. Full
+ * device ratio fixes that, but a naive `min(dpr, 2)` also quadruples the cost
+ * on a large monitor for no visible gain, so the cap is a pixel budget rather
+ * than a ratio.
+ */
+const resolutionFor = (width: number, height: number) => {
+  const device = Math.min(typeof devicePixelRatio === 'number' ? devicePixelRatio : 1, 2)
+  const area = Math.max(1, width * height)
+  return Math.max(1, Math.min(device, Math.sqrt(PIXEL_BUDGET / area)))
+}
+
+function useResolution() {
+  const [dpr, setDpr] = useState(() => (typeof window === 'undefined' ? 1 : resolutionFor(window.innerWidth, window.innerHeight)))
+  useEffect(() => {
+    const update = () => setDpr(resolutionFor(window.innerWidth, window.innerHeight))
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return dpr
+}
+
+// Context MSAA is off on purpose: every frame goes through the effect
+// composer, which owns antialiasing.
 export function GameScene(props: SceneProps) {
   const reducedMotion = useReducedMotion()
-  return <Canvas
-    className="game-canvas"
-    aria-hidden="true"
-    dpr={[1, 2]}
-    shadows
-    camera={{ position: [7.7, 10.3, 9.8], fov: 31, near: 0.1, far: 100 }}
-    gl={{ alpha: true, antialias: true, powerPreference: 'high-performance' }}
-    onCreated={({ gl }) => {
-      gl.toneMapping = THREE.ACESFilmicToneMapping
-      gl.toneMappingExposure = 1.12
-      gl.outputColorSpace = THREE.SRGBColorSpace
-      gl.shadowMap.type = THREE.PCFSoftShadowMap
-    }}
-    fallback={<div className="webgl-fallback">This board needs WebGL. Your game state is safe; try a browser with hardware acceleration.</div>}
-  >
-    <Suspense fallback={null}><SceneContent {...props} reducedMotion={reducedMotion} /></Suspense>
-  </Canvas>
+  const dpr = useResolution()
+  const [compiled, markCompiled] = useCompiledFlag()
+  const { ready, progress, label } = useSceneReady(compiled)
+
+  return <>
+    <Canvas
+      className="game-canvas"
+      aria-hidden="true"
+      dpr={dpr}
+      shadows
+      camera={{ position: [7.7, 10.3, 9.8], fov: 31, near: 0.5, far: 900 }}
+      gl={{ alpha: true, antialias: false, powerPreference: 'high-performance' }}
+      onCreated={({ gl }) => {
+        gl.toneMapping = THREE.ACESFilmicToneMapping
+        gl.toneMappingExposure = 1.14
+        gl.outputColorSpace = THREE.SRGBColorSpace
+        gl.shadowMap.type = THREE.PCFSoftShadowMap
+      }}
+      fallback={<div className="webgl-fallback">This board needs WebGL. Your game state is safe; try a browser with hardware acceleration.</div>}
+    >
+      <Suspense fallback={null}>
+        <SceneContent {...props} reducedMotion={reducedMotion} />
+        <ScenePrecompile onReady={markCompiled} />
+        <FrameStats />
+      </Suspense>
+    </Canvas>
+    <LoadingScreen visible={!ready} progress={progress} label={label} />
+  </>
 }
 
 export type { PlacementMode }

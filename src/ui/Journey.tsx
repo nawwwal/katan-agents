@@ -4,6 +4,7 @@ import { visibleScore } from '../game/room'
 import type { GameDisplayState, PlayerColor } from '../game/types'
 import type { RoomView } from '../game/room'
 import type { RoomConnectionState } from '../game/useGame'
+import { ChevronLeftIcon, CloseIcon, LargestArmyIcon, LongestRoadIcon, VictoryIcon } from './Icons'
 
 export type JourneyStage = 'title' | 'create' | 'join' | 'lobby' | 'introduction' | 'match' | 'summary'
 
@@ -113,15 +114,19 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
       <div className="celebration" aria-hidden="true">{Array.from({ length: 18 }, (_, index) => <i key={index} />)}</div>
       <div className="summary-card">
         <span className="title-kicker">The final bell has rung</span>
-        <div className={`summary-crest ${winner?.color ?? 'amber'}`}>★</div>
-        <h2 id="summary-title">{winner?.name ?? 'A settler'} wins the island</h2>
+        <div className={`summary-crest ${winner?.color ?? 'amber'}`}><VictoryIcon /></div>
+        <h2 id="summary-title">{winner && winner.id === viewerPlayerId ? 'You win the island' : `${winner?.name ?? 'A settler'} wins the island`}</h2>
         <p>{winner ? visibleScore(game, winner.id, viewerPlayerId) : 10} victory points secured the crown.</p>
         <ol className="standings-list">
-          {standings.map((player, index) => <li key={player.id} className={player.color}>
-            <span>{index + 1}</span><strong>{player.name}</strong><small>{player.controller === 'agent' ? 'Local agent' : 'Human'}</small>
-            <b>{visibleScore(game, player.id, viewerPlayerId)} VP</b>
-            <em>{game.longestRoad?.playerId === player.id ? 'Longest Road' : ''}{game.longestRoad?.playerId === player.id && game.largestArmy?.playerId === player.id ? ' · ' : ''}{game.largestArmy?.playerId === player.id ? 'Largest Army' : ''}</em>
-          </li>)}
+          {standings.map((player, index) => {
+            const road = game.longestRoad?.playerId === player.id
+            const army = game.largestArmy?.playerId === player.id
+            return <li key={player.id} className={player.color} style={{ '--row': index } as React.CSSProperties}>
+              <span>{index + 1}</span><strong>{player.name}</strong><small>{player.controller === 'agent' ? 'Local agent' : 'Human'}</small>
+              <b>{visibleScore(game, player.id, viewerPlayerId)} VP</b>
+              {road || army ? <em>{road ? <><LongestRoadIcon />Longest road</> : null}{army ? <><LargestArmyIcon />Largest army</> : null}</em> : null}
+            </li>
+          })}
         </ol>
         <div className="summary-events"><strong>Closing moments</strong>{game.events.slice(-3).map((event) => <span key={event.id}>{event.message}</span>)}</div>
         <div className="summary-actions"><button className="journey-secondary" onClick={onBack}>Leave table</button>{room?.isHost ? <button className="journey-primary" onClick={onRematch}>Start rematch</button> : <span className="waiting-copy">Waiting for the host</span>}</div>
@@ -131,15 +136,16 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
 
   if (stage === 'title') {
     return <section ref={stageRef} className="journey-layer title-screen" aria-labelledby="game-title" tabIndex={-1}>
-      <div className="title-card">
+      <div className="title-stack">
         <span className="title-kicker">One island · humans and local agents</span>
-        <h1 id="game-title">KATAN</h1>
-        <p>Create a private table, share its six-character code, and settle the same live island from any browser, Codex session, or Claude session.</p>
+        <h1 id="game-title"><span className="wordmark">Katan</span></h1>
+        <div className="title-rule" aria-hidden="true" />
+        <p className="title-lede">Create a private table, share its six-character code, and settle the same live island from any browser, Codex session, or Claude session.</p>
         <div className="title-actions">
           <button className="journey-primary" onClick={() => onChoose('create')}>Create room</button>
           <button className="journey-secondary" onClick={() => onChoose('join')}>Join with code</button>
         </div>
-        <small>No built-in bots. Every seat belongs to a real human or a local agent you invited.</small>
+        <small className="title-foot">No built-in bots. Every seat belongs to a real human or a local agent you invited.</small>
       </div>
     </section>
   }
@@ -156,7 +162,7 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
     return <section ref={stageRef} className="journey-layer configure-screen" aria-labelledby="configure-title" tabIndex={-1}>
       <form className="configuration-card room-form" onSubmit={submit}>
         <header>
-          <button type="button" className="journey-back" onClick={onBack} aria-label="Back to title">←</button>
+          <button type="button" className="journey-back" onClick={onBack} aria-label="Back to title"><ChevronLeftIcon /></button>
           <div><span>{creating ? 'New expedition' : 'Invitation in hand'}</span><h2 id="configure-title">{creating ? 'Create a room' : 'Join a room'}</h2></div>
           {creating ? <div className="seat-count" role="group" aria-label="Player count"><button type="button" aria-label="3 players" aria-pressed={seatsTotal === 3} className={seatsTotal === 3 ? 'active' : ''} onClick={() => setSeatsTotal(3)}>3</button><button type="button" aria-label="4 players" aria-pressed={seatsTotal === 4} className={seatsTotal === 4 ? 'active' : ''} onClick={() => setSeatsTotal(4)}>4</button></div> : <span />}
         </header>
@@ -192,7 +198,7 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
     return <section ref={stageRef} className="journey-layer configure-screen" aria-labelledby="lobby-title" tabIndex={-1}>
       <div className="configuration-card lobby-card" inert={agentInviteOpen} aria-hidden={agentInviteOpen || undefined}>
         <header>
-          <button className="journey-back" onClick={onBack} aria-label="Leave room">←</button>
+          <button className="journey-back" onClick={onBack} aria-label="Leave room"><ChevronLeftIcon /></button>
           <div><span>Private room</span><h2 id="lobby-title">Gather the table</h2></div>
           <span className={`connection-pill ${connectionState}`}><i />{connectionState === 'connected' ? 'Live' : 'Connecting'}</span>
         </header>
@@ -206,13 +212,13 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
             <div className="seat-heading"><strong>{seat.name}</strong><small>{seat.controller === 'agent' ? 'Live local agent' : seat.id === room.viewerPlayerId ? 'You · browser player' : 'Remote human'}</small></div>
             <div className="seat-meta"><span>{colorNames[colors[index]]}</span>{seat.isHost ? <b>Host</b> : <b>Ready</b>}</div>
           </article>)}
-          {emptySeats.map((_, emptyIndex) => { const index = room.seats.length + emptyIndex; return <article className={`seat-card seat-${index} empty-seat`} key={`empty-${index}`}><span className="seat-number">{index + 1}</span><div className="seat-heading"><strong>Open seat</strong><small>Share the human link, or launch a Codex or Claude player with one command.</small></div><div className="seat-meta"><span>{colorNames[colors[index]]}</span><b>Waiting</b></div></article> })}
+          {emptySeats.map((_, emptyIndex) => { const index = room.seats.length + emptyIndex; return <article className={`seat-card seat-${index} empty-seat`} key={`empty-${index}`}><span className="seat-number">{index + 1}</span><div className="seat-heading"><strong>Open seat</strong><small>Waiting for a human link or an agent command.</small></div><div className="seat-meta"><span>{colorNames[colors[index]]}</span><b>Waiting</b></div></article> })}
         </div>
         <footer><p>{full ? room.isHost ? 'Everyone is here. Start whenever the table is ready.' : 'The table is full. Waiting for the host to start.' : `${room.seatsTotal - room.seats.length} seat${room.seatsTotal - room.seats.length === 1 ? '' : 's'} still open.`}</p>{room.isHost ? <button className="journey-primary" disabled={!full || connectionState !== 'connected'} onClick={onStart}>Start game</button> : <span className="waiting-copy">Waiting for host</span>}</footer>
       </div>
       {agentInviteOpen ? <div className="agent-invite-backdrop" onMouseDown={closeAgentInvite}>
         <div ref={agentInviteDialogRef} className="agent-invite-dialog" role="dialog" aria-modal="true" aria-labelledby="agent-invite-title" tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
-          <header><div><span>Live agent invitation</span><h3 id="agent-invite-title">Bring your own player</h3></div><button className="agent-invite-close" onClick={closeAgentInvite} aria-label="Close agent invitation">×</button></header>
+          <header><div><span>Live agent invitation</span><h3 id="agent-invite-title">Bring your own player</h3></div><button className="agent-invite-close" onClick={closeAgentInvite} aria-label="Close agent invitation"><CloseIcon /></button></header>
           <p className="agent-invite-lede">Paste one command into a terminal with a signed-in Codex or Claude CLI. It installs a versioned runner, claims one real seat, and sleeps between decisions.</p>
           <div className="agent-invite-steps">
             <article>
@@ -226,7 +232,7 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
               <span className="agent-step-label">Claude Code</span>
               <h4>Launch a Claude player</h4>
               <p>Requires Node 22.12+ and a signed-in Claude CLI. Built-in tools and customizations stay off; the same hosted rules and live turn stream drive the seat.</p>
-              <button className="journey-primary" onClick={() => doCopy('claude', claudeCommand)}>{copied === 'claude' ? 'Claude command copied' : 'Copy Claude command'}</button>
+              <button className="journey-secondary" onClick={() => doCopy('claude', claudeCommand)}>{copied === 'claude' ? 'Claude command copied' : 'Copy Claude command'}</button>
               {manualCopy === 'claude' ? <div className="agent-manual-copy" role="status"><strong>Clipboard blocked</strong><span>Select and copy the command manually.</span><textarea readOnly aria-label="Katan Claude command" value={claudeCommand} onFocus={(event) => event.currentTarget.select()} /></div> : null}
             </article>
           </div>
@@ -244,7 +250,7 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
       <h2 id="introduction-title">First to 10 points wins</h2>
       <p>Build two starting settlements and roads. Your second settlement collects one resource from each neighboring productive tile.</p>
       <ol className="turn-order">
-        {firstRound.map((playerIndex, order) => { const player = game.players[playerIndex]; return <li key={player.id} className={player.color}><span>{order + 1}</span><strong>{player.name}</strong><small>{player.controller === 'agent' ? 'Local agent' : 'Human'}</small></li> })}
+        {firstRound.map((playerIndex, order) => { const player = game.players[playerIndex]; return <li key={player.id} className={player.color} style={{ '--row': order } as React.CSSProperties}><span>{order + 1}</span><strong>{player.name}</strong><small>{player.controller === 'agent' ? 'Local agent' : 'Human'}</small></li> })}
       </ol>
       <div className="setup-rule"><strong>Snake setup</strong><span>The order reverses after everyone places once, so the final player places twice in a row.</span></div>
       <button className="journey-primary" onClick={onEnter}>Enter the island</button>

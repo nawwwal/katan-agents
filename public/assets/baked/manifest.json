@@ -1,0 +1,1255 @@
+{
+  "schema": 1,
+  "pipeline": {
+    "version": "1.0.0",
+    "hash": "2ffa6337099b8f48",
+    "generator": "scripts/bake"
+  },
+  "basePath": "/assets/baked/",
+  "contract": {
+    "map": "THREE.SRGBColorSpace, material.map",
+    "normalMap": "THREE.NoColorSpace, material.normalMap, OpenGL +Y, use runtime.normalScale",
+    "arhMap": "THREE.NoColorSpace, bind the SAME texture to material.aoMap and material.roughnessMap, set texture.channel = 0. Leave metalnessMap unset.",
+    "wrapping": "THREE.RepeatWrapping on S and T; every map is seamless",
+    "mipmaps": "generateMipmaps = true, minFilter LinearMipmapLinear, anisotropy from runtime.anisotropy",
+    "lighting": "terrain occlusion is baked; do not run SSAO on terrain and do not shadow-map the tile surfaces"
+  },
+  "budget": {
+    "limitBytes": 12582912,
+    "usedBytes": 10537454
+  },
+  "preload": [
+    "terrain/lumber-albedo.webp",
+    "terrain/lumber-normal.webp",
+    "terrain/lumber-arh.webp",
+    "terrain/wool-albedo.webp",
+    "terrain/wool-normal.webp",
+    "terrain/wool-arh.webp",
+    "terrain/grain-albedo.webp",
+    "terrain/grain-normal.webp",
+    "terrain/grain-arh.webp",
+    "terrain/brick-albedo.webp",
+    "terrain/brick-normal.webp",
+    "terrain/brick-arh.webp",
+    "terrain/ore-albedo.webp",
+    "terrain/ore-normal.webp",
+    "terrain/ore-arh.webp",
+    "terrain/desert-albedo.webp",
+    "terrain/desert-normal.webp",
+    "terrain/desert-arh.webp",
+    "structure/masonry-albedo.webp",
+    "structure/masonry-normal.webp",
+    "structure/masonry-arh.webp",
+    "structure/plaster-albedo.webp",
+    "structure/plaster-normal.webp",
+    "structure/plaster-arh.webp",
+    "structure/timber-albedo.webp",
+    "structure/timber-normal.webp",
+    "structure/timber-arh.webp",
+    "structure/plank-albedo.webp",
+    "structure/plank-normal.webp",
+    "structure/plank-arh.webp",
+    "structure/cobble-albedo.webp",
+    "structure/cobble-normal.webp",
+    "structure/cobble-arh.webp",
+    "structure/gravel-albedo.webp",
+    "structure/gravel-normal.webp",
+    "structure/gravel-arh.webp",
+    "structure/quay-albedo.webp",
+    "structure/quay-normal.webp",
+    "structure/quay-arh.webp",
+    "structure/roof-albedo.webp",
+    "structure/roof-normal.webp",
+    "structure/roof-arh.webp",
+    "structure/cloth-albedo.webp",
+    "structure/cloth-normal.webp",
+    "structure/cloth-arh.webp"
+  ],
+  "materials": {
+    "lumber": {
+      "id": "lumber",
+      "group": "terrain",
+      "hash": "8707c4a69ea874fc",
+      "relief": 0.014,
+      "meanOcclusion": 0.6869,
+      "tiling": "repeat",
+      "seamless": true,
+      "textures": {
+        "map": {
+          "file": "terrain/lumber-albedo.webp",
+          "size": [
+            2048,
+            2048
+          ],
+          "bytes": 706488,
+          "format": "webp",
+          "colorSpace": "srgb",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        "normalMap": {
+          "file": "terrain/lumber-normal.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 641564,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "encoding": "tangent-space",
+          "handedness": "opengl"
+        },
+        "arhMap": {
+          "file": "terrain/lumber-arh.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 375712,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "packing": {
+            "r": "occlusion",
+            "g": "roughness",
+            "b": "height"
+          },
+          "note": "do not bind as metalnessMap"
+        }
+      },
+      "runtime": {
+        "wrap": "repeat",
+        "anisotropy": 8,
+        "normalScale": 1.1,
+        "roughness": 1,
+        "metalness": 0,
+        "aoMapIntensity": 1
+      },
+      "bytes": 1723764
+    },
+    "wool": {
+      "id": "wool",
+      "group": "terrain",
+      "hash": "e7bffe6cb0a5afc0",
+      "relief": 0.011,
+      "meanOcclusion": 0.6948,
+      "tiling": "repeat",
+      "seamless": true,
+      "textures": {
+        "map": {
+          "file": "terrain/wool-albedo.webp",
+          "size": [
+            2048,
+            2048
+          ],
+          "bytes": 770662,
+          "format": "webp",
+          "colorSpace": "srgb",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        "normalMap": {
+          "file": "terrain/wool-normal.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 651604,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "encoding": "tangent-space",
+          "handedness": "opengl"
+        },
+        "arhMap": {
+          "file": "terrain/wool-arh.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 391528,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "packing": {
+            "r": "occlusion",
+            "g": "roughness",
+            "b": "height"
+          },
+          "note": "do not bind as metalnessMap"
+        }
+      },
+      "runtime": {
+        "wrap": "repeat",
+        "anisotropy": 8,
+        "normalScale": 1.1,
+        "roughness": 1,
+        "metalness": 0,
+        "aoMapIntensity": 1
+      },
+      "bytes": 1813794
+    },
+    "grain": {
+      "id": "grain",
+      "group": "terrain",
+      "hash": "1f5f0056e687e420",
+      "relief": 0.016,
+      "meanOcclusion": 0.7414,
+      "tiling": "repeat",
+      "seamless": true,
+      "textures": {
+        "map": {
+          "file": "terrain/grain-albedo.webp",
+          "size": [
+            2048,
+            2048
+          ],
+          "bytes": 531176,
+          "format": "webp",
+          "colorSpace": "srgb",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        "normalMap": {
+          "file": "terrain/grain-normal.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 421970,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "encoding": "tangent-space",
+          "handedness": "opengl"
+        },
+        "arhMap": {
+          "file": "terrain/grain-arh.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 183194,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "packing": {
+            "r": "occlusion",
+            "g": "roughness",
+            "b": "height"
+          },
+          "note": "do not bind as metalnessMap"
+        }
+      },
+      "runtime": {
+        "wrap": "repeat",
+        "anisotropy": 8,
+        "normalScale": 1.1,
+        "roughness": 1,
+        "metalness": 0,
+        "aoMapIntensity": 1
+      },
+      "bytes": 1136340
+    },
+    "brick": {
+      "id": "brick",
+      "group": "terrain",
+      "hash": "680d93eabde22c18",
+      "relief": 0.02,
+      "meanOcclusion": 0.8322,
+      "tiling": "repeat",
+      "seamless": true,
+      "textures": {
+        "map": {
+          "file": "terrain/brick-albedo.webp",
+          "size": [
+            2048,
+            2048
+          ],
+          "bytes": 406190,
+          "format": "webp",
+          "colorSpace": "srgb",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        "normalMap": {
+          "file": "terrain/brick-normal.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 397580,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "encoding": "tangent-space",
+          "handedness": "opengl"
+        },
+        "arhMap": {
+          "file": "terrain/brick-arh.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 200298,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "packing": {
+            "r": "occlusion",
+            "g": "roughness",
+            "b": "height"
+          },
+          "note": "do not bind as metalnessMap"
+        }
+      },
+      "runtime": {
+        "wrap": "repeat",
+        "anisotropy": 8,
+        "normalScale": 1.1,
+        "roughness": 1,
+        "metalness": 0,
+        "aoMapIntensity": 1
+      },
+      "bytes": 1004068
+    },
+    "ore": {
+      "id": "ore",
+      "group": "terrain",
+      "hash": "0e72a30bac243dd3",
+      "relief": 0.026,
+      "meanOcclusion": 0.6445,
+      "tiling": "repeat",
+      "seamless": true,
+      "textures": {
+        "map": {
+          "file": "terrain/ore-albedo.webp",
+          "size": [
+            2048,
+            2048
+          ],
+          "bytes": 522240,
+          "format": "webp",
+          "colorSpace": "srgb",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        "normalMap": {
+          "file": "terrain/ore-normal.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 743748,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "encoding": "tangent-space",
+          "handedness": "opengl"
+        },
+        "arhMap": {
+          "file": "terrain/ore-arh.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 471378,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "packing": {
+            "r": "occlusion",
+            "g": "roughness",
+            "b": "height"
+          },
+          "note": "do not bind as metalnessMap"
+        }
+      },
+      "runtime": {
+        "wrap": "repeat",
+        "anisotropy": 8,
+        "normalScale": 1.25,
+        "roughness": 1,
+        "metalness": 0,
+        "aoMapIntensity": 1
+      },
+      "bytes": 1737366
+    },
+    "desert": {
+      "id": "desert",
+      "group": "terrain",
+      "hash": "ce8a6785aefd1c1e",
+      "relief": 0.013,
+      "meanOcclusion": 0.8812,
+      "tiling": "repeat",
+      "seamless": true,
+      "textures": {
+        "map": {
+          "file": "terrain/desert-albedo.webp",
+          "size": [
+            2048,
+            2048
+          ],
+          "bytes": 683380,
+          "format": "webp",
+          "colorSpace": "srgb",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        "normalMap": {
+          "file": "terrain/desert-normal.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 465522,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "encoding": "tangent-space",
+          "handedness": "opengl"
+        },
+        "arhMap": {
+          "file": "terrain/desert-arh.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 149804,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "packing": {
+            "r": "occlusion",
+            "g": "roughness",
+            "b": "height"
+          },
+          "note": "do not bind as metalnessMap"
+        }
+      },
+      "runtime": {
+        "wrap": "repeat",
+        "anisotropy": 8,
+        "normalScale": 1.1,
+        "roughness": 1,
+        "metalness": 0,
+        "aoMapIntensity": 1
+      },
+      "bytes": 1298706
+    },
+    "masonry": {
+      "id": "masonry",
+      "group": "structure",
+      "hash": "bebe0437479ef0f8",
+      "relief": 0.03,
+      "meanOcclusion": 0.7583,
+      "tiling": "repeat",
+      "seamless": true,
+      "textures": {
+        "map": {
+          "file": "structure/masonry-albedo.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 109134,
+          "format": "webp",
+          "colorSpace": "srgb",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        "normalMap": {
+          "file": "structure/masonry-normal.webp",
+          "size": [
+            512,
+            512
+          ],
+          "bytes": 123452,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "encoding": "tangent-space",
+          "handedness": "opengl"
+        },
+        "arhMap": {
+          "file": "structure/masonry-arh.webp",
+          "size": [
+            512,
+            512
+          ],
+          "bytes": 40620,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "packing": {
+            "r": "occlusion",
+            "g": "roughness",
+            "b": "height"
+          },
+          "note": "do not bind as metalnessMap"
+        }
+      },
+      "runtime": {
+        "wrap": "repeat",
+        "anisotropy": 8,
+        "normalScale": 1.1,
+        "roughness": 1,
+        "metalness": 0.04,
+        "aoMapIntensity": 1
+      },
+      "bytes": 273206
+    },
+    "plaster": {
+      "id": "plaster",
+      "group": "structure",
+      "hash": "270590abf15dd627",
+      "relief": 0.01,
+      "meanOcclusion": 0.9762,
+      "tiling": "repeat",
+      "seamless": true,
+      "textures": {
+        "map": {
+          "file": "structure/plaster-albedo.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 16844,
+          "format": "webp",
+          "colorSpace": "srgb",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        "normalMap": {
+          "file": "structure/plaster-normal.webp",
+          "size": [
+            512,
+            512
+          ],
+          "bytes": 34202,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "encoding": "tangent-space",
+          "handedness": "opengl"
+        },
+        "arhMap": {
+          "file": "structure/plaster-arh.webp",
+          "size": [
+            512,
+            512
+          ],
+          "bytes": 6712,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "packing": {
+            "r": "occlusion",
+            "g": "roughness",
+            "b": "height"
+          },
+          "note": "do not bind as metalnessMap"
+        }
+      },
+      "runtime": {
+        "wrap": "repeat",
+        "anisotropy": 8,
+        "normalScale": 0.75,
+        "roughness": 1,
+        "metalness": 0.04,
+        "aoMapIntensity": 1
+      },
+      "bytes": 57758
+    },
+    "timber": {
+      "id": "timber",
+      "group": "structure",
+      "hash": "abf3dc1a71ee29a3",
+      "relief": 0.014,
+      "meanOcclusion": 0.8968,
+      "tiling": "repeat",
+      "seamless": true,
+      "textures": {
+        "map": {
+          "file": "structure/timber-albedo.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 51482,
+          "format": "webp",
+          "colorSpace": "srgb",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        "normalMap": {
+          "file": "structure/timber-normal.webp",
+          "size": [
+            512,
+            512
+          ],
+          "bytes": 58676,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "encoding": "tangent-space",
+          "handedness": "opengl"
+        },
+        "arhMap": {
+          "file": "structure/timber-arh.webp",
+          "size": [
+            512,
+            512
+          ],
+          "bytes": 21990,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "packing": {
+            "r": "occlusion",
+            "g": "roughness",
+            "b": "height"
+          },
+          "note": "do not bind as metalnessMap"
+        }
+      },
+      "runtime": {
+        "wrap": "repeat",
+        "anisotropy": 8,
+        "normalScale": 1,
+        "roughness": 1,
+        "metalness": 0.04,
+        "aoMapIntensity": 1
+      },
+      "bytes": 132148
+    },
+    "plank": {
+      "id": "plank",
+      "group": "structure",
+      "hash": "8434de2a81d17a82",
+      "relief": 0.02,
+      "meanOcclusion": 0.884,
+      "tiling": "repeat",
+      "seamless": true,
+      "textures": {
+        "map": {
+          "file": "structure/plank-albedo.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 35470,
+          "format": "webp",
+          "colorSpace": "srgb",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        "normalMap": {
+          "file": "structure/plank-normal.webp",
+          "size": [
+            512,
+            512
+          ],
+          "bytes": 48330,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "encoding": "tangent-space",
+          "handedness": "opengl"
+        },
+        "arhMap": {
+          "file": "structure/plank-arh.webp",
+          "size": [
+            512,
+            512
+          ],
+          "bytes": 16376,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "packing": {
+            "r": "occlusion",
+            "g": "roughness",
+            "b": "height"
+          },
+          "note": "do not bind as metalnessMap"
+        }
+      },
+      "runtime": {
+        "wrap": "repeat",
+        "anisotropy": 8,
+        "normalScale": 1,
+        "roughness": 1,
+        "metalness": 0.04,
+        "aoMapIntensity": 1
+      },
+      "bytes": 100176
+    },
+    "cobble": {
+      "id": "cobble",
+      "group": "structure",
+      "hash": "c4ecc46c40f8ec58",
+      "relief": 0.035,
+      "meanOcclusion": 0.7019,
+      "tiling": "repeat",
+      "seamless": true,
+      "textures": {
+        "map": {
+          "file": "structure/cobble-albedo.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 131110,
+          "format": "webp",
+          "colorSpace": "srgb",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        "normalMap": {
+          "file": "structure/cobble-normal.webp",
+          "size": [
+            512,
+            512
+          ],
+          "bytes": 142322,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "encoding": "tangent-space",
+          "handedness": "opengl"
+        },
+        "arhMap": {
+          "file": "structure/cobble-arh.webp",
+          "size": [
+            512,
+            512
+          ],
+          "bytes": 67128,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "packing": {
+            "r": "occlusion",
+            "g": "roughness",
+            "b": "height"
+          },
+          "note": "do not bind as metalnessMap"
+        }
+      },
+      "runtime": {
+        "wrap": "repeat",
+        "anisotropy": 8,
+        "normalScale": 1.15,
+        "roughness": 1,
+        "metalness": 0.04,
+        "aoMapIntensity": 1
+      },
+      "bytes": 340560
+    },
+    "gravel": {
+      "id": "gravel",
+      "group": "structure",
+      "hash": "9444bcffad55d343",
+      "relief": 0.04,
+      "meanOcclusion": 0.6945,
+      "tiling": "repeat",
+      "seamless": true,
+      "textures": {
+        "map": {
+          "file": "structure/gravel-albedo.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 168920,
+          "format": "webp",
+          "colorSpace": "srgb",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        "normalMap": {
+          "file": "structure/gravel-normal.webp",
+          "size": [
+            512,
+            512
+          ],
+          "bytes": 173282,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "encoding": "tangent-space",
+          "handedness": "opengl"
+        },
+        "arhMap": {
+          "file": "structure/gravel-arh.webp",
+          "size": [
+            512,
+            512
+          ],
+          "bytes": 83936,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "packing": {
+            "r": "occlusion",
+            "g": "roughness",
+            "b": "height"
+          },
+          "note": "do not bind as metalnessMap"
+        }
+      },
+      "runtime": {
+        "wrap": "repeat",
+        "anisotropy": 8,
+        "normalScale": 1.3,
+        "roughness": 1,
+        "metalness": 0.04,
+        "aoMapIntensity": 1
+      },
+      "bytes": 426138
+    },
+    "quay": {
+      "id": "quay",
+      "group": "structure",
+      "hash": "b96199e44c23fffb",
+      "relief": 0.03,
+      "meanOcclusion": 0.7745,
+      "tiling": "repeat",
+      "seamless": true,
+      "textures": {
+        "map": {
+          "file": "structure/quay-albedo.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 65466,
+          "format": "webp",
+          "colorSpace": "srgb",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        "normalMap": {
+          "file": "structure/quay-normal.webp",
+          "size": [
+            512,
+            512
+          ],
+          "bytes": 122858,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "encoding": "tangent-space",
+          "handedness": "opengl"
+        },
+        "arhMap": {
+          "file": "structure/quay-arh.webp",
+          "size": [
+            512,
+            512
+          ],
+          "bytes": 38914,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "packing": {
+            "r": "occlusion",
+            "g": "roughness",
+            "b": "height"
+          },
+          "note": "do not bind as metalnessMap"
+        }
+      },
+      "runtime": {
+        "wrap": "repeat",
+        "anisotropy": 8,
+        "normalScale": 1.1,
+        "roughness": 1,
+        "metalness": 0.04,
+        "aoMapIntensity": 1
+      },
+      "bytes": 227238
+    },
+    "roof": {
+      "id": "roof",
+      "group": "structure",
+      "hash": "aafa005347979541",
+      "relief": 0.045,
+      "meanOcclusion": 0.693,
+      "tiling": "repeat",
+      "seamless": true,
+      "textures": {
+        "map": {
+          "file": "structure/roof-albedo.webp",
+          "size": [
+            1024,
+            1024
+          ],
+          "bytes": 73600,
+          "format": "webp",
+          "colorSpace": "srgb",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        "normalMap": {
+          "file": "structure/roof-normal.webp",
+          "size": [
+            512,
+            512
+          ],
+          "bytes": 103086,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "encoding": "tangent-space",
+          "handedness": "opengl"
+        },
+        "arhMap": {
+          "file": "structure/roof-arh.webp",
+          "size": [
+            512,
+            512
+          ],
+          "bytes": 33086,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "packing": {
+            "r": "occlusion",
+            "g": "roughness",
+            "b": "height"
+          },
+          "note": "do not bind as metalnessMap"
+        }
+      },
+      "runtime": {
+        "wrap": "repeat",
+        "anisotropy": 8,
+        "normalScale": 1.2,
+        "roughness": 1,
+        "metalness": 0.04,
+        "aoMapIntensity": 1
+      },
+      "bytes": 209772
+    },
+    "cloth": {
+      "id": "cloth",
+      "group": "structure",
+      "hash": "ad3045b496d59b4e",
+      "relief": 0.008,
+      "meanOcclusion": 0.9082,
+      "tiling": "repeat",
+      "seamless": true,
+      "textures": {
+        "map": {
+          "file": "structure/cloth-albedo.webp",
+          "size": [
+            512,
+            512
+          ],
+          "bytes": 33336,
+          "format": "webp",
+          "colorSpace": "srgb",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        "normalMap": {
+          "file": "structure/cloth-normal.webp",
+          "size": [
+            256,
+            256
+          ],
+          "bytes": 20056,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "encoding": "tangent-space",
+          "handedness": "opengl"
+        },
+        "arhMap": {
+          "file": "structure/cloth-arh.webp",
+          "size": [
+            256,
+            256
+          ],
+          "bytes": 3028,
+          "format": "webp",
+          "colorSpace": "linear",
+          "atlas": null,
+          "uvRect": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "packing": {
+            "r": "occlusion",
+            "g": "roughness",
+            "b": "height"
+          },
+          "note": "do not bind as metalnessMap"
+        }
+      },
+      "runtime": {
+        "wrap": "repeat",
+        "anisotropy": 8,
+        "normalScale": 1,
+        "roughness": 1,
+        "metalness": 0.04,
+        "aoMapIntensity": 1
+      },
+      "bytes": 56420
+    }
+  }
+}
