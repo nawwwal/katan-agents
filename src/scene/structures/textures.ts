@@ -692,6 +692,61 @@ export const contactShadowTexture = (() => {
   }
 })()
 
+/**
+ * The dark half of the legal-target beacon: a soft filled disc that darkens the
+ * ground the bright ring sits on.
+ *
+ * This island is warm sand, warm gold and warm clay almost everywhere, so an
+ * additive glow has nothing to sit against and reads as one more patch of
+ * light-coloured terrain. The pool is the contrast floor — the value break that
+ * makes the coloured ring above it legible on pale ground the same way the
+ * near-black kerb makes a road's coloured deck legible.
+ */
+export const beaconPoolTexture = (() => {
+  let texture: THREE.Texture | null = null
+  return () => {
+    if (texture) return texture
+    const size = 256
+    const { canvas, context } = surface(size)
+    const gradient = context.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size * 0.5)
+    gradient.addColorStop(0, 'rgba(255,255,255,1)')
+    gradient.addColorStop(0.46, 'rgba(255,255,255,0.94)')
+    gradient.addColorStop(0.74, 'rgba(255,255,255,0.62)')
+    gradient.addColorStop(1, 'rgba(255,255,255,0)')
+    context.fillStyle = gradient
+    context.fillRect(0, 0, size, size)
+    // Consumed as an alpha map, so it stays in linear space.
+    texture = finish(canvas, 1, false)
+    return texture
+  }
+})()
+
+/**
+ * The bright half: a hard-edged annulus. Harder than `haloTexture` on purpose —
+ * a legal target is game UI standing in the world, and a crisp ring says
+ * "drawn" where a feathered glow says "weather".
+ */
+export const beaconRingTexture = (() => {
+  let texture: THREE.Texture | null = null
+  return () => {
+    if (texture) return texture
+    const size = 256
+    const { canvas, context } = surface(size)
+    const gradient = context.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size * 0.5)
+    gradient.addColorStop(0, 'rgba(255,255,255,0)')
+    gradient.addColorStop(0.62, 'rgba(255,255,255,0)')
+    gradient.addColorStop(0.68, 'rgba(255,255,255,1)')
+    gradient.addColorStop(0.88, 'rgba(255,255,255,1)')
+    gradient.addColorStop(0.95, 'rgba(255,255,255,0)')
+    gradient.addColorStop(1, 'rgba(255,255,255,0)')
+    context.fillStyle = gradient
+    context.fillRect(0, 0, size, size)
+    // Consumed as an alpha map, so it stays in linear space.
+    texture = finish(canvas, 1, false)
+    return texture
+  }
+})()
+
 export const haloTexture = (() => {
   let texture: THREE.Texture | null = null
   return () => {

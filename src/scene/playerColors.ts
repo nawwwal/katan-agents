@@ -31,6 +31,37 @@ export const PLAYER_BANNER: Record<PlayerColor, string> = {
   ivory: '#f3ebd4',
 }
 
+/**
+ * Legal-target beacons.
+ *
+ * Louder than any other player channel, because a beacon is not a piece: it is
+ * game UI standing in the world, and it has to survive being read at a glance
+ * across pale sand, bleached beach, dark forest canopy, grey rock, golden
+ * wheat, red clay and blue water in the same frame. Every hue here is pushed to
+ * high chroma so hue alone separates it from the terrain it lands on, and every
+ * one of them is always paired with `BEACON_FRAME` — the bright half holds
+ * against dark ground, the dark half holds against pale ground, which is the
+ * same trick that made the roads legible.
+ *
+ * Ivory has no saturated form, so it is pushed cool instead. A warm near-white
+ * is exactly the marker the audit could not find on a sand-coloured island.
+ */
+export const PLAYER_BEACON: Record<PlayerColor, string> = {
+  coral: '#ff5a2d',
+  blue: '#3aa8ff',
+  amber: '#ffc41c',
+  ivory: '#dff1ff',
+}
+
+/** The dark half of every beacon: ground pool, mast, collar, ghost kerbstone. */
+export const BEACON_FRAME = '#05070b'
+
+/**
+ * The chosen target, while a confirm is outstanding. Cyan is the one hue no
+ * player and no biome on this island owns, so "picked" never reads as "yours".
+ */
+export const BEACON_PENDING = '#7ceeff'
+
 const KEY_BY_HEX = new Map<string, PlayerColor>(
   (Object.entries(PLAYER_COLORS) as Array<[PlayerColor, string]>).map(([key, hex]) => [hex.toLowerCase(), key]),
 )

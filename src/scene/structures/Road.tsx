@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import type { PlayerColor } from '../../game/types'
-import { PLAYER_BANNER, PLAYER_ROAD } from '../playerColors'
+import { BEACON_FRAME, PLAYER_BANNER, PLAYER_ROAD } from '../playerColors'
 import { box, cone, cyl, merge, pennant, plate, type Part } from './geometry'
 import { clothMaterial, paleStoneMaterial, pavingMaterial, timberMaterial } from './materials'
 import { contactShadowTexture, makeRng } from './textures'
@@ -394,33 +394,55 @@ export function RoadModel({ color, length = 1, joins = FREE_JOINS }: { color: Pl
   </group>
 }
 
-const ghostCache = new Map<string, THREE.MeshStandardMaterial>()
-const ghostMaterial = (color: string, opacity: number, emissive: number) => {
-  const key = `${color}:${opacity}:${emissive}`
+const ghostCache = new Map<string, THREE.Material>()
+
+/**
+ * The deck of a legal road.
+ *
+ * Opaque, because a translucent deck let the near-black frame and the mast sort
+ * through it as dark voids. Emissive rather than unlit: fully unlit came back
+ * as a flat plastic slab with no form at all, and strong self-illumination on a
+ * lit material keeps the colour from being muted by a hex wall's shade while
+ * still letting the sun model the cross-section.
+ */
+const ghostDeck = (color: string) => {
+  const key = `deck:${color}`
   const hit = ghostCache.get(key)
   if (hit) return hit
   const material = new THREE.MeshStandardMaterial({
     color,
     emissive: color,
-    emissiveIntensity: emissive,
-    transparent: true,
-    opacity,
-    depthWrite: false,
-    roughness: 0.4,
-    metalness: 0.1,
+    emissiveIntensity: 0.32,
+    roughness: 0.55,
+    metalness: 0,
   })
   ghostCache.set(key, material)
   return material
 }
 
+/**
+ * The frame of a legal road: near-black where a built road's kerb and plinth
+ * are pale limestone. That inversion does two jobs at once — it gives the
+ * coloured deck something to sit against on pale sand, and it means a marker is
+ * never read as a causeway somebody already paved.
+ */
+const ghostFrame = () => {
+  const hit = ghostCache.get('frame')
+  if (hit) return hit
+  const material = new THREE.MeshStandardMaterial({ color: BEACON_FRAME, roughness: 0.62, metalness: 0 })
+  ghostCache.set('frame', material)
+  return material
+}
+
 /** Preview of the road you would build, in the same shape as the real thing. */
-export function RoadGhost({ color, opacity, emissive, length = 1 }: { color: string; opacity: number; emissive: number; length?: number }) {
-  const parts = groups()
-  const mark = markParts()
-  const material = ghostMaterial(color, opacity, emissive)
+export function RoadGhost({ deck, length = 1 }: { deck: string; length?: number }) {
+  // A preview is a whole road offered on its own, so it shows closed ends; the
+  // joint forms when it lands and its neighbours pick it up. The closed ends
+  // matter twice over here: they are what keeps a run of adjacent markers
+  // reading as separate offers rather than one paved river.
+  const parts = groups(FREE_JOINS)
   return <group scale={[length, 1, 1]}>
-    <mesh geometry={parts.stone} material={material} />
-    <mesh geometry={parts.deck} material={material} />
-    <mesh geometry={mark.post} material={material} />
+    <mesh geometry={parts.stone} material={ghostFrame()} castShadow receiveShadow />
+    <mesh geometry={parts.deck} material={ghostDeck(deck)} />
   </group>
 }

@@ -1,11 +1,11 @@
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
-import { Suspense, useMemo } from 'react'
+import { Suspense, useMemo, useState } from 'react'
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { useEffect } from 'react'
 import { useThree } from '@react-three/fiber'
-import type { GameDisplayState, PlayerColor } from '../../game/types'
+import type { GameAction, GameDisplayState, PlayerColor } from '../../game/types'
 import { createBoard } from '../../game/board'
 import { applyAction, createGame, currentActorId, getPlayerView, legalActionsForPlayer } from '../../game/engine'
 import { toDisplayState } from '../../game/room'
@@ -15,9 +15,10 @@ import { NumberTokenMesh } from './NumberToken'
 import { RoadGhost, RoadModel } from './Road'
 import { RobberFigure } from './Robber'
 import { Building, Road, VertexTargets } from '../Pieces'
+import { GameScene, type PlacementMode } from '../GameScene'
 import { Island } from '../Island'
 import { Lighting } from '../Lighting'
-import { PLAYER_COLORS } from '../playerColors'
+import { PLAYER_BEACON, PLAYER_COLORS } from '../playerColors'
 import { terraceMaterial } from './materials'
 
 // Standalone review route for the pieces I own (`/pieces-lab.html`). The main
@@ -112,7 +113,7 @@ export function PiecesLab() {
         {COLORS.map((color, index) => <group key={`r-${color}`} position={[-1.6 + index * 1.1, 0, 1.75]} rotation={[0, 0.0, 0]}>
           <RoadModel color={color} />
         </group>)}
-        <group position={[-1.6, 0, 2.05]}><RoadGhost color="#ffcf5e" opacity={0.55} emissive={0.45} /></group>
+        <group position={[-1.6, 0, 2.05]}><RoadGhost deck={PLAYER_BEACON.amber} /></group>
 
         {[2, 3, 5, 6, 8, 9, 11, 12].map((value, index) => <group key={value} position={[-1.75 + index * 0.62, 0.01, 2.55]}>
           <NumberTokenMesh number={value} height={0} />
@@ -225,6 +226,64 @@ export function NetworkLab() {
         <OrbitControls target={target} />
       </Suspense>
     </Canvas>
+  </div>
+}
+
+/**
+ * Affordance rig (`/pieces-lab.html?aff=setup|road|city`).
+ *
+ * The `?board` route is deliberately non-interactive, so there is no way to see
+ * a legal-target set on the real island under the real lighting, post chain and
+ * default camera — which is the only place a legibility claim can honestly be
+ * graded. This mounts the whole `GameScene` on a populated board and synthesises
+ * one family of legal actions at a time. Presentation only: nothing here can
+ * reach the engine, `onAction` is a no-op.
+ *
+ * `&pend=<n>` marks the nth target pending, so the pending and resting states
+ * can be compared in one pass.
+ */
+function affordanceActions(game: GameDisplayState, family: string): GameAction[] {
+  const you = game.players[0].id
+  if (family === 'city') {
+    return Object.entries(game.buildings)
+      .filter(([, building]) => building.playerId === you && building.type === 'settlement')
+      .map(([vertexId]) => ({ type: 'build-city', vertexId }) as GameAction)
+  }
+  if (family === 'road') {
+    const mine = new Set<string>()
+    for (const [edgeId, owner] of Object.entries(game.roadOwners)) {
+      if (owner !== you) continue
+      for (const vertexId of game.board.edges[edgeId].vertices) mine.add(vertexId)
+    }
+    return Object.values(game.board.edges)
+      .filter((edge) => !game.roadOwners[edge.id] && edge.vertices.some((id) => mine.has(id)))
+      .map((edge) => ({ type: 'build-road', edgeId: edge.id }) as GameAction)
+  }
+  // Setup: every vertex the distance rule leaves open, which is the ~50-target
+  // worst case the audit measured.
+  return Object.values(game.board.vertices)
+    .filter((vertex) => !game.buildings[vertex.id] && !vertex.neighbors.some((id) => game.buildings[id]))
+    .map((vertex) => ({ type: 'place-settlement', vertexId: vertex.id }) as GameAction)
+}
+
+export function AffordanceLab() {
+  const params = new URLSearchParams(window.location.search)
+  const family = params.get('aff') || 'setup'
+  const base = useMemo(networkState, [])
+  const actions = useMemo(() => affordanceActions(base, family), [base, family])
+  const game = useMemo(() => ({ ...base, legalActions: actions }), [base, actions])
+  const mode: PlacementMode = family === 'city' ? 'city' : family === 'road' ? 'road' : 'settlement'
+  const pendingIndex = Number(params.get('pend'))
+  const pendingAction = Number.isFinite(pendingIndex) && params.get('pend') !== null ? actions[pendingIndex] : undefined
+  const [, force] = useState(0)
+  return <div style={{ position: 'fixed', inset: 0, background: '#04121b' }}>
+    <GameScene
+      game={game}
+      placementMode={mode}
+      pendingAction={pendingAction}
+      interactive
+      onAction={() => force((value) => value + 1)}
+    />
   </div>
 }
 
