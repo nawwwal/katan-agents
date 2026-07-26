@@ -280,15 +280,18 @@ export function AffordanceLab() {
   const game = useMemo(() => ({ ...base, legalActions: actions }), [base, actions])
   const mode: PlacementMode = family === 'city' ? 'city' : family === 'road' ? 'road' : 'settlement'
   const pendingIndex = Number(params.get('pend'))
-  const pendingAction = Number.isFinite(pendingIndex) && params.get('pend') !== null ? actions[pendingIndex] : undefined
-  const [, force] = useState(0)
+  const queried = Number.isFinite(pendingIndex) && params.get('pend') !== null ? actions[pendingIndex] : undefined
+  // Clicking a marker marks it pending. Nothing here can reach the engine, but
+  // it does exercise the whole pointer path — raycast, instance id, handler —
+  // which is the part that has broken before and which no other route covers.
+  const [picked, setPicked] = useState<GameAction | undefined>(undefined)
   return <div style={{ position: 'fixed', inset: 0, background: '#04121b' }}>
     <GameScene
       game={game}
       placementMode={mode}
-      pendingAction={pendingAction}
+      pendingAction={picked ?? queried}
       interactive
-      onAction={() => force((value) => value + 1)}
+      onAction={setPicked}
     />
   </div>
 }

@@ -339,11 +339,13 @@ export function VertexTargets({ game, actions, pendingAction, touchTarget, onAct
     const top = new Set(actions.length > DENSITY_THRESHOLD ? ranked : actions.map((action) => action.vertexId))
     return actions.map((action) => ({
       phase: seededFrom(`beacon-${action.vertexId}`)(),
-      emphasis: top.has(action.vertexId) ? 1 : 0.3,
+      emphasis: top.has(action.vertexId) ? 1 : 0.34,
     }))
   }, [actions, game])
 
   const hasPending = pendingAction?.type === 'place-settlement' || pendingAction?.type === 'build-settlement'
+  const synced = useRef(false)
+  useEffect(() => { synced.current = false }, [actions])
 
   useFrame(({ clock }) => {
     const touch = touchTarget ? 1.55 : 1
@@ -352,11 +354,11 @@ export function VertexTargets({ game, actions, pendingAction, touchTarget, onAct
       const seed = seeds[index]
       const pending = hasPending && pendingAction.vertexId === action.vertexId
       const active = hovered === index
-      // A chosen target takes the frame; everything else steps back so the
-      // confirm bar is describing something the eye can already single out.
-      const quiet = hasPending && !pending ? 0.34 : 1
-      const strength = seed.emphasis * quiet
-      const scale = (pending ? 1.7 : active ? 1.25 : 1) * (0.72 + 0.28 * strength) * touch
+      // A chosen target takes the frame; everything else steps back hard, so
+      // the confirm bar is describing something the eye can already single out.
+      const quiet = hasPending && !pending
+      const rank = 0.76 + 0.24 * seed.emphasis
+      const scale = (pending ? 1.7 : active ? 1.25 : 1) * rank * (quiet ? 0.58 : 1) * touch
       const pulse = beaconPulse(clock.elapsedTime, seed.phase, reducedMotion)
       const breathe = 0.92 + pulse * 0.14
 
@@ -390,8 +392,8 @@ export function VertexTargets({ game, actions, pendingAction, touchTarget, onAct
       tint.copy(pending ? pendingTint : beacon)
       if (active && !pending) tint.lerp(WHITE, 0.45)
       // Dimming a beacon darkens its bright half rather than fading it, so the
-      // dark pool underneath keeps holding the value break either way.
-      tint.multiplyScalar((0.42 + 0.58 * strength) * (0.86 + pulse * 0.14))
+      // dark pad underneath keeps holding the value break either way.
+      tint.multiplyScalar((0.5 + 0.5 * seed.emphasis) * (quiet ? 0.42 : 1) * (0.86 + pulse * 0.14))
       band.current?.setColorAt(index, tint)
       blade.current?.setColorAt(index, tint)
     })
@@ -400,26 +402,31 @@ export function VertexTargets({ game, actions, pendingAction, touchTarget, onAct
       mesh.instanceMatrix.needsUpdate = true
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
     }
+    // `InstancedMesh.raycast` tests the instance bounding sphere before it
+    // tests a single triangle, and that sphere has to be built from matrices
+    // that have already been written. Computing it in an effect looks right and
+    // is not: effects run at commit, this loop runs on the first frame after,
+    // so the sphere was a zero-radius point at the board's origin and every
+    // pointer ray missed every target. That is the dead corner click.
+    if (!synced.current) {
+      synced.current = true
+      for (const mesh of [pad.current, band.current, mast.current, blade.current, hit.current]) mesh?.computeBoundingSphere()
+    }
   })
-
-  // Instanced bounding spheres are computed from the identity geometry, so they
-  // have to be refreshed whenever the set changes or raycasting misses.
-  useEffect(() => {
-    for (const mesh of [pad.current, band.current, mast.current, blade.current, hit.current]) mesh?.computeBoundingSphere()
-  }, [actions])
 
   const instanceId = (event: ThreeEvent<MouseEvent>) => event.instanceId ?? -1
   return <group>
-    <instancedMesh ref={pad} args={[undefined, undefined, actions.length]} geometry={padGeometry()} material={frameMaterial()} castShadow receiveShadow />
-    <instancedMesh ref={band} args={[undefined, undefined, actions.length]} geometry={bandGeometry()} material={bladeMaterial()} />
-    <instancedMesh ref={mast} args={[undefined, undefined, actions.length]} geometry={mastGeometry()} material={frameMaterial()} castShadow />
-    <instancedMesh ref={blade} args={[undefined, undefined, actions.length]} geometry={bladeGeometry('settlement')} material={bladeMaterial()} />
+    <instancedMesh ref={pad} args={[undefined, undefined, actions.length]} geometry={padGeometry()} material={frameMaterial()} frustumCulled={false} castShadow receiveShadow />
+    <instancedMesh ref={band} args={[undefined, undefined, actions.length]} geometry={bandGeometry()} material={bladeMaterial()} frustumCulled={false} />
+    <instancedMesh ref={mast} args={[undefined, undefined, actions.length]} geometry={mastGeometry()} material={frameMaterial()} frustumCulled={false} castShadow />
+    <instancedMesh ref={blade} args={[undefined, undefined, actions.length]} geometry={bladeGeometry('settlement')} material={bladeMaterial()} frustumCulled={false} />
     <instancedMesh
       ref={hit}
       args={[undefined, undefined, actions.length]}
       onClick={(event) => { event.stopPropagation(); const index = instanceId(event); if (actions[index]) onAction(actions[index]) }}
       onPointerMove={(event) => { event.stopPropagation(); setHovered(instanceId(event)) }}
       onPointerOut={() => setHovered(null)}
+      frustumCulled={false}
     >
       <cylinderGeometry args={[0.26, 0.26, 0.7, 10]} />
       <meshBasicMaterial transparent opacity={0} depthWrite={false} />

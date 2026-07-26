@@ -57,10 +57,12 @@ export const PLAYER_BEACON: Record<PlayerColor, string> = {
 export const BEACON_FRAME = '#05070b'
 
 /**
- * The chosen target, while a confirm is outstanding. Cyan is the one hue no
- * player and no biome on this island owns, so "picked" never reads as "yours".
+ * The chosen target, while a confirm is outstanding. A near-white cyan: no
+ * player and no biome on this island owns it, so "picked" never reads as
+ * "yours", and it is far enough off the blue seat's beacon that the two are
+ * not confusable when the blue seat is the one choosing.
  */
-export const BEACON_PENDING = '#7ceeff'
+export const BEACON_PENDING = '#d6faff'
 
 const KEY_BY_HEX = new Map<string, PlayerColor>(
   (Object.entries(PLAYER_COLORS) as Array<[PlayerColor, string]>).map(([key, hex]) => [hex.toLowerCase(), key]),
