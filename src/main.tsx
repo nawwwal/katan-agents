@@ -1,6 +1,11 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
+import { BoardLab } from './scene/BoardLab'
+import { AssetReviewApp } from './scene/procedural/AssetReviewApp'
 import './styles.css'
 
-createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)
+const params = new URLSearchParams(window.location.search)
+const route = params.has('asset-review') ? <AssetReviewApp /> : params.has('board') ? <BoardLab /> : <App />
+
+createRoot(document.getElementById('root')!).render(<StrictMode>{route}</StrictMode>)
