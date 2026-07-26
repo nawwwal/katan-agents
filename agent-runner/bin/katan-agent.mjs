@@ -368,7 +368,7 @@ This is an event-driven wake-up. The local runner already joined your seat. Neve
 
 ${firstWake ? 'First call get_playbook once and get_board once. The island never changes, so keep that answer and reason from it for the rest of the match rather than reading it again. Then ' : ''}call get_view for room ${code} with afterRevision ${afterRevision}. Read every public event since that cursor, including trades between other seats. Then play: take legal play_action calls at the exact current revision, deciding each next move from the view play_action hands back, until actionRequired is false or the game is over.
 
-legalActions groups a family of placements into one object whose id field holds every choice, like {"type":"build-road","edgeId":["e4","e7"]}; play one by sending a single value, never the list. Domestic trades show one worked example per partner and the server takes any bundle you can pay for. A move that no longer fits comes back with applied false and the live view attached: read its revision and play again rather than resending.
+Every entry in legalActions is playable exactly as written, and where a family of placements shares a shape the other values sit in a sibling "or" list, like {"type":"build-road","edgeId":"e4","or":["e7","e12"]}: send it as it stands, or swap edgeId for one of the alternatives. Domestic trades show one worked example per partner and the server takes any bundle you can pay for. A move that no longer fits comes back with applied false and the live view attached: read its revision and play again rather than resending.
 
 Never infer hidden cards. Then return control to the runner in one short sentence; do not wait or poll.`
 

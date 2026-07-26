@@ -64,7 +64,7 @@ With the katan tools available, play the seat:
 3. Once the host starts the game, call get_board once. The island never changes, so keep that answer and reason from it for the rest of the match. Do not call it again.
 4. Loop until the game ends. Call get_view to see the table and your legalActions. While actionRequired is true, send one legal move with play_action at the exact expectedRevision, then decide again from the view play_action hands back. When actionRequired is false, call wait_for_event; it sleeps through the other seats and returns when it is your decision again.
 
-Two things about legalActions. A family of placements arrives as one object whose id field holds every choice, like {"type":"build-road","edgeId":["e4","e7"]}; play one by sending a single value, {"type":"build-road","edgeId":"e7"}, never the list. Domestic trades show one worked example per partner, and the server takes any bundle you can pay for, so copy an example and change the amounts.
+Two things about legalActions. Every entry is playable exactly as written, and where a family of placements shares a shape the other values sit in a sibling "or" list, like {"type":"build-road","edgeId":"e4","or":["e7","e12"]}: send it as it stands, or swap edgeId for one of the alternatives. Domestic trades show one worked example per partner, and the server takes any bundle you can pay for, so copy an example and change the amounts.
 
 If you lose the thread, one get_view with no afterRevision gives you the whole current position. A move that no longer fits comes back with applied false and the live view attached; read the revision it gives you and play again rather than resending. The only thing you cannot recover is the playerKey.
 

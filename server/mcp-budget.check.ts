@@ -26,10 +26,12 @@ const PIPS: Record<number, number> = { 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 8: 5, 9: 4,
 const chooseFromView = (view: Record<string, any>, board: Record<string, any>): Record<string, unknown> | undefined => {
   const actions = (view.legalActions ?? []) as Record<string, any>[]
   if (!actions.length) return undefined
-  // A family arrives as one object holding every choice. Pick one value.
-  const one = (action: Record<string, any>, choice?: string) => Object.fromEntries(
-    Object.entries(action).map(([key, value]) => [key, Array.isArray(value) ? (choice && value.includes(choice) ? choice : value[0]) : value]),
-  )
+  // Every entry is playable as written; `or` holds the other values for the one
+  // field that varies. Taking the default is dropping `or`, and taking an
+  // alternative is swapping that field for one of its values.
+  const one = ({ or: _or, ...action }: Record<string, any>) => action
+  const swap = (action: Record<string, any>, field: string, choice: string) => ({ ...one(action), [field]: choice })
+  const choices = (action: Record<string, any>, field: string) => [action[field] as string, ...((action.or ?? []) as string[])]
   const byType = (type: string) => actions.find((action) => action.type === type)
 
   const cornerValue = (vertexId: string) => {
@@ -43,10 +45,8 @@ const chooseFromView = (view: Record<string, any>, board: Record<string, any>): 
     }
     return score + terrains.size * 1.6
   }
-  const bestCorner = (action: Record<string, any>) => {
-    const choices = Array.isArray(action.vertexId) ? action.vertexId as string[] : [action.vertexId as string]
-    return one(action, choices.toSorted((a, b) => cornerValue(b) - cornerValue(a))[0])
-  }
+  const bestCorner = (action: Record<string, any>) =>
+    swap(action, 'vertexId', choices(action, 'vertexId').toSorted((a, b) => cornerValue(b) - cornerValue(a))[0])
 
   const placement = byType('place-settlement')
   if (placement) return bestCorner(placement)
@@ -114,18 +114,20 @@ const BYTES_PER_TOKEN = 3.5
 
 const BUDGET = {
   /** A full re-orientation, which is also the worst single view. */
-  getViewBytes: 5_000,
+  getViewBytes: 6_000,
   /** One decision handed back by play_action. */
-  playBytes: 4_000,
+  playBytes: 4_500,
   /** One wake-up. */
   waitBytes: 4_000,
   /** The island. Paid once per game and never again. */
   boardBytes: 6_000,
   /**
    * The number that actually decides whether a seat compacts, and the only one
-   * that does not move with how long the game happened to run.
+   * that does not move with how long the game happened to run. Headroom is set
+   * against how much a randomised game varies, not against the current figure:
+   * putting the island back on a turn view would land near nine thousand.
    */
-  bytesPerDecision: 3_200,
+  bytesPerDecision: 4_000,
   /** A belt-and-braces ceiling on a whole game. */
   totalBytes: 1_200_000,
 }
@@ -295,6 +297,7 @@ try {
   const over = (label: string, actual: number, budget: number) =>
     assert.ok(actual <= budget, `${label} is ${actual} bytes (~${est(actual)} tokens), over the ${budget} budget`)
 
+  assert.equal(view.status, 'finished', 'the seat must reach the end of a real game without stalling')
   assert.ok(decisions > 20, `the seat should have played a real game, only ${decisions} decisions`)
   assert.ok(byTool.get('get_view')!.calls > 5, 'the re-orientation path has to be exercised')
   over('the worst get_view', worst('get_view'), BUDGET.getViewBytes)

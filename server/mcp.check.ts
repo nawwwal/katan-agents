@@ -55,13 +55,10 @@ const connectBrowser = async (token: string): Promise<BrowserClient> => {
 }
 
 /**
- * legalActions groups a family of placements into one object whose id field
- * holds every choice. Turning that back into one playable action is picking a
- * value, which is exactly what an agent has to do, so the check does it too.
+ * A grouped action is playable as it stands, with its alternatives alongside in
+ * `or`. An agent is free to send the whole thing back, so the check does.
  */
-const pickOne = (action: Record<string, unknown>) => Object.fromEntries(
-  Object.entries(action).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]),
-)
+const asSent = (action: Record<string, unknown>) => action
 
 const latest = (client: BrowserClient) => client.messages.filter((message): message is Extract<ServerRoomMessage, { type: 'snapshot' }> => message.type === 'snapshot').at(-1)!.room
 const waitForRevision = async (clients: BrowserClient[], revision: number) => {
@@ -114,11 +111,11 @@ try {
   assert.equal(agentView.isYourTurn, true)
   assert.ok(agentView.legalActions.length > 0)
   const before = agentView.revision as number
-  const after = await toolJson('play_action', { expectedRevision: before, action: pickOne(agentView.legalActions[0]) })
+  const after = await toolJson('play_action', { expectedRevision: before, action: asSent(agentView.legalActions[0]) })
   assert.equal(after.applied, true)
   assert.equal(after.revision, before + 1)
 
-  const stale = await toolJson('play_action', { expectedRevision: before, action: pickOne(agentView.legalActions[0]) })
+  const stale = await toolJson('play_action', { expectedRevision: before, action: asSent(agentView.legalActions[0]) })
   assert.equal(stale.applied, false, 'a stale move must come back recoverable, not as a dead end')
   assert.equal(stale.revision, before + 1, 'a refused move must still hand back the current revision')
   await waitForRevision(browsers, before + 1)

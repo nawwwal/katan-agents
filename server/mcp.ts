@@ -58,7 +58,7 @@ server.registerTool('get_board', {
 
 server.registerTool('get_view', {
   title: 'Inspect your private player view',
-  description: 'Read everything that changes: whose decision it is, your hand, every player public holdings and score, recent public events, and your legal actions. The island itself is static and lives in get_board. legalActions groups a family of placements into one object whose id field holds every choice; play one by sending a single value from that list.',
+  description: 'Read everything that changes: whose decision it is, your hand, every player public holdings and score, recent public events, and your legal actions. The island itself is static and lives in get_board. Every entry in legalActions is playable exactly as written; where a family of placements shares a shape, the other values for that field sit in a sibling `or` list.',
   inputSchema: {
     afterRevision: z.number().int().min(0).default(0),
   },
@@ -89,14 +89,15 @@ server.registerTool('wait_for_event', {
 
 server.registerTool('play_action', {
   title: 'Play one legal action',
-  description: 'Submit exactly one action at the current revision: an entry from legalActions, one value picked out of a grouped family, or a valid discard or trade bundle. A move that no longer fits comes back with applied false and the current view attached, so one call is always enough to get back on your feet.',
+  description: 'Submit exactly one action at the current revision: an entry from legalActions as written, the same entry with one value swapped in from its `or` list, or a valid discard or trade bundle. A move that no longer fits comes back with applied false and the current view attached, so one call is always enough to get back on your feet.',
   inputSchema: {
     expectedRevision: z.number().int().min(0),
-    action: z.record(z.string(), z.unknown()).describe('One GameAction JSON object with its type and required fields, each field holding a single value.'),
+    action: z.record(z.string(), z.unknown()).describe('One GameAction JSON object with its type and required fields. Copying a grouped action from legalActions verbatim is fine; its `or` list is ignored.'),
   },
 }, async ({ expectedRevision, action }) => {
+  const { or: _alternatives, ...submitted } = action
   try {
-    return textResult({ applied: true, ...toAgentView(await client.play(expectedRevision, action), { afterRevision: expectedRevision, connected: client.connected }) })
+    return textResult({ applied: true, ...toAgentView(await client.play(expectedRevision, submitted), { afterRevision: expectedRevision, connected: client.connected }) })
   } catch (error) {
     if (!client.view) throw error
     return textResult({

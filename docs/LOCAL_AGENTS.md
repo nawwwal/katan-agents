@@ -20,7 +20,7 @@ If the agent has no Katan tools loaded yet, the invitation tells it how to add t
 npx --yes add-mcp@1.14.0 https://katan-agents.vercel.app/api/mcp --name katan --global
 ~~~
 
-The agent then starts a fresh session so the tools load, and from there it drives the seat itself with **join_room**, **read_rules**, **get_playbook**, **get_view**, **play_action**, and **wait_for_event**.
+The agent then starts a fresh session so the tools load, and from there it drives the seat itself with **join_room**, **read_rules**, **get_playbook**, **get_board**, **get_view**, **play_action**, and **wait_for_event**.
 
 ## Faster setup for Codex and Claude
 
@@ -189,10 +189,10 @@ npx --yes add-mcp@1.14.0 https://katan-agents.vercel.app/api/mcp --name katan --
 Once the server is added, paste the universal invite from the lobby, or give a fresh session a prompt of your own:
 
 ~~~text
-Join Katan room ABC234 with join_room, choose your name, read get_playbook and read_rules once, then play the seat with get_view and play_action. Wait on wait_for_event between turns, and never poll get_view in a loop.
+Join Katan room ABC234 with join_room and choose your name. Read get_playbook and read_rules once, and get_board once after the host starts. Then play the seat: get_view to see the table, play_action while actionRequired is true, deciding each next move from the view play_action hands back, and wait_for_event when it is not your decision. Never poll get_view in a loop.
 ~~~
 
-A manual MCP client receives a playerKey from **join_room** and must pass it only to later Katan tools. It should use **wait_for_event** when it cannot stay connected through the live runner. Do not repeatedly poll **get_view**.
+A manual MCP client receives a playerKey from **join_room** and must pass it only to later Katan tools. It is the one thing the server cannot re-issue, so an agent that summarizes or compacts its own context has to carry the room code and the key across. Sleep on **wait_for_event** between turns. Do not poll **get_view**, and do not call **get_board** more than once.
 
 ## Bundled rules and player skill
 
@@ -211,21 +211,47 @@ Clients that do not expose MCP resources can call **read_rules** and **get_playb
 | **join_room** | Claim one manual agent seat and receive its playerKey |
 | **read_rules** | Read the bundled base-game rules |
 | **get_playbook** | Read the autonomous-player skill |
-| **get_view** | Read one seat's redacted state and public events after a revision |
-| **wait_for_event** | Compatibility wait for clients without the live runner |
+| **get_board** | Read the static island once: hexes, corners, road slots, harbors |
+| **get_view** | Read one seat's redacted state, recent public events, and legal actions |
+| **wait_for_event** | Sleep until this seat has a decision, the game ends, or the timeout expires |
 | **play_action** | Submit one legal action at the exact expected revision |
 
-A view contains:
+### What is static and what moves
 
-- room status, seats, and an updated-at cursor;
-- current game revision, phase, actor, and action-required flag;
-- this seat's private resources and development cards;
-- every public event newer than the supplied revision;
-- exact public offers, counters, acceptances, and rejections;
-- current legal actions;
-- optional board geometry for placements, roads, harbors, and robber movement.
+The island is dealt once and never changes, so **get_board** is a one-time read: nineteen hexes with their terrain and number, which hexes each corner touches, which corners each road slot joins, and the harbors. Render coordinates and every adjacency that is the inverse of another are left out. An agent keeps that answer for the whole match.
+
+Everything else moves, so **get_view** carries it:
+
+- room status, this seat's id, and an updated-at cursor;
+- current revision, phase, actor, and action-required flag;
+- the robber's hex;
+- this seat's own hand and development cards;
+- every seat's public holdings, card counts, and score;
+- the bank, the development deck count, and any award, roll, pending trade or discard in play;
+- recent public events, including exact offers, counters, acceptances and rejections;
+- this seat's legal actions.
+
+Events default to the recent tail rather than the whole log, and cap out even when a caller asks for everything, so a stale cursor cannot re-send the match.
 
 Opponent hands remain counts. The model cannot request the full room state, another seat's view, private randomness, or another seat token.
+
+### Reading legalActions
+
+Every entry is playable exactly as written. Where a family of placements shares a shape, the other values for the varying field sit in a sibling `or` list:
+
+~~~json
+{"type":"build-road","edgeId":"e4","or":["e7","e12"]}
+~~~
+
+Send that as it stands to take `e4`, or swap `edgeId` for one of the alternatives. The `or` list is not part of the action, and the server ignores it if an agent leaves it on. The alternatives live in a sibling rather than turning `edgeId` itself into an array because an array field would not be self-describing: `choose-year-of-plenty` legitimately carries a two-resource tuple, and no agent could tell a menu from a tuple by shape. Domestic trades list one worked example per partner; the server accepts any bundle a seat can pay for, so copy an example and change the amounts. A discard lists one default bundle and any bundle of the right size the seat actually holds is legal.
+
+### When an agent loses its place
+
+One **get_view** with no `afterRevision` is a full re-orientation and costs a couple of thousand bytes. A move that no longer fits comes back with `applied` false, the reason, and the live view attached, so an agent reads the revision it was given and plays again instead of retrying into a wall. **wait_for_event** needs nothing but the room code, so a seat that has lost its cursor can still sleep.
+
+### Payload budget
+
+`npm run check:budget` drives one seat through a whole game over the real hosted transport and fails if a view outgrows its budget. It holds the line at bytes per decision, which is the only figure that does not move with how long a game happens to run, and it picks its own moves from nothing but the serialized payloads, so a view that stopped being sufficient stalls the check instead of quietly shrinking.
 
 ## Why WebSockets instead of local webhooks
 

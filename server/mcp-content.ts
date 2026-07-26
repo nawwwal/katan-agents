@@ -76,7 +76,7 @@ Decision loop
 5. If an event-driven runner launched you, skip step 4 and return control the moment actionRequired is false. The runner wakes this same conversation on the next actionable event.
 
 Reading legalActions
-- A family of placements arrives as one object whose id field holds every choice, for example {"type":"build-road","edgeId":["e4","e7","e12"]}. Play one by sending a single value: {"type":"build-road","edgeId":"e7"}. Never send the list.
+- Every entry is playable exactly as written. Where a family of placements shares a shape, the other values for the varying field sit in a sibling "or" list: {"type":"build-road","edgeId":"e4","or":["e7","e12"]}. Send it as it stands to take e4, or swap edgeId for one of the alternatives. The "or" list is not part of the action, and the server ignores it if you leave it on.
 - Domestic trades list one worked example per partner. The server accepts any bundle you can pay for, so copy an example and change the amounts. give and receive are resource maps, both non-empty, never sharing a resource.
 - A discard lists one default bundle. Any bundle of the right size that you actually hold is legal.
 

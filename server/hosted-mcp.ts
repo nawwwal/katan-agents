@@ -22,17 +22,19 @@ const keySchema = z.string().min(32).max(128).describe('Secret seat credential r
 const RECOVERABLE = new Set(['stale_revision', 'not_your_turn', 'illegal_action', 'room_busy', 'room_not_playing'])
 
 /**
- * Legal actions arrive grouped, so a family of placements is one object holding
- * a list of choices. Sending the list straight back is the obvious mistake, and
- * it deserves an answer that names the fix rather than "that move is not legal".
+ * Copying a grouped action back verbatim, `or` list and all, is the natural
+ * thing for an agent to do and no real action has an `or` field. Dropping it is
+ * kinder, and cheaper, than teaching every agent the distinction the hard way.
  */
+const withoutAlternatives = ({ or: _or, ...action }: Record<string, unknown>) => action
+
+/** The one grouped-action mistake left worth naming: sending the field as a list. */
 const listChoiceHint = (action: Record<string, unknown>) => {
   const field = choiceFieldFor(action.type)
   if (field && Array.isArray(action[field])) {
-    return `legalActions groups a family of moves into one object whose ${field} holds every choice. Send one action with a single ${field} value, not the list.`
+    return `Send a single ${field} value. Pick one from the \`or\` list beside the action if you do not want the one it came with.`
   }
-  const listed = Object.entries(action).find(([, value]) => Array.isArray(value) && value.every((entry) => typeof entry === 'string'))
-  return listed ? `Send one action with a single ${listed[0]} value, not the whole list of choices.` : undefined
+  return undefined
 }
 
 const createHostedMcpServer = (bearerPlayerKey?: string) => {
@@ -109,7 +111,7 @@ const createHostedMcpServer = (bearerPlayerKey?: string) => {
 
   server.registerTool('get_view', {
     title: 'Inspect one private player view',
-    description: 'Read everything that changes: whose decision it is, this seat own hand, every player public holdings and score, recent public events, and this seat legal actions. Opponent hidden cards are never returned. The island itself is static and lives in get_board. legalActions groups a family of placements into one object whose id field holds every choice; play one by sending a single value from that list.',
+    description: 'Read everything that changes: whose decision it is, this seat own hand, every player public holdings and score, recent public events, and this seat legal actions. Opponent hidden cards are never returned. The island itself is static and lives in get_board. Every entry in legalActions is playable exactly as written; where a family of placements shares a shape, the other values for that field sit in a sibling `or` list.',
     inputSchema: {
       code: codeSchema,
       playerKey: keySchema.optional(),
@@ -145,23 +147,24 @@ const createHostedMcpServer = (bearerPlayerKey?: string) => {
 
   server.registerTool('play_action', {
     title: 'Play one legal action',
-    description: 'Submit exactly one action at the current expectedRevision: an entry from legalActions, one value picked out of a grouped family, or an exact discard or trade bundle. A move that no longer fits comes back with applied false and the current view attached, so one call is always enough to get back on your feet.',
+    description: 'Submit exactly one action at the current expectedRevision: an entry from legalActions as written, the same entry with one value swapped in from its `or` list, or an exact discard or trade bundle. A move that no longer fits comes back with applied false and the current view attached, so one call is always enough to get back on your feet.',
     inputSchema: {
       code: codeSchema,
       playerKey: keySchema.optional(),
       expectedRevision: z.number().int().min(0),
-      action: z.record(z.string(), z.unknown()).describe('One GameAction JSON object with its type and required fields, each field holding a single value.'),
+      action: z.record(z.string(), z.unknown()).describe('One GameAction JSON object with its type and required fields. Copying a grouped action from legalActions verbatim is fine; its `or` list is ignored.'),
     },
   }, async ({ code, playerKey: explicitKey, expectedRevision, action }) => {
     const resolvedKey = playerKey(explicitKey)
+    const submitted = withoutAlternatives(action)
     try {
-      await playRoomAction(code, resolvedKey, expectedRevision, action)
+      await playRoomAction(code, resolvedKey, expectedRevision, submitted)
     } catch (error) {
       if (!(error instanceof RoomError) || !RECOVERABLE.has(error.code)) throw error
       return textResult({
         applied: false,
         error: { code: error.code, message: error.message },
-        hint: listChoiceHint(action) ?? 'Read revision, actionRequired and legalActions below and submit one action at that revision.',
+        hint: listChoiceHint(submitted) ?? 'Read revision, actionRequired and legalActions below and submit one action at that revision.',
         ...toAgentView(await getRoomView(code, resolvedKey)),
       })
     }

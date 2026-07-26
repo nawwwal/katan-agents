@@ -33,9 +33,14 @@ export const gameOver = (room: RoomView) => room.status === 'finished' || room.g
 /**
  * Action families whose members differ in exactly one field. Fifty-four legal
  * settlement corners are fifty-four near-identical JSON objects; collapsing them
- * into one object with a list of choices says the same thing for a fifth of the
- * bytes. The field name is preserved, so rebuilding a single action is picking
- * one value out of the list.
+ * into one playable action plus a list of the other values for that field says
+ * the same thing for a fifth of the bytes.
+ *
+ * The alternatives go in a sibling `or` rather than turning the field itself
+ * into an array, because an array field is not self-describing: choose-year-of-
+ * plenty legitimately carries a two-resource tuple, and an agent cannot tell a
+ * menu from a tuple by shape. This way the action is always valid exactly as
+ * written, and an agent that ignores `or` still plays a legal move.
  */
 const CHOICE_FIELD: Record<string, string> = {
   'place-settlement': 'vertexId',
@@ -84,7 +89,7 @@ const collapseTradeOffers = (actions: GameAction[]) => {
 
 export const groupLegalActions = (actions: GameAction[]) => {
   const ordered: Record<string, unknown>[] = []
-  const groups = new Map<string, Record<string, unknown>>()
+  const groups = new Map<string, { entry: Record<string, unknown>; field: string; rest: string[] }>()
   for (const action of actions) {
     const field = CHOICE_FIELD[action.type]
     const value = field ? (action as Record<string, unknown>)[field] : undefined
@@ -92,21 +97,18 @@ export const groupLegalActions = (actions: GameAction[]) => {
       ordered.push(action as unknown as Record<string, unknown>)
       continue
     }
-    const rest = Object.entries(action).filter(([key]) => key !== field)
-    const signature = JSON.stringify(rest)
-    let group = groups.get(signature)
+    const signature = JSON.stringify(Object.entries(action).filter(([key]) => key !== field))
+    const group = groups.get(signature)
     if (!group) {
-      group = { ...Object.fromEntries(rest), [field]: [] as string[] }
-      groups.set(signature, group)
-      ordered.push(group)
+      const entry = { ...action } as Record<string, unknown>
+      groups.set(signature, { entry, field, rest: [] })
+      ordered.push(entry)
+      continue
     }
-    ;(group[field] as string[]).push(value)
+    group.rest.push(value)
   }
-  // A family of one is cheaper, and less to explain, as a plain action.
-  for (const group of groups.values()) {
-    for (const [key, value] of Object.entries(group)) {
-      if (Array.isArray(value) && value.length === 1) group[key] = value[0]
-    }
+  for (const { entry, rest } of groups.values()) {
+    if (rest.length) entry.or = rest
   }
   return ordered
 }
