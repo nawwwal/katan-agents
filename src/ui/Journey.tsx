@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { buildAgentRunnerCommand, KATAN_AGENT_GUIDE_URL, resolveRoomServerOrigin } from '../agent/invite'
 import { visibleScore } from '../game/room'
-import type { GameDisplayState, PlayerColor } from '../game/types'
+import type { BoardConstraint, BoardOptions, DesertPlacement, GameDisplayState, HarborLayout, PlayerColor } from '../game/types'
 import type { RoomView } from '../game/room'
 import type { RoomConnectionState } from '../game/useGame'
 import { ChevronLeftIcon, CloseIcon, LargestArmyIcon, LongestRoadIcon, VictoryIcon } from './Icons'
@@ -25,6 +25,12 @@ type JourneyProps = {
   connectionState: RoomConnectionState
   error?: string
   initialRoomCode?: string
+  boardSeed: number
+  boardOptions: BoardOptions
+  boardRelaxed: BoardConstraint[]
+  onShuffleBoard: () => void
+  onBoardSeed: (seed: number) => void
+  onBoardOptions: (options: BoardOptions) => void
   onChoose: (stage: 'create' | 'join') => void
   onCreate: (name: string, seatsTotal: 3 | 4) => Promise<boolean>
   onJoin: (code: string, name: string) => Promise<boolean>
@@ -58,7 +64,10 @@ const copyText = async (value: string) => {
   }
 }
 
-export function Journey({ stage, room, game, viewerPlayerId, busy, connectionState, error, initialRoomCode = '', onChoose, onCreate, onJoin, onBack, onStart, onEnter, onRematch }: JourneyProps) {
+const desertChoices: Array<[DesertPlacement, string]> = [['random', 'Anywhere'], ['center', 'Centre'], ['edge', 'Coast']]
+const harborChoices: Array<[HarborLayout, string]> = [['shuffled', 'Shuffled'], ['fixed', 'Classic']]
+
+export function Journey({ stage, room, game, viewerPlayerId, busy, connectionState, error, initialRoomCode = '', boardSeed, boardOptions, boardRelaxed, onShuffleBoard, onBoardSeed, onBoardOptions, onChoose, onCreate, onJoin, onBack, onStart, onEnter, onRematch }: JourneyProps) {
   const stageRef = useRef<HTMLElement>(null)
   const agentInviteDialogRef = useRef<HTMLDivElement>(null)
   const agentInviteTriggerRef = useRef<HTMLButtonElement>(null)
@@ -68,6 +77,8 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
   const [copied, setCopied] = useState<'code' | 'link' | 'codex' | 'claude'>()
   const [manualCopy, setManualCopy] = useState<'codex' | 'claude'>()
   const [agentInviteOpen, setAgentInviteOpen] = useState(false)
+  const [boardOptionsOpen, setBoardOptionsOpen] = useState(false)
+  const [seedDraft, setSeedDraft] = useState<string>()
 
   useEffect(() => { if (stage !== 'match') stageRef.current?.focus() }, [stage])
   useEffect(() => { if (initialRoomCode) setRoomCode(initialRoomCode) }, [initialRoomCode])
@@ -111,7 +122,6 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
     const standings = [...game.players].sort((left, right) => visibleScore(game, right.id, viewerPlayerId) - visibleScore(game, left.id, viewerPlayerId))
     return <section ref={stageRef} className="journey-layer summary-screen" aria-labelledby="summary-title" tabIndex={-1}>
       <div className="summary-glow" />
-      <div className="celebration" aria-hidden="true">{Array.from({ length: 18 }, (_, index) => <i key={index} />)}</div>
       <div className="summary-card">
         <span className="title-kicker">The final bell has rung</span>
         <div className={`summary-crest ${winner?.color ?? 'amber'}`}><VictoryIcon /></div>
@@ -159,7 +169,14 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
       if (creating) await onCreate(name, seatsTotal)
       else await onJoin(roomCode, name)
     }
-    return <section ref={stageRef} className="journey-layer configure-screen" aria-labelledby="configure-title" tabIndex={-1}>
+    const commitSeed = (value: string) => {
+      const digits = value.replace(/\D/g, '').slice(0, 10)
+      setSeedDraft(digits)
+      const parsed = Number(digits)
+      if (digits && Number.isSafeInteger(parsed) && parsed <= 0xff_ff_ff_ff) onBoardSeed(parsed)
+    }
+    const setOption = <K extends keyof BoardOptions>(key: K, value: BoardOptions[K]) => onBoardOptions({ ...boardOptions, [key]: value })
+    return <section ref={stageRef} className={`journey-layer configure-screen${creating ? ' board-stage' : ''}`} aria-labelledby="configure-title" tabIndex={-1}>
       <form className="configuration-card room-form" onSubmit={submit}>
         <header>
           <button type="button" className="journey-back" onClick={onBack} aria-label="Back to title"><ChevronLeftIcon /></button>
@@ -169,10 +186,34 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
         <div className="room-form-body">
           <label>Player name<input autoFocus value={name} maxLength={22} autoComplete="nickname" placeholder="How the table will know you" onChange={(event) => setName(event.target.value)} /></label>
           {!creating ? <label>Room code<input className="room-code-input" value={roomCode} maxLength={6} autoCapitalize="characters" autoComplete="off" spellCheck={false} placeholder="ABC234" onChange={(event) => setRoomCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} /></label> : null}
-          <div className="room-form-note"><strong>{creating ? `${seatsTotal}-seat table` : 'One shared island'}</strong><span>{creating ? 'You will be the host. Humans get a browser link; local Codex and Claude players get one command that installs and launches them.' : 'Your cards stay private to this seat. The server sends every player only the state they are allowed to see.'}</span></div>
+          {/* The island fills the frame behind this card and changes when you press
+              Shuffle, so it does not need a caption explaining that it is the board. */}
+          {creating ? <section className="board-panel" aria-labelledby="board-panel-title">
+            <header>
+              <span id="board-panel-title">Your island</span>
+              <div className="board-panel-actions">
+                <button type="button" className="board-shuffle" onClick={onShuffleBoard}>Shuffle</button>
+                <button type="button" aria-expanded={boardOptionsOpen} onClick={() => setBoardOptionsOpen((open) => !open)}>{boardOptionsOpen ? 'Hide options' : 'Options'}</button>
+              </div>
+            </header>
+            <label className="board-seed"><span>Seed</span><input inputMode="numeric" autoComplete="off" spellCheck={false} value={seedDraft ?? String(boardSeed)} onChange={(event) => commitSeed(event.target.value)} onBlur={() => setSeedDraft(undefined)} /></label>
+            {boardOptionsOpen ? <div className="board-options">
+              <div className="board-option"><span id="desert-label">Desert</span><div className="seat-count" role="group" aria-labelledby="desert-label">
+                {desertChoices.map(([value, label]) => <button key={value} type="button" aria-pressed={boardOptions.desert === value} className={boardOptions.desert === value ? 'active' : ''} onClick={() => setOption('desert', value)}>{label}</button>)}
+              </div></div>
+              <div className="board-option"><span id="harbor-label">Harbours</span><div className="seat-count" role="group" aria-labelledby="harbor-label">
+                {harborChoices.map(([value, label]) => <button key={value} type="button" aria-pressed={boardOptions.harbors === value} className={boardOptions.harbors === value ? 'active' : ''} onClick={() => setOption('harbors', value)}>{label}</button>)}
+              </div></div>
+              <label className="board-toggle"><input type="checkbox" checked={boardOptions.balancedPips} onChange={(event) => setOption('balancedPips', event.target.checked)} />Balance the pips, so no corner of the island is starved or overloaded</label>
+              {/* Reassurance for a Catan obsessive, so it lives behind Options. */}
+              <p className="board-rules">Always enforced: no two identical terrains touch, no two identical numbers touch, 6 and 8 never touch, and 2 and 12 never touch.</p>
+            </div> : null}
+            {boardRelaxed.includes('balancedPips') ? <p className="board-warning" role="status">This island could not be pip-balanced, so that setting was dropped for it. Shuffle for another.</p> : null}
+          </section> : null}
+          {!creating ? <div className="room-form-note"><strong>One shared island</strong><span>Your cards stay private to this seat. The server sends every player only the state they are allowed to see.</span></div> : null}
           {error ? <p className="journey-error" role="alert">{error}</p> : null}
         </div>
-        <footer><p>{creating ? 'You can start once every human or agent seat has joined.' : 'Codes are case-insensitive and never contain confusing characters like O, I, 0, or 1.'}</p><button className="journey-primary" disabled={!valid || busy}>{busy ? 'Opening the table…' : creating ? 'Create room' : 'Join room'}</button></footer>
+        <footer>{creating ? <span /> : <p>Codes are case-insensitive and never contain confusing characters like O, I, 0, or 1.</p>}<button className="journey-primary" disabled={!valid || busy}>{busy ? 'Opening the table…' : creating ? 'Create room' : 'Join room'}</button></footer>
       </form>
     </section>
   }
@@ -203,7 +244,7 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
           <span className={`connection-pill ${connectionState}`}><i />{connectionState === 'connected' ? 'Live' : 'Connecting'}</span>
         </header>
         <div className="room-invite">
-          <div><span>Room code</span><strong data-testid="room-code">{room.code}</strong></div>
+          <div><span>Room code</span><strong data-testid="room-code">{room.code}</strong>{room.boardSeed === undefined ? null : <em className="island-seed">Island seed {room.boardSeed}</em>}</div>
           <div className="invite-actions"><button onClick={() => doCopy('code', room.code)}>{copied === 'code' ? 'Copied' : 'Copy code'}</button><button onClick={() => doCopy('link', shareUrl)}>{copied === 'link' ? 'Copied' : 'Copy human link'}</button><button ref={agentInviteTriggerRef} className="agent-invite-trigger" onClick={openAgentInvite}>Invite an agent</button></div>
         </div>
         <div className="seat-grid lobby-seats">
