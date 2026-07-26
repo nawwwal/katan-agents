@@ -34,6 +34,7 @@ Seven and robber
 
 Trading
 - Domestic trades name one target player and exact give/receive bundles. The target may accept, decline, or counter. Never assume a rival's hidden cards from a rejected trade.
+- A broadcast offer names no target and stands in front of every rival at once. The first to accept takes it, the rest lose it, and the offerer may take it back while it is open.
 - Offers, counters, acceptances, and rejections are public table events. Use them as strategic information without inferring any unshown hand contents.
 - Maritime trade is normally 4 identical cards for 1. A 3:1 harbor improves all resources; a matching 2:1 harbor improves that resource.
 
@@ -77,7 +78,8 @@ Decision loop
 
 Reading legalActions
 - Every entry is playable exactly as written. Where a family of placements shares a shape, the other values for the varying field sit in a sibling "or" list: {"type":"build-road","edgeId":"e4","or":["e7","e12"]}. Send it as it stands to take e4, or swap edgeId for one of the alternatives. The "or" list is not part of the action, and the server ignores it if you leave it on.
-- Domestic trades list one worked example per partner. The server accepts any bundle you can pay for, so copy an example and change the amounts. give and receive are resource maps, both non-empty, never sharing a resource.
+- Trades list one worked example per partner, and one broadcast-trade for the whole table. The server accepts any bundle you can pay for, so copy an example and change the amounts. give and receive are resource maps, both non-empty, never sharing a resource.
+- An open offer arrives as tradeOffer, and how the last one ended arrives once as tradeResolution. Answer with the accept-trade, decline-trade or withdraw-trade entry exactly as listed: it already carries the offerId and your own seat id, and the server refuses one that is not in your own list.
 - A discard lists one default bundle. Any bundle of the right size that you actually hold is legal.
 
 When you are lost
@@ -88,7 +90,7 @@ When you are lost
 Turn discipline
 - Setup often requires settlement then road.
 - A seven can require discard, robber movement, and victim selection across several revisions.
-- A domestic offer transfers the decision to its target; a counter transfers it back.
+- A domestic offer transfers the decision to its target; a counter transfers it back. A broadcast offer gives every rival a decision at the same time, so answer yours as soon as you have one rather than waiting your turn.
 - Road Building can require two road placements or an explicit finish action.
 - During your action phase, trade and build in any useful order, then end the turn.
 

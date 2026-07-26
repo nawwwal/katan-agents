@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
 import { Redis } from 'ioredis'
 import { applyAction, createGame, currentActorId, getPlayerView } from '../src/game/engine.js'
-import { parsePlayerAction } from '../src/game/room.js'
+import { parsePlayerAction, seatsWithColor } from '../src/game/room.js'
 import { parseBoardOptions, parseBoardSeed } from '../src/game/board.js'
 import type { BoardOptions, Controller, GameState } from '../src/game/types.js'
 import type { RoomCredentials, RoomSeat, RoomStatus, RoomView } from '../src/game/room.js'
@@ -168,18 +168,21 @@ const mutateRoom = async <T>(code: string, update: (room: StoredRoom) => T) => {
 const roomView = (room: StoredRoom, token: string): RoomView => {
   const viewer = seatForToken(room, token)
   if (!viewer) throw new RoomError('invalid_seat_token', 'This seat is no longer yours. Rejoin with the room code.', 403)
+  const game = room.game ? getPlayerView(room.game, viewer.id) : undefined
   return {
     v: 1,
     code: room.code,
     status: room.status,
     seatsTotal: room.seatsTotal,
-    seats: room.seats.map(({ tokenHash: _tokenHash, joinIdHash: _joinIdHash, ...seat }) => seat),
+    // The colour rides on the seat so the lobby and the board can never disagree
+    // about who is who; while a game runs the running game is the source.
+    seats: seatsWithColor(room.seats.map(({ tokenHash: _tokenHash, joinIdHash: _joinIdHash, ...seat }) => seat), game),
     viewerPlayerId: viewer.id,
     isHost: viewer.isHost,
     updatedAt: room.updatedAt,
     boardSeed: room.boardSeed,
     boardOptions: parseBoardOptions(room.boardOptions),
-    game: room.game ? getPlayerView(room.game, viewer.id) : undefined,
+    game,
   }
 }
 
@@ -334,8 +337,17 @@ export const playRoomAction = async (code: string, token: string, expectedRevisi
   if (!viewer) throw new RoomError('invalid_seat_token', 'This seat is no longer yours. Rejoin with the room code.', 403)
   if (room.status !== 'playing' || !room.game) throw new RoomError('room_not_playing', 'That game is not running.', 409)
   if (!Number.isSafeInteger(expectedRevision) || expectedRevision !== room.game.revision) throw new RoomError('stale_revision', 'Someone moved first. Your view has caught up, so try again.', 409)
-  if (currentActorId(room.game) !== viewer.id) throw new RoomError('not_your_turn', 'It is not your turn yet.', 409)
-  const action = parsePlayerAction(getPlayerView(room.game, viewer.id), input)
+  const view = getPlayerView(room.game, viewer.id)
+  // Holding the table is not the same as being the active player. A broadcast
+  // offer is open to every rival at once, and its author can take it back at any
+  // time, so the gate is "does this seat have a legal move". The one exception is
+  // a finished game, where every seat carries `restart` and only the seat on the
+  // clock should be able to deal the next one.
+  const blocked = room.game.phase === 'game-over'
+    ? currentActorId(room.game) !== viewer.id
+    : view.legalActions.length === 0
+  if (blocked) throw new RoomError('not_your_turn', 'It is not your turn yet.', 409)
+  const action = parsePlayerAction(view, input)
   if (!action) throw new RoomError('illegal_action', 'That move is not legal here.', 422)
   const result = applyAction(room.game, action, secureRandom)
   if (result.ok === false) throw new RoomError('illegal_action', result.message, 422)

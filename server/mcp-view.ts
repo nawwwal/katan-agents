@@ -1,5 +1,5 @@
 import type { RoomView } from '../src/game/room.js'
-import type { Board, GameAction, GameEvent } from '../src/game/types.js'
+import type { Board, GameAction, GameEvent, TradeOffer, TradeResolution } from '../src/game/types.js'
 
 type AgentViewOptions = {
   afterRevision?: number
@@ -55,16 +55,17 @@ const CHOICE_FIELD: Record<string, string> = {
 
 export const choiceFieldFor = (type: unknown) => typeof type === 'string' ? CHOICE_FIELD[type] : undefined
 
-const TRADE_TYPES = new Set(['offer-trade', 'counter-trade'])
+const TRADE_TYPES = new Set(['offer-trade', 'broadcast-trade', 'counter-trade'])
 
-export const TRADE_TEMPLATE = 'One worked example per partner is listed above. offer-trade and counter-trade take any bundle you can pay for: give and receive are resource maps, both non-empty, with no resource on both sides. Copy the example and change the amounts.'
+export const TRADE_TEMPLATE = 'One worked example per partner is listed above, and one for the whole table. offer-trade, broadcast-trade and counter-trade take any bundle you can pay for: give and receive are resource maps, both non-empty, with no resource on both sides. Copy the example and change the amounts. A broadcast-trade names no partner and goes to every rival at once; the first to accept takes it.'
 
 /**
- * The engine enumerates every one-card-for-one-card offer to every opponent,
- * which is forty near-identical objects and three quarters of an action-phase
- * view. It is also a misleading menu, because the server accepts any bundle a
- * seat can pay for, not just the singles it happens to list. One real example
- * per partner plus the rule says strictly more for a twentieth of the bytes.
+ * The engine enumerates every one-card-for-one-card offer to every opponent, and
+ * again to the whole table, which is sixty near-identical objects and most of an
+ * action-phase view. It is also a misleading menu, because the server accepts any
+ * bundle a seat can pay for, not just the singles it happens to list. One real
+ * example per partner plus the rule says strictly more for a twentieth of the
+ * bytes. A broadcast has no partner, so the whole family collapses to one.
  */
 const collapseTradeOffers = (actions: GameAction[]) => {
   const kept: GameAction[] = []
@@ -75,8 +76,8 @@ const collapseTradeOffers = (actions: GameAction[]) => {
       kept.push(action)
       continue
     }
-    const { trade } = action as Extract<GameAction, { type: 'offer-trade' }>
-    const key = `${action.type}:${trade.toPlayerId}`
+    const { trade } = action as { trade: { toPlayerId?: string } }
+    const key = `${action.type}:${trade.toPlayerId ?? 'table'}`
     if (seen.has(key)) {
       collapsed += 1
       continue
@@ -115,6 +116,36 @@ export const groupLegalActions = (actions: GameAction[]) => {
 
 /** Drops the event id. Nothing an agent does needs it; the revision orders the log. */
 const compactEvent = ({ id: _id, ...event }: GameEvent) => event
+
+/**
+ * The offer on the table. `pendingTrade` says the same thing in the older
+ * one-target shape and would be pure duplication beside this, so only this goes
+ * out. `openedAtRevision` goes too: the events say when, and an answer names the
+ * offer by id.
+ */
+const compactOffer = (offer: TradeOffer) => ({
+  id: offer.id,
+  from: offer.fromPlayerId,
+  to: listed(offer.toPlayerIds),
+  give: offer.give,
+  receive: offer.receive,
+  ...(offer.declinedBy.length ? { declined: listed(offer.declinedBy) } : {}),
+})
+
+/**
+ * How the last offer ended, sent only while it is still news to this caller.
+ * A resolution survives on the table until the next offer opens, so sending it
+ * unconditionally would tax every view for the rest of the turn.
+ */
+const compactResolution = (resolution: TradeResolution) => ({
+  id: resolution.id,
+  outcome: resolution.outcome,
+  from: resolution.fromPlayerId,
+  give: resolution.give,
+  receive: resolution.receive,
+  ...(resolution.acceptedBy ? { acceptedBy: resolution.acceptedBy } : {}),
+  ...(resolution.declinedBy.length ? { declined: listed(resolution.declinedBy) } : {}),
+})
 
 const listed = (values: string[]) => values.join(' ')
 const when = <T>(include: boolean, value: T) => include ? value : undefined
@@ -217,7 +248,8 @@ export const toAgentView = (room: RoomView, options: AgentViewOptions = {}) => {
     ...when(state.lastRoll !== undefined, { lastRoll: state.lastRoll }),
     ...when(state.longestRoad !== undefined, { longestRoad: state.longestRoad }),
     ...when(state.largestArmy !== undefined, { largestArmy: state.largestArmy }),
-    ...when(state.pendingTrade !== undefined, { pendingTrade: state.pendingTrade }),
+    ...(state.tradeOffer ? { tradeOffer: compactOffer(state.tradeOffer) } : {}),
+    ...(state.tradeResolution && state.tradeResolution.revision > window ? { tradeResolution: compactResolution(state.tradeResolution) } : {}),
     ...when(state.pendingRoads > 0, { pendingRoads: state.pendingRoads }),
     ...when(state.playedDevelopmentThisTurn, { playedDevelopmentThisTurn: true }),
     ...when(discarding, { discardRemaining: state.discardRemaining, discardQueue: state.discardQueue }),
