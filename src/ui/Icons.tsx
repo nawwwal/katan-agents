@@ -135,6 +135,20 @@ export const DiceIcon = (props: IconProps) => <Base {...props}>
   </g>
 </Base>
 
+const DIE_PIPS: Record<number, Array<[number, number]>> = {
+  1: [[12, 12]],
+  2: [[7.4, 7.4], [16.6, 16.6]],
+  3: [[7.4, 7.4], [12, 12], [16.6, 16.6]],
+  4: [[7.4, 7.4], [16.6, 7.4], [7.4, 16.6], [16.6, 16.6]],
+  5: [[7.4, 7.4], [16.6, 7.4], [12, 12], [7.4, 16.6], [16.6, 16.6]],
+  6: [[7.4, 7], [16.6, 7], [7.4, 12], [16.6, 12], [7.4, 17], [16.6, 17]],
+}
+
+/** A real die face. Pips read instantly at 30px where a Cinzel numeral turns to mush. */
+export const DiePips = ({ value, ...props }: { value: number } & IconProps) => <Base {...props}>
+  <g fill="currentColor">{(DIE_PIPS[value] ?? DIE_PIPS[1]).map(([x, y]) => <circle key={`${x}-${y}`} cx={x} cy={y} r="2.6" />)}</g>
+</Base>
+
 export const TradeIcon = (props: IconProps) => <Base {...props}>
   <path d="M3 8.6h11.2V5.1a.9.9 0 0 1 1.5-.7l4.9 4.1a.9.9 0 0 1 0 1.4l-4.9 4.1a.9.9 0 0 1-1.5-.7v-3.5H3a.9.9 0 0 1 0-1.2Z" fill="currentColor" />
   <path d="M21 15.4H9.8v-3.5a.9.9 0 0 0-1.5-.7l-4.9 4.1a.9.9 0 0 0 0 1.4l4.9 4.1a.9.9 0 0 0 1.5-.7v-3.5H21a.9.9 0 0 0 0-1.2Z" fill="currentColor" opacity=".72" />

@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { currentActorId } from '../game/engine'
 import { visibleScore } from '../game/room'
-import type { AgentStatus, GameAction, GameDisplayState, Resources } from '../game/types'
+import type { AgentStatus, GameAction, GameDisplayState, Resource, Resources } from '../game/types'
 import type { GamePresentation } from '../game/useGame'
 import { RESOURCES, emptyResources } from '../game/types'
 import type { PlacementMode } from '../scene/GameScene'
 import {
-  BUILD_ICON, BookIcon, CardsIcon, DiceIcon, FlagIcon, HandIcon, HomeIcon, LargestArmyIcon, LongestRoadIcon,
-  ResourceGlyph, RobberIcon, ScrollIcon, SoundOffIcon, SoundOnIcon, SpinnerIcon, TradeIcon, VictoryIcon,
+  BUILD_ICON, BookIcon, CardsIcon, DiceIcon, DiePips, FlagIcon, HandIcon, HomeIcon, KnightIcon,
+  LargestArmyIcon, LongestRoadIcon, ResourceGlyph, RobberIcon, ScrollIcon, SoundOffIcon, SoundOnIcon, TradeIcon,
 } from './Icons'
 import { BUILD_COSTS, RESOURCE_IMAGE, RESOURCE_LABEL } from './gameVisuals'
+import { uiSound, useControlSound } from './uiSound'
 
 export type DialogName = 'trade' | 'cards' | 'rules' | 'history' | null
 
@@ -32,6 +33,9 @@ type HudProps = {
   onExitMatch: () => void
 }
 
+/** Build kinds whose cost can be previewed against the hand. */
+type CostPreview = keyof typeof BUILD_COSTS | null
+
 const phaseCopy: Record<GameDisplayState['phase'], string> = {
   'setup-settlement': 'Place settlement',
   'setup-road': 'Place adjacent road',
@@ -47,18 +51,45 @@ const phaseCopy: Record<GameDisplayState['phase'], string> = {
   'game-over': 'Match complete',
 }
 
+/**
+ * The coaching line the old `ContextCoach` panel carried. It now lives inside the
+ * turn panel's fixed footprint, which is what deletes the five `:has()` collision
+ * rules that only existed to keep two stacked panels apart.
+ */
+const coachCopy: Partial<Record<GameDisplayState['phase'], string>> = {
+  'setup-settlement': 'Pick a corner touching productive numbers and a mix of resources.',
+  'setup-road': 'Your road must touch the settlement you just placed.',
+  discard: 'Hands above seven discard half before the robber moves.',
+  'move-robber': 'The robber stops production and may let you steal from a neighbour.',
+  'choose-victim': 'You steal one random resource without seeing their hand.',
+  'road-building': 'Place up to two free roads, or finish early.',
+  'year-of-plenty': 'Take any two cards the bank can still supply.',
+  monopoly: 'Name one resource; every rival gives you all of that type.',
+  'trade-response': 'Accept, decline, or send a counteroffer without revealing your hand.',
+}
+
 const countResources = (game: GameDisplayState, playerId: string) => {
   const player = game.players.find((candidate) => candidate.id === playerId)
   return player?.resourceCount ?? 0
 }
 
-function TurnPanel({ game, thinkingPlayerId, onAction, placementMode }: Pick<HudProps, 'game' | 'thinkingPlayerId' | 'onAction' | 'placementMode'>) {
+const agentStatusCopy: Record<AgentStatus['state'], string> = {
+  idle: 'Waiting',
+  thinking: 'Turn pending',
+}
+
+/* ------------------------------------------------------------ turn panel -- */
+
+type TurnPanelProps = Pick<HudProps, 'game' | 'humanId' | 'thinkingPlayerId' | 'agentStatuses' | 'onAction' | 'placementMode' | 'onDialog' | 'onExitMatch'>
+
+function TurnPanel({ game, humanId, thinkingPlayerId, agentStatuses, onAction, placementMode, onDialog, onExitMatch }: TurnPanelProps) {
   const panelRef = useRef<HTMLElement>(null)
   useEffect(() => { panelRef.current?.focus() }, [])
   const actorId = currentActorId(game)
   const actor = game.players.find((player) => player.id === actorId)
-  const actorThinking = thinkingPlayerId === actorId
-  const total = game.lastRoll ? game.lastRoll[0] + game.lastRoll[1] : undefined
+  const yours = actorId === humanId
+  const waiting = !yours
+  const agentStage = actorId ? agentStatuses[actorId]?.state : undefined
   const placementType = placementMode === 'road' ? 'build-road' : placementMode === 'settlement' ? 'build-settlement' : placementMode === 'city' ? 'build-city' : undefined
   const suggested = game.legalActions.find((action) => ['place-settlement', 'place-road', 'move-robber'].includes(action.type) || (game.phase === 'road-building' && action.type === 'build-road') || action.type === placementType)
   const suggestedLabel = suggested?.type === 'place-settlement'
@@ -70,38 +101,261 @@ function TurnPanel({ game, thinkingPlayerId, onAction, placementMode }: Pick<Hud
         : suggested?.type === 'build-city'
           ? 'Upgrade suggested city'
           : 'Move robber to suggested hex'
-  return <section ref={panelRef} className="turn-panel wood-panel" aria-live="polite" tabIndex={-1}>
-    <div className={`turn-owner ${actor?.color ?? 'ivory'}`}>
+  // One fixed footprint: the phase line and the detail line are always both present,
+  // so nothing below the panel ever moves as the turn changes.
+  const detail = waiting
+    ? thinkingPlayerId === actorId && agentStage === 'thinking' ? 'Choosing a move' : `${actor?.name ?? 'A player'} is acting`
+    : coachCopy[game.phase] ?? 'Your move.'
+  return <section ref={panelRef} className={`turn-panel ${waiting ? 'waiting' : ''}`} aria-live="polite" tabIndex={-1}>
+    <div className="turn-owner">
       <span className={`player-crest ${actor?.color ?? 'ivory'}`}>{actor?.name.slice(0, 1)}</span>
-      <div><small>{actorThinking ? 'Agent turn' : 'Current turn'}</small><strong>{actor?.name}</strong><span>{phaseCopy[game.phase]}</span></div>
+      <div>
+        <small>{waiting ? 'Their turn' : 'Your turn'}</small>
+        <strong>{actor?.name}</strong>
+        <span className="turn-phase">{phaseCopy[game.phase]}</span>
+      </div>
+      <div className="turn-dice" aria-label={game.lastRoll ? `Last roll ${game.lastRoll[0] + game.lastRoll[1]}` : 'No roll yet'}>
+        {game.lastRoll
+          ? game.lastRoll.map((face, index) => <span className="die" key={index}><DiePips value={face} /></span>)
+          : <><span className="die empty" aria-hidden="true" /><span className="die empty" aria-hidden="true" /></>}
+      </div>
     </div>
-    {game.lastRoll ? <><div className="divider" /><div className="dice-result" aria-label={`Last roll ${total}`}><span className="dice-face">{game.lastRoll[0]}</span><span className="dice-face">{game.lastRoll[1]}</span><strong className="roll-total">{total}</strong></div></> : null}
-    {suggested ? <button className="setup-suggest" onClick={() => onAction(suggested)}>{suggestedLabel}</button> : null}
+    <p className="turn-detail">{detail}</p>
+    <div className="turn-marks">
+      <button onClick={() => onDialog('history')} aria-label="Open match history"><ScrollIcon /><span>Log</span></button>
+      <button onClick={() => onDialog('rules')} aria-label="Open the rules"><BookIcon /><span>Rules</span></button>
+      <button onClick={onExitMatch} aria-label="Leave this match and return to the menu"><HomeIcon /><span>Leave</span></button>
+    </div>
+    {/* Transient, and last, so the marks row above it never moves. */}
+    <div className="turn-suggest">
+      {suggested ? <button className="setup-suggest" data-weight="deep" onClick={() => onAction(suggested)}>{suggestedLabel}</button> : null}
+    </div>
+    <span className="hairline-run" aria-hidden="true" />
   </section>
 }
 
-const agentStatusCopy: Record<AgentStatus['state'], string> = {
-  idle: 'Waiting',
-  thinking: 'Turn pending',
-}
+/* ------------------------------------------------------------ player rail -- */
 
-function PlayerRail({ game, humanId, agentStatuses }: Pick<HudProps, 'game' | 'humanId' | 'agentStatuses'>) {
+function PlayerRail({ game, humanId, agentStatuses, muted, onMuted }: Pick<HudProps, 'game' | 'humanId' | 'agentStatuses' | 'muted' | 'onMuted'>) {
   const activeId = currentActorId(game)
   return <aside className="player-rail" aria-label="Players">
-    {game.players.map((player, index) => <article key={player.id} className={`player-row ${player.color} ${activeId === player.id ? 'active' : ''}`} style={{ '--row': index } as React.CSSProperties}>
-      <span className="rank">{index + 1}</span>
-      <span className={`player-crest ${player.color}`}>{player.name.slice(0, 1)}</span>
-      <div className="player-identity"><strong>{player.name}</strong><small title={player.controller === 'agent' ? agentStatuses[player.id]?.detail : undefined}>{player.controller === 'agent' ? `${agentStatusCopy[agentStatuses[player.id]?.state ?? 'idle']}${agentStatuses[player.id]?.detail ? ` · ${agentStatuses[player.id]?.detail}` : ''}` : 'Human'}</small></div>
-      <div className="player-stats" aria-label={`${visibleScore(game, player.id, humanId)} victory points, ${countResources(game, player.id)} resource cards, ${player.developmentCount} development cards, ${player.playedKnights} knights played`}>
-        <span className="victory-stat" title="Victory points"><VictoryIcon />{visibleScore(game, player.id, humanId)}</span>
-        <span title="Resource cards"><HandIcon />{countResources(game, player.id)}</span>
-        <span title="Development cards"><CardsIcon />{player.developmentCount}</span>
-        {game.longestRoad?.playerId === player.id ? <span className="award" title="Longest road"><LongestRoadIcon /></span> : null}
-        {game.largestArmy?.playerId === player.id ? <span className="award" title="Largest army"><LargestArmyIcon /></span> : null}
-      </div>
-    </article>)}
+    <div className="rail-marks">
+      <button className={muted ? '' : 'active'} onClick={() => onMuted(!muted)} aria-label={muted ? 'Turn sound on' : 'Mute sound'} aria-pressed={!muted}>{muted ? <SoundOffIcon /> : <SoundOnIcon />}</button>
+    </div>
+    {game.players.map((player, index) => {
+      const road = game.longestRoad?.playerId === player.id
+      const army = game.largestArmy?.playerId === player.id
+      const status = player.controller === 'agent'
+        ? `${agentStatusCopy[agentStatuses[player.id]?.state ?? 'idle']}${agentStatuses[player.id]?.detail ? ` · ${agentStatuses[player.id]?.detail}` : ''}`
+        : 'Human'
+      return <article key={player.id} className={`player-row ${player.color} ${activeId === player.id ? 'active' : ''}`} style={{ '--row': index } as React.CSSProperties}>
+        <span className="player-bar" aria-hidden="true" />
+        <span className={`player-crest ${player.color}`}>{player.name.slice(0, 1)}</span>
+        <div className="player-identity"><strong>{player.name}</strong><small title={player.controller === 'agent' ? agentStatuses[player.id]?.detail : undefined}>{status}</small></div>
+        {/* A reserved slot, always present and empty when unearned, so winning an award never reflows a row. */}
+        <div className="player-awards" aria-hidden="true">
+          <span className={road ? 'earned' : ''}>{road ? <LongestRoadIcon /> : null}</span>
+          <span className={army ? 'earned' : ''}>{army ? <LargestArmyIcon /> : null}</span>
+        </div>
+        <div className="player-counts tnum" aria-hidden="true">
+          <span title="Resource cards"><HandIcon />{countResources(game, player.id)}</span>
+          <span title="Development cards"><CardsIcon />{player.developmentCount}</span>
+          <span title="Knights played"><KnightIcon />{player.playedKnights}</span>
+        </div>
+        <strong className="player-vp tnum" aria-label={`${player.name}: ${visibleScore(game, player.id, humanId)} victory points, ${countResources(game, player.id)} resource cards, ${player.developmentCount} development cards, ${player.playedKnights} knights played${road ? ', longest road' : ''}${army ? ', largest army' : ''}`}>{visibleScore(game, player.id, humanId)}</strong>
+      </article>
+    })}
   </aside>
 }
+
+/* ----------------------------------------------------------------- hand -- */
+
+type HandCard = { key: string; resource: Resource; index: number; stacked: number }
+
+/**
+ * Turns a resource count into card objects. Three lumber is three cards, not a chip
+ * reading "3". Above the threshold a resource collapses into one stack carrying a
+ * numeral, which also keeps the rendered node count inside the animation budget.
+ */
+const buildHand = (resources: Resources) => {
+  const total = RESOURCES.reduce((sum, resource) => sum + resources[resource], 0)
+  const threshold = total <= 12 ? 4 : total <= 18 ? 3 : total <= 26 ? 2 : 1
+  const cards: HandCard[] = []
+  for (const resource of RESOURCES) {
+    const count = resources[resource]
+    if (!count) continue
+    if (count > threshold) cards.push({ key: `${resource}-stack`, resource, index: 0, stacked: count })
+    else for (let index = 0; index < count; index += 1) cards.push({ key: `${resource}-${index}`, resource, index, stacked: 0 })
+  }
+  return cards
+}
+
+/** Flags a card for one beat when its count moves, so gains and spends register peripherally. */
+const useCountPulse = (counts: Record<string, number>) => {
+  const previous = useRef(counts)
+  const [pulses, setPulses] = useState<Record<string, 'gained' | 'spent'>>({})
+  const signature = Object.values(counts).join(',')
+  useEffect(() => {
+    const next: Record<string, 'gained' | 'spent'> = {}
+    for (const [key, value] of Object.entries(counts)) {
+      const before = previous.current[key]
+      if (before === undefined || before === value) continue
+      next[key] = value > before ? 'gained' : 'spent'
+    }
+    previous.current = counts
+    if (!Object.keys(next).length) return
+    setPulses(next)
+    const timeout = window.setTimeout(() => setPulses({}), 560)
+    return () => window.clearTimeout(timeout)
+  }, [signature])
+  return pulses
+}
+
+/**
+ * Roving tabindex: the whole hand is one tab stop, arrow keys walk the cards. That
+ * replaces six sequential stops and keeps an overlapped card reachable without
+ * relying on its visible strip.
+ */
+const useRovingFocus = (length: number) => {
+  const [active, setActive] = useState(0)
+  const listRef = useRef<HTMLDivElement>(null)
+  const index = length ? Math.min(active, length - 1) : 0
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : event.key === 'Home' ? -length : event.key === 'End' ? length : 0
+    if (!step || !length) return
+    event.preventDefault()
+    const next = Math.max(0, Math.min(length - 1, index + step))
+    setActive(next)
+    listRef.current?.querySelectorAll<HTMLElement>('[data-roving]')[next]?.focus()
+  }
+  return { listRef, index, setActive, onKeyDown }
+}
+
+type HandProps = Pick<HudProps, 'game' | 'humanId'> & { costPreview: CostPreview; yourTurn: boolean }
+
+function ResourceHand({ game, humanId, costPreview, yourTurn }: HandProps) {
+  const player = game.players.find((candidate) => candidate.id === humanId)
+  const held = player?.resources ?? emptyResources()
+  const counts = Object.fromEntries(RESOURCES.map((resource) => [resource, held[resource]]))
+  const pulses = useCountPulse(counts)
+  const cards = buildHand(held)
+  const roving = useRovingFocus(cards.length)
+  if (!player) return null
+  const cost = costPreview ? BUILD_COSTS[costPreview] : undefined
+  // How many cards of each resource the previewed build would spend, so the hand
+  // itself answers "can I afford this" and the cost pip row can be deleted.
+  const spendBudget: Partial<Record<Resource, number>> = cost ? { ...cost } : {}
+  const spent = new Set<string>()
+  if (cost) for (const card of cards) {
+    const remaining = spendBudget[card.resource] ?? 0
+    if (remaining <= 0) continue
+    spendBudget[card.resource] = remaining - 1
+    spent.add(card.key)
+  }
+  const empties = RESOURCES.filter((resource) => !held[resource])
+  return <div className={`resource-hand ${yourTurn ? '' : 'recessed'} ${cost ? 'previewing' : ''}`} role="group" aria-label="Your resource cards">
+    <div className="hand-fan" ref={roving.listRef} onKeyDown={roving.onKeyDown} style={{ '--n': cards.length } as React.CSSProperties}>
+      {cards.map((card, index) => <button
+        key={card.key}
+        data-roving=""
+        type="button"
+        tabIndex={index === roving.index ? 0 : -1}
+        onFocus={() => roving.setActive(index)}
+        className={`hand-card ${card.resource} ${pulses[card.resource] ?? ''} ${spent.has(card.key) ? 'spending' : cost ? 'receding' : ''} ${card.stacked ? 'stacked' : ''}`}
+        style={{ '--i': index } as React.CSSProperties}
+        aria-label={`${RESOURCE_LABEL[card.resource]}, ${held[card.resource]} held`}
+      >
+        <img src={RESOURCE_IMAGE[card.resource]} alt="" draggable={false} />
+        <span className="card-scrim" aria-hidden="true" />
+        {card.stacked ? <b className="card-count tnum">{card.stacked}</b> : null}
+      </button>)}
+    </div>
+    {/* Zero of a resource is no card, only a thin slot. An empty hand should look empty. */}
+    {empties.length ? <div className="hand-empties" aria-hidden="true">
+      {empties.map((resource) => <span key={resource} className={`empty-slot ${cost?.[resource] ? 'wanted' : ''}`}><ResourceGlyph resource={resource} /></span>)}
+    </div> : null}
+  </div>
+}
+
+/* ------------------------------------------------------------- commands -- */
+
+const BUILD_COMMANDS = [
+  { kind: 'road', label: 'Road', mode: 'road', actionType: 'build-road' },
+  { kind: 'settlement', label: 'Settle', mode: 'settlement', actionType: 'build-settlement' },
+  { kind: 'city', label: 'City', mode: 'city', actionType: 'build-city' },
+] as const
+
+/** Cost reads as a tint dot plus a tabular count, never as a row of 10px glyphs. */
+function CostRow({ kind }: { kind: keyof typeof BUILD_COSTS }) {
+  return <span className="cost-row tnum" aria-hidden="true">{RESOURCES.filter((resource) => BUILD_COSTS[kind][resource]).map((resource) =>
+    <span key={resource}>{BUILD_COSTS[kind][resource]}<i className={`cost-dot ${resource}`} /></span>)}</span>
+}
+
+type CommandProps = HudProps & { onCostPreview: (kind: CostPreview) => void }
+
+function Commands(props: CommandProps) {
+  const { game, humanId, placementMode, onPlacementMode, onAction, onCostPreview } = props
+  const humanTurn = currentActorId(game) === humanId
+  const roll = game.legalActions.find((action) => action.type === 'roll-dice')
+  const end = game.legalActions.find((action) => action.type === 'end-turn' || action.type === 'finish-road-building')
+  const buyDevelopment = game.legalActions.find((action) => action.type === 'buy-development')
+  const inAction = game.phase === 'action' && humanTurn
+  const held = game.players.find((candidate) => candidate.id === humanId)?.resources ?? emptyResources()
+  const affords = (kind: keyof typeof BUILD_COSTS) => RESOURCES.every((resource) => held[resource] >= (BUILD_COSTS[kind][resource] ?? 0))
+  const buildable = [...BUILD_COMMANDS.map((command) => inAction ? game.legalActions.filter((action) => action.type === command.actionType).length : 0), inAction && buyDevelopment ? 1 : 0]
+  const anyBuild = buildable.some(Boolean)
+  const reason = humanTurn
+    ? inAction ? 'No build is legal with this hand.' : `Not the build phase · ${phaseCopy[game.phase].toLowerCase()}`
+    : 'Another player is acting.'
+  // Exactly one primary at a time: Roll before the roll, End Turn after it.
+  const rollPhase = game.phase === 'pre-roll' && humanTurn
+  return <div className="commands" aria-label="Turn actions">
+    <div className="build-group" role="toolbar" aria-label="Build">
+      <div className="build-plinth">
+        {BUILD_COMMANDS.map((command, index) => {
+          const choices = buildable[index]
+          const selected = placementMode === command.mode
+          const Mark = BUILD_ICON[command.kind]
+          return <button
+            key={command.kind}
+            className={`build-command ${command.kind} ${selected ? 'selected' : ''}`}
+            data-weight="soft"
+            disabled={!choices}
+            tabIndex={index === 0 ? 0 : -1}
+            onClick={() => onPlacementMode(selected ? null : command.mode)}
+            onMouseEnter={() => onCostPreview(command.kind)}
+            onMouseLeave={() => onCostPreview(null)}
+            onFocus={() => onCostPreview(command.kind)}
+            onBlur={() => onCostPreview(null)}
+            aria-pressed={selected}
+            aria-label={`${command.label}, ${!affords(command.kind) ? 'not affordable' : `${choices} legal locations`}`}
+          ><Mark className="command-mark" /><span>{command.label}</span><CostRow kind={command.kind} /><em className="tnum">{choices}</em></button>
+        })}
+        <button
+          className="build-command development"
+          data-weight="deep"
+          disabled={!buildable[3]}
+          tabIndex={-1}
+          onClick={() => buyDevelopment && onAction(buyDevelopment)}
+          onMouseEnter={() => onCostPreview('development')}
+          onMouseLeave={() => onCostPreview(null)}
+          onFocus={() => onCostPreview('development')}
+          onBlur={() => onCostPreview(null)}
+          aria-label={`Buy development card, ${!affords('development') ? 'not affordable' : `${game.developmentDeckCount} remain`}`}
+        ><CardsIcon className="command-mark" /><span>Develop</span><CostRow kind="development" /><em className="tnum">{game.developmentDeckCount}</em></button>
+      </div>
+      {/* The group never unmounts. It disables and says why, so nothing in the band shifts. */}
+      <small className="build-reason">{anyBuild ? 'Choose what to build' : reason}</small>
+    </div>
+    <div className="turn-commands">
+      {rollPhase
+        ? <button className="turn-command primary" data-weight="deep" disabled={!roll} onClick={() => roll && onAction(roll)} aria-label="Roll the dice"><DiceIcon className="command-mark" /><span>Roll</span></button>
+        : <button className={`turn-command finish ${end ? 'primary' : ''}`} data-weight="deep" disabled={!end} onClick={() => end && onAction(end)} aria-label={end?.type === 'finish-road-building' ? 'Finish placing roads' : 'End your turn'}><FlagIcon className="command-mark" /><span>{end?.type === 'finish-road-building' ? 'Finish' : 'End turn'}</span></button>}
+    </div>
+  </div>
+}
+
+/* -------------------------------------------------------------- moments -- */
 
 function DiceMoment({ game, presentation }: { game: GameDisplayState; presentation?: GamePresentation }) {
   const [dice, setDice] = useState<[number, number]>()
@@ -117,7 +371,7 @@ function DiceMoment({ game, presentation }: { game: GameDisplayState; presentati
     resources: RESOURCES.filter((resource) => (presentation?.resourceDeltas[player.id]?.[resource] ?? 0) > 0).map((resource) => ({ resource, amount: presentation?.resourceDeltas[player.id]?.[resource] ?? 0 })),
   })).filter(({ resources }) => resources.length)
   return <div className="dice-moment" role="status" aria-label={`Rolled ${dice[0] + dice[1]}`}>
-    <div><span>{dice[0]}</span><span>{dice[1]}</span></div><strong>{dice[0] + dice[1]}</strong>
+    <div>{dice.map((face, index) => <span key={index}><DiePips value={face} /></span>)}</div><strong className="tnum">{dice[0] + dice[1]}</strong>
     {allocations.length ? <ul className="production-summary">{allocations.map(({ player, resources }) => <li key={player.id} className={player.color}><b>{player.name}</b><div>{resources.map(({ resource, amount }) => <span key={resource} title={RESOURCE_LABEL[resource]}><ResourceGlyph resource={resource} />+{amount}</span>)}</div></li>)}</ul> : <small className="production-none">No settlement produced</small>}
   </div>
 }
@@ -154,18 +408,8 @@ function TransitionMoment({ presentation, humanId }: { presentation: GamePresent
     {development ? <div className="card-reveal"><img src="/assets/resource-development.webp" alt="" /><b>{presentation.actionType === 'play-development' ? 'Development played' : 'Mystery card'}</b></div> : null}
     {robber ? <div className="robber-reveal" aria-hidden="true"><RobberIcon /><span /></div> : null}
     <div><strong>{actionLabel[presentation.actionType] ?? presentation.actionType.replaceAll('-', ' ')}</strong>{message ? <span>{message}</span> : null}{presentation.awardChanges.map((change) => <em key={change}>{change}</em>)}</div>
-    {changes.length ? <ul className="resource-deltas">{changes.map(({ resource, delta }, index) => <li key={resource} className={delta > 0 ? '' : 'loss'} style={{ '--row': index } as React.CSSProperties} title={RESOURCE_LABEL[resource]}><ResourceGlyph resource={resource} /><b>{delta > 0 ? `+${delta}` : delta}</b></li>)}</ul> : null}
+    {changes.length ? <ul className="resource-deltas">{changes.map(({ resource, delta }, index) => <li key={resource} className={delta > 0 ? '' : 'loss'} style={{ '--row': index } as React.CSSProperties} title={RESOURCE_LABEL[resource]}><ResourceGlyph resource={resource} /><b className="tnum">{delta > 0 ? `+${delta}` : delta}</b></li>)}</ul> : null}
   </div>
-}
-
-function AgentDecisionPreview({ game, thinkingPlayerId, agentStatuses }: Pick<HudProps, 'game' | 'thinkingPlayerId' | 'agentStatuses'>) {
-  const actor = game.players.find((player) => player.id === thinkingPlayerId && player.controller === 'agent')
-  if (!actor) return null
-  const status = agentStatuses[actor.id]
-  const stage = status?.state ?? 'idle'
-  return <aside className={`agent-decision-preview ${stage}`} aria-live="polite">
-    <span className={`player-crest ${actor.color}`}>{actor.name[0]}</span><div><strong>{actor.name}</strong><small>Local agent · revision {status?.revision ?? game.revision}</small></div><SpinnerIcon /><p>{stage === 'thinking' ? 'Choosing a move' : 'Waiting for agent'}</p>
-  </aside>
 }
 
 const actionPreviewCopy = (action: GameAction) => {
@@ -187,125 +431,43 @@ function ActionPreview({ action, onConfirm, onCancel }: { action: GameAction; on
       target?.focus()
     })
   }, [])
-  return <section className="action-preview" aria-live="polite"><div><strong>{title}</strong><span>{detail}</span></div><button onClick={onCancel}>Cancel</button><button className="confirm" autoFocus onClick={onConfirm}>Confirm</button></section>
+  return <section className="action-preview" aria-live="polite"><div><strong>{title}</strong><span>{detail}</span></div><button onClick={onCancel}>Cancel</button><button className="confirm" data-weight="deep" autoFocus onClick={onConfirm}>Confirm</button></section>
 }
 
-/** Flags a card for one beat when its count moves, so gains and spends register peripherally. */
-const useCountPulse = (counts: Record<string, number>) => {
-  const previous = useRef(counts)
-  const [pulses, setPulses] = useState<Record<string, 'gained' | 'spent'>>({})
-  const signature = Object.values(counts).join(',')
-  useEffect(() => {
-    const next: Record<string, 'gained' | 'spent'> = {}
-    for (const [key, value] of Object.entries(counts)) {
-      const before = previous.current[key]
-      if (before === undefined || before === value) continue
-      next[key] = value > before ? 'gained' : 'spent'
-    }
-    previous.current = counts
-    if (!Object.keys(next).length) return
-    setPulses(next)
-    const timeout = window.setTimeout(() => setPulses({}), 560)
-    return () => window.clearTimeout(timeout)
-  }, [signature])
-  return pulses
-}
-
-function ResourceWallet({ game, humanId, onCards }: Pick<HudProps, 'game' | 'humanId'> & { onCards: () => void }) {
-  const player = game.players.find((candidate) => candidate.id === humanId)
-  const counts = Object.fromEntries([...RESOURCES.map((resource) => [resource, player?.resources[resource] ?? 0]), ['development', player?.development.length ?? 0]])
-  const pulses = useCountPulse(counts)
-  if (!player) return null
-  return <section className="resource-wallet" aria-label="Your resources">
-    {RESOURCES.map((resource) => <article className={`resource-card ${resource} ${pulses[resource] ?? ''}`} key={resource} title={RESOURCE_LABEL[resource]}>
-      <img src={RESOURCE_IMAGE[resource]} alt="" />
-      <span className="resource-count">{player.resources[resource]}</span>
-      <small>{RESOURCE_LABEL[resource]}</small>
-    </article>)}
-    <button className={`resource-card development ${pulses.development ?? ''}`} title="Open development cards" onClick={onCards} aria-label={`Development cards, ${player.development.length} held`}>
-      <img src="/assets/resource-development.webp" alt="" />
-      <span className="resource-count">{player.development.length}</span>
-      <small>Cards</small>
-    </button>
-  </section>
-}
-
-const BUILD_COMMANDS = [
-  { kind: 'road', label: 'Road', mode: 'road', actionType: 'build-road' },
-  { kind: 'settlement', label: 'Settle', mode: 'settlement', actionType: 'build-settlement' },
-  { kind: 'city', label: 'City', mode: 'city', actionType: 'build-city' },
-] as const
-
-/** Cost is shown as one pip per card, dimmed where the hand cannot cover it. */
-function CostPips({ kind, held }: { kind: keyof typeof BUILD_COSTS; held: Resources }) {
-  return <span className="cost-pips" aria-hidden="true">{RESOURCES.flatMap((resource) => Array.from({ length: BUILD_COSTS[kind][resource] ?? 0 }, (_, index) =>
-    <ResourceGlyph key={`${resource}-${index}`} resource={resource} className={index < held[resource] ? 'affordable' : 'short'} />))}</span>
-}
-
-function ActionTray(props: HudProps) {
-  const { game, humanId, placementMode, onDialog, onPlacementMode, onAction } = props
-  const held = game.players.find((candidate) => candidate.id === humanId)?.resources ?? emptyResources()
-  const humanTurn = currentActorId(game) === humanId
-  const roll = game.legalActions.find((action) => action.type === 'roll-dice')
-  const end = game.legalActions.find((action) => action.type === 'end-turn' || action.type === 'finish-road-building')
-  const buyDevelopment = game.legalActions.find((action) => action.type === 'buy-development')
-  const inAction = game.phase === 'action' && humanTurn
-  if (!humanTurn || ['setup-settlement', 'setup-road', 'discard', 'move-robber', 'choose-victim', 'year-of-plenty', 'monopoly', 'trade-response'].includes(game.phase)) return null
-  return <nav className="action-tray wood-panel" aria-label="Turn actions">
-    {inAction ? <div className="build-rail" aria-label="Build">
-      {BUILD_COMMANDS.map((command) => {
-        const choices = game.legalActions.filter((action) => action.type === command.actionType).length
-        const selected = placementMode === command.mode
-        const Mark = BUILD_ICON[command.kind]
-        return <button key={command.kind} className={`build-command ${command.kind} ${selected ? 'selected' : ''}`} disabled={!choices} onClick={() => onPlacementMode(selected ? null : command.mode)} aria-pressed={selected} aria-label={`${command.label}, ${choices} legal locations`}><Mark className="command-mark" /><span>{command.label}</span><CostPips kind={command.kind} held={held} /><em>{choices}</em></button>
-      })}
-      <button className="build-command development" disabled={!buyDevelopment} onClick={() => buyDevelopment && onAction(buyDevelopment)} aria-label={`Buy development card, ${game.developmentDeckCount} remain`}><CardsIcon className="command-mark" /><span>Develop</span><CostPips kind="development" held={held} /><em>{game.developmentDeckCount}</em></button>
-    </div> : null}
-    <div className="turn-rail">
-      {game.phase === 'pre-roll' ? <button className="primary" disabled={!roll} onClick={() => roll && onAction(roll)}><DiceIcon className="command-mark" /><span>Roll</span></button> : null}
-      {inAction ? <button onClick={() => onDialog('trade')}><TradeIcon className="command-mark" /><span>Trade</span></button> : null}
-      {['pre-roll', 'action'].includes(game.phase) ? <button onClick={() => onDialog('cards')}><CardsIcon className="command-mark" /><span>Cards</span></button> : null}
-      {end ? <button className="finish" onClick={() => onAction(end)}><FlagIcon className="command-mark" /><span>{end.type === 'finish-road-building' ? 'Finish' : 'End'}</span></button> : null}
-    </div>
-  </nav>
-}
-
-const coachCopy: Partial<Record<GameDisplayState['phase'], { title: string; detail: string }>> = {
-  'setup-settlement': { title: 'Found your first outpost', detail: 'Pick a corner touching productive numbers and a mix of resources.' },
-  'setup-road': { title: 'Point toward your expansion', detail: 'Your road must touch the settlement you just placed.' },
-  discard: { title: 'A seven was rolled', detail: 'Hands above seven discard half before the robber moves.' },
-  'move-robber': { title: 'Block a rival tile', detail: 'The robber stops production there and may let you steal from an adjacent rival.' },
-  'choose-victim': { title: 'Choose one adjacent rival', detail: 'You steal one random resource without seeing their hand.' },
-  'road-building': { title: 'Road Building is active', detail: 'Place up to two free roads, or finish early.' },
-  'year-of-plenty': { title: 'Year of Plenty is active', detail: 'Take any two cards the bank can still supply.' },
-  monopoly: { title: 'Monopoly is active', detail: 'Name one resource; every rival gives you all of that type.' },
-  'trade-response': { title: 'A trade is waiting', detail: 'Accept, decline, or send a counteroffer without revealing your hand.' },
-}
-
-function ContextCoach({ game, humanId }: Pick<HudProps, 'game' | 'humanId'>) {
-  const actorId = currentActorId(game)
-  if (actorId !== humanId) return null
-  const copy = coachCopy[game.phase]
-  if (!copy) return null
-  return <aside className="context-coach" aria-live="polite"><strong>{copy.title}</strong><span>{copy.detail}</span></aside>
-}
+/* ------------------------------------------------------------------ hud -- */
 
 export function Hud(props: HudProps) {
   const { game, muted, onMuted, onExitMatch, onDialog, error } = props
-  return <div className="hud-layer">
-    <TurnPanel game={game} thinkingPlayerId={props.thinkingPlayerId} onAction={props.onAction} placementMode={props.placementMode} />
-    <ContextCoach game={game} humanId={props.humanId} />
-    <PlayerRail game={game} humanId={props.humanId} agentStatuses={props.agentStatuses} />
-    <ResourceWallet game={game} humanId={props.humanId} onCards={() => onDialog('cards')} />
-    <ActionTray {...props} />
-    <div className="utility-controls">
-      <button className="history-button" onClick={() => onDialog('history')} title="Match history" aria-label="Open match history and controller status"><ScrollIcon /></button>
-      <button className={muted ? '' : 'active'} onClick={() => onMuted(!muted)} title={muted ? 'Turn sound on' : 'Mute sound'} aria-label={muted ? 'Turn sound on' : 'Mute sound'} aria-pressed={!muted}>{muted ? <SoundOffIcon /> : <SoundOnIcon />}</button>
-      <button onClick={() => onDialog('rules')} title="Rules" aria-label="Open the rules"><BookIcon /></button>
-      <button onClick={onExitMatch} title="Leave this match" aria-label="Leave this match and return to the menu"><HomeIcon /></button>
+  const [costPreview, setCostPreview] = useState<CostPreview>(null)
+  const humanTurn = currentActorId(game) === props.humanId
+  const inAction = game.phase === 'action' && humanTurn
+  const sound = useControlSound()
+  useEffect(() => { if (error) uiSound('ui-error') }, [error])
+  return <div className="hud-layer" {...sound}>
+    <TurnPanel
+      game={game}
+      humanId={props.humanId}
+      thinkingPlayerId={props.thinkingPlayerId}
+      agentStatuses={props.agentStatuses}
+      onAction={props.onAction}
+      placementMode={props.placementMode}
+      onDialog={onDialog}
+      onExitMatch={onExitMatch}
+    />
+    <PlayerRail game={game} humanId={props.humanId} agentStatuses={props.agentStatuses} muted={muted} onMuted={onMuted} />
+    {/* One continuous band along the bottom edge: your hand flowing into your commands.
+        No tray, no utility cluster, no rounded box floating above the edge. */}
+    <div className="table-band">
+      <div className="band-hand">
+        <ResourceHand game={game} humanId={props.humanId} costPreview={costPreview} yourTurn={humanTurn} />
+        <div className="hand-marks">
+          <button disabled={!inAction} onClick={() => onDialog('trade')} aria-label="Open the trade table"><TradeIcon /><span>Trade</span></button>
+          <button disabled={!['pre-roll', 'action'].includes(game.phase) || !humanTurn} onClick={() => onDialog('cards')} aria-label={`Development cards, ${game.players.find((candidate) => candidate.id === props.humanId)?.development.length ?? 0} held`}><CardsIcon /><span>Cards</span></button>
+        </div>
+      </div>
+      <Commands {...props} onCostPreview={setCostPreview} />
     </div>
     <DiceMoment game={game} presentation={props.presentation} />
-    <AgentDecisionPreview game={game} thinkingPlayerId={props.thinkingPlayerId} agentStatuses={props.agentStatuses} />
     {props.presentation ? <TransitionMoment key={props.presentation.revision} presentation={props.presentation} humanId={props.humanId} /> : null}
     {props.pendingAction ? <ActionPreview action={props.pendingAction} onConfirm={props.onConfirmAction} onCancel={props.onCancelAction} /> : null}
     {error ? <div className="toast" role="alert">{error}</div> : null}

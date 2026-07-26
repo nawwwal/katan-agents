@@ -2,15 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { useGameAudio } from './audio/useGameAudio'
 import { applyAction, createGame, currentActorId, getPlayerView } from './game/engine'
 import { toDisplayState } from './game/room'
-import type { GameAction } from './game/types'
+import { defaultBoardOptions, type BoardOptions, type GameAction } from './game/types'
 import { useGame } from './game/useGame'
 import { GameScene, type PlacementMode } from './scene/GameScene'
 import { Dialogs } from './ui/Dialogs'
 import { Hud, type DialogName } from './ui/Hud'
 import { Journey, type JourneyStage } from './ui/Journey'
 
+const freshBoardSeed = () => Math.floor(Math.random() * 0x1_00_00_00_00)
 const boardActionTypes = new Set<GameAction['type']>(['place-settlement', 'place-road', 'build-road', 'build-settlement', 'build-city', 'move-robber'])
-const terrainName = (terrain: string) => terrain === 'lumber' ? 'forest' : terrain === 'wool' ? 'pasture' : terrain
+/** All six terrains, or screen readers hear two vocabularies in one sentence. */
+const TERRAIN_NAME: Record<string, string> = { lumber: 'forest', wool: 'pasture', brick: 'hills', grain: 'fields', ore: 'mountains', desert: 'desert' }
+const terrainName = (terrain: string) => TERRAIN_NAME[terrain] ?? terrain
 const boardSector = (x: number, z: number) => {
   if (Math.hypot(x, z) < 0.7) return 'center'
   const sectors = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east']
@@ -75,10 +78,15 @@ const buildUiPreview = (stage: UiPreviewStage) => {
 export default function App() {
   const initialRoomCode = useMemo(() => new URLSearchParams(window.location.search).get('room')?.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6) ?? '', [])
   const { room, game, hasCredentials, viewerPlayerId, createRoom, joinRoom, start, reset, submit, error, busy, submitting, connectionState, thinkingPlayerId, agentStatuses, presentation } = useGame()
+  // The title and create screens render a real generated island rather than one hard-coded
+  // seed, and the create screen lets the host shuffle it until they like it. Generation is
+  // synchronous and takes tens of microseconds, so this runs inline during render.
+  const [boardSeed, setBoardSeed] = useState(freshBoardSeed)
+  const [boardOptions, setBoardOptions] = useState<BoardOptions>(defaultBoardOptions)
   const previewGame = useMemo(() => {
-    const preview = createGame({ seed: 28, controllers: ['human', 'agent', 'agent'], names: ['You', 'Atlas', 'Ember'] })
+    const preview = createGame({ seed: boardSeed, boardOptions, controllers: ['human', 'agent', 'agent'], names: ['You', 'Atlas', 'Ember'] })
     return toDisplayState(getPlayerView(preview, preview.players[0].id))
-  }, [])
+  }, [boardSeed, boardOptions])
   const preview = useMemo(uiPreviewStage, [])
   const previewState = useMemo(() => preview ? buildUiPreview(preview) : undefined, [preview])
   const [stage, setStage] = useState<JourneyStage>(preview ? (preview === 'summary' || preview === 'introduction' ? preview : 'match') : initialRoomCode ? 'join' : 'title')
@@ -190,7 +198,7 @@ export default function App() {
   }
 
   const create = async (name: string, seatsTotal: 3 | 4) => {
-    const created = await createRoom(name, seatsTotal)
+    const created = await createRoom(name, seatsTotal, boardSeed, boardOptions)
     if (created) setStage('lobby')
     return created
   }
@@ -242,6 +250,12 @@ export default function App() {
       connectionState={connectionState}
       error={error}
       initialRoomCode={initialRoomCode}
+      boardSeed={boardSeed}
+      boardOptions={boardOptions}
+      boardRelaxed={previewGame.board.generation.relaxed}
+      onShuffleBoard={() => setBoardSeed(freshBoardSeed())}
+      onBoardSeed={setBoardSeed}
+      onBoardOptions={setBoardOptions}
       onChoose={setStage}
       onCreate={create}
       onJoin={join}
