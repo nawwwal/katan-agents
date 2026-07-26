@@ -107,6 +107,34 @@ export const merge = (parts: Part[]) => {
 }
 
 /**
+ * Vertical prism from a polygon drawn on the ground plane. Points are `[x, z]`
+ * in world axes and the solid runs from `top - thickness` up to `top`.
+ *
+ * Road joinery needs shapes a box cannot express — mitred kerb ends and hexagon
+ * sectors at a junction — and every one of them is a flat plate with an
+ * arbitrary outline, so they all come from here.
+ */
+export const plate = (points: Array<[number, number]>, top: number, thickness: number) => {
+  // ExtrudeGeometry wants a counter-clockwise outline in its own XY plane, and
+  // mapping z to -y flips the winding, so measure it after the flip.
+  const flipped = points.map(([x, z]) => [x, -z] as [number, number])
+  let area = 0
+  for (let index = 0; index < flipped.length; index += 1) {
+    const [x0, y0] = flipped[index]
+    const [x1, y1] = flipped[(index + 1) % flipped.length]
+    area += x0 * y1 - x1 * y0
+  }
+  const outline = area < 0 ? [...flipped].reverse() : flipped
+  const shape = new THREE.Shape()
+  outline.forEach(([x, y], index) => (index === 0 ? shape.moveTo(x, y) : shape.lineTo(x, y)))
+  shape.closePath()
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, curveSegments: 1 })
+  geometry.rotateX(-Math.PI / 2)
+  geometry.translate(0, top - thickness, 0)
+  return geometry
+}
+
+/**
  * Revolved profile with per-column radial wobble — cheap cloth folds for the
  * robber's cloak. Deterministic: the wobble comes from a fixed seed.
  */

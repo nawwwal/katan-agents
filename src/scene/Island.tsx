@@ -8,14 +8,16 @@ import { HarborPiers } from './structures/Harbor'
 import { NumberTokenMesh } from './structures/NumberToken'
 import { RobberFigure } from './structures/Robber'
 import { IslandBody } from './terrain/IslandBody'
-import { GROUND_Y } from './terrain/hex'
+import { GROUND_Y, TOKEN_LIFT } from './terrain/hex'
 import { useTerrainField, type TileSurfaceEntry } from './terrain/TerrainField'
+import { TokenPlinth } from './terrain/TokenPlinth'
 
 type RobberAction = Extract<GameAction, { type: 'move-robber' }>
 
 type TileProps = {
   x: number
   z: number
+  index: number
   number?: number
   surface: TileSurfaceEntry
   robber: boolean
@@ -23,7 +25,7 @@ type TileProps = {
   onAction: (action: GameAction) => void
 }
 
-function TerrainTile({ x, z, number, surface, robber, action, onAction }: TileProps) {
+function TerrainTile({ x, z, index, number, surface, robber, action, onAction }: TileProps) {
   const [hovered, setHovered] = useState(false)
   const legal = Boolean(action)
   useCursor(hovered && legal)
@@ -44,12 +46,20 @@ function TerrainTile({ x, z, number, surface, robber, action, onAction }: TilePr
       onPointerOver={(event) => { event.stopPropagation(); setHovered(true) }}
       onPointerOut={() => setHovered(false)}
     />
-    {number ? <NumberTokenMesh number={number} height={0.17} /> : null}
+    {number ? <>
+      <TokenPlinth variant={index} />
+      <NumberTokenMesh number={number} height={TOKEN_LIFT} />
+    </> : null}
     {legal ? <mesh position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]} onClick={click} renderOrder={2}>
       <ringGeometry args={[0.84, 0.97, 6, 1, Math.PI / 6]} />
       <meshBasicMaterial color="#ffd66a" transparent opacity={hovered ? 0.92 : 0.38} side={THREE.DoubleSide} toneMapped={false} />
     </mesh> : null}
-    {robber ? <RobberFigure height={0.17} /> : null}
+    {/* The cairn owns the middle of a numbered tile, so the robber stands beside
+        it rather than inside it. On the desert there is no cairn and he keeps
+        the centre. */}
+    {robber ? <group position={[number ? 0.44 : 0, 0, number ? 0.16 : 0]}>
+      <RobberFigure height={0.17} />
+    </group> : null}
   </group>
 }
 
@@ -66,6 +76,7 @@ export function Island({ game, robberActions, onAction }: { game: GameDisplaySta
       key={tile.id}
       x={tile.x}
       z={tile.z}
+      index={index}
       number={tile.number}
       surface={field.tiles[index]}
       robber={tile.id === game.board.robberHexId}

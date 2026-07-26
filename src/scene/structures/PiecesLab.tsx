@@ -190,15 +190,21 @@ function networkState(): GameDisplayState {
 export function NetworkLab() {
   const game = useMemo(networkState, [])
   const robberActions = useMemo(() => new Map<string, never>(), [])
+  // `cam`, `at` and `fov` let a junction be framed tight from the shot script;
+  // road joinery is a defect you can only judge at a few centimetres.
+  const params = new URLSearchParams(window.location.search)
+  const camera = vec(params.get('cam'), [7.7, 10.3, 9.8])
+  const target = vec(params.get('at'), [0, 0.5, 0])
+  const fov = Number(params.get('fov')) || 31
   return <div style={{ position: 'fixed', inset: 0, background: '#04121b' }}>
     <Canvas
       dpr={[1, 2]}
       shadows
-      camera={{ position: [7.7, 10.3, 9.8], fov: 31, near: 0.5, far: 900 }}
+      camera={{ position: camera, fov, near: 0.5, far: 900 }}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping
-        gl.toneMappingExposure = 1.14
+        gl.toneMappingExposure = Number(params.get('exp')) || 1.14
         gl.outputColorSpace = THREE.SRGBColorSpace
         gl.shadowMap.type = THREE.PCFSoftShadowMap
       }}
@@ -216,7 +222,104 @@ export function NetworkLab() {
             type={building.type} legalCity={false} reducedMotion
           />)}
         </group>
-        <OrbitControls target={[0, 0.5, 0]} />
+        <OrbitControls target={target} />
+      </Suspense>
+    </Canvas>
+  </div>
+}
+
+/**
+ * Junction rig (`/pieces-lab.html?joins=1`).
+ *
+ * Road joinery is a defect measured in centimetres, and hunting for the right
+ * three roads on the real island wastes a screenshot every time. This lays out
+ * every junction case that exists — three-way and bend, single owner and mixed,
+ * plus a dead end — on one flat, evenly lit stage at a fixed close camera, so a
+ * change is graded against the same six joints every pass.
+ */
+const JOIN_CASES: Array<{ label: string; slot: [number, number]; roads: number; owners: number[] }> = [
+  { label: '3-way, one owner', slot: [-2.1, -1.15], roads: 3, owners: [0, 0, 0] },
+  { label: '3-way, two owners', slot: [0, -1.15], roads: 3, owners: [0, 0, 1] },
+  { label: '3-way, three owners', slot: [2.1, -1.15], roads: 3, owners: [0, 1, 2] },
+  { label: 'bend, one owner', slot: [-2.1, 1.15], roads: 2, owners: [0, 0] },
+  { label: 'bend, two owners', slot: [0, 1.15], roads: 2, owners: [0, 1] },
+  { label: 'dead end', slot: [2.1, 1.15], roads: 1, owners: [0] },
+]
+
+function joinState() {
+  const board = createBoard(28)
+  // One hub vertex per case, each with three edges and no shared edges, so the
+  // cases never contaminate each other.
+  const hubs = Object.values(board.vertices).filter((vertex) => vertex.edges.length === 3)
+  const used = new Set<string>()
+  const picked: typeof hubs = []
+  for (const vertex of hubs) {
+    if (picked.length === JOIN_CASES.length) break
+    if (vertex.edges.some((edge) => used.has(edge))) continue
+    // Also keep a one-vertex buffer so a neighbouring hub's roads never meet.
+    if (vertex.neighbors.some((id) => picked.some((other) => other.id === id))) continue
+    vertex.edges.forEach((edge) => used.add(edge))
+    for (const id of vertex.neighbors) board.vertices[id]?.edges.forEach((edge) => used.add(edge))
+    picked.push(vertex)
+  }
+  return { board, picked }
+}
+
+export function JoinLab() {
+  const { board, picked } = useMemo(joinState, [])
+  const params = new URLSearchParams(window.location.search)
+  const camera = vec(params.get('cam'), [0.9, 2.5, 2.4])
+  const target = vec(params.get('at'), [0, 0.45, 0])
+  const game = useMemo(() => {
+    const roadOwners: Record<string, string> = {}
+    picked.forEach((vertex, index) => {
+      const test = JOIN_CASES[index]
+      if (!test) return
+      vertex.edges.slice(0, test.roads).forEach((edge, slot) => { roadOwners[edge] = `p${test.owners[slot]}` })
+    })
+    return { board, roadOwners } as unknown as GameDisplayState
+  }, [board, picked])
+  const palette: PlayerColor[] = ['coral', 'blue', 'amber']
+  return <div style={{ position: 'fixed', inset: 0, background: '#10171c' }}>
+    <Canvas
+      dpr={[1, 2]}
+      shadows
+      camera={{ position: camera, fov: Number(params.get('fov')) || 34, near: 0.05, far: 60 }}
+      gl={{ antialias: true, powerPreference: 'high-performance' }}
+      onCreated={({ gl }) => {
+        gl.toneMapping = THREE.ACESFilmicToneMapping
+        gl.toneMappingExposure = Number(params.get('exp')) || 1.15
+        gl.outputColorSpace = THREE.SRGBColorSpace
+        gl.shadowMap.type = THREE.PCFSoftShadowMap
+      }}
+    >
+      <Suspense fallback={null}>
+        <Environment />
+        <ambientLight intensity={0.12} />
+        <hemisphereLight color="#fff0ca" groundColor="#4a4030" intensity={0.7} />
+        <directionalLight
+          castShadow position={[-3, 5, 2.5]} intensity={2.6} color="#ffd8a8"
+          shadow-mapSize-width={2048} shadow-mapSize-height={2048}
+          shadow-camera-near={0.5} shadow-camera-far={20}
+          shadow-camera-left={-4} shadow-camera-right={4} shadow-camera-top={4} shadow-camera-bottom={-4}
+          shadow-bias={-0.0002} shadow-normalBias={0.02}
+        />
+        <directionalLight position={[3.5, 2.5, -3]} intensity={0.5} color="#8fd0e2" />
+        <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[30, 30]} />
+          <meshStandardMaterial color="#6e6a4e" roughness={0.97} />
+        </mesh>
+        {picked.map((vertex, index) => {
+          const test = JOIN_CASES[index]
+          if (!test) return null
+          return <group key={vertex.id} position={[test.slot[0] - vertex.x, -0.478, test.slot[1] - vertex.z]}>
+            {vertex.edges.slice(0, test.roads).map((edgeId, slot) => <Road
+              key={edgeId} game={game} edgeId={edgeId}
+              color={PLAYER_COLORS[palette[test.owners[slot]]]} reducedMotion
+            />)}
+          </group>
+        })}
+        <OrbitControls target={target} />
       </Suspense>
     </Canvas>
   </div>
