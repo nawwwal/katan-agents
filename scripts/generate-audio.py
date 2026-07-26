@@ -316,7 +316,7 @@ ITEMS: tuple[Item, ...] = (
     Item("music-victory", 8.0,
          "short triumphant orchestral resolve, warm brass and strings swelling and settling on a major chord, "
          "seafaring, ends cleanly, no loop",
-         bus="accent", influence=0.5, trim_head=False, bitrate="96k"),
+         bus="accent", influence=0.5, trim_head=False, bitrate="96k", ship=False),
 )
 
 DERIVED: tuple[Derived, ...] = (
@@ -636,7 +636,11 @@ def master(src: Path, dst: Path, *, bus: str, trim_head: bool, keep: float | Non
         measured = integrated_out if bus in ("ambience", "music") else rms_out
         error = target - measured
         headroom = TRUE_PEAK_CEILING - peak
-        step = min(error, headroom) if error > 0 else error
+        # Peak wins in both directions. Raising stops at the ceiling, and a
+        # file already over it comes down even if that leaves it under the
+        # loudness target. The ceiling was previously only checked once,
+        # with a 0.2 dB slop, and most of the bank shipped above it.
+        step = min(error, headroom)
         if abs(step) < 0.3:
             break
         offset = max(min(offset + step, 36.0), -36.0)
