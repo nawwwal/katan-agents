@@ -110,23 +110,33 @@ const attempt = async (name: string, work: () => Promise<void>) => {
   }
 }
 
-/** Run a list of independent fetches with a small concurrency cap. */
-const pooled = async (urls: readonly string[], limit: number, work: (url: string) => Promise<void>, tick: (fraction: number) => void) => {
-  if (!urls.length) return
+/**
+ * Run a list of independent fetches with a small concurrency cap.
+ *
+ * Progress is weighted by cost rather than by file count, because the texture
+ * step mixes a 700KB baked albedo with a 4KB resource icon and a bar that
+ * counts files spends most of its travel on the cheap half of the list.
+ */
+const pooled = async (items: readonly { url: string; cost: number }[], limit: number, work: (url: string) => Promise<void>, tick: (fraction: number) => void) => {
+  if (!items.length) return
+  const total = items.reduce((sum, item) => sum + item.cost, 0) || items.length
   let index = 0
-  let finished = 0
+  let done = 0
   const worker = async () => {
     for (;;) {
       const next = index
       index += 1
-      if (next >= urls.length) return
-      await attempt(urls[next], () => work(urls[next]))
-      finished += 1
-      tick(finished / urls.length)
+      if (next >= items.length) return
+      await attempt(items[next].url, () => work(items[next].url))
+      done += items[next].cost || 1
+      tick(done / total)
     }
   }
-  await Promise.all(Array.from({ length: Math.min(limit, urls.length) }, worker))
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
 }
+
+/** What an asset with no recorded size is assumed to cost, in bytes. */
+const ASSUMED_BYTES = 24_000
 
 const buildSteps = (): Step[] => [
   {
@@ -145,17 +155,22 @@ const buildSteps = (): Step[] => [
     },
   },
   {
+    // The heaviest step by a wide margin now that the baked manifest actually
+    // parses: roughly ten megabytes of terrain against a few hundred kilobytes
+    // of everything else. It was weighted at 8 back when it fetched only the
+    // card art, which is how the bar reached "Ready" with the terrain still in
+    // flight.
     phase: 'textures',
     label: 'Decoding textures',
-    weight: 8,
+    weight: 26,
     run: async (tick) => {
       const manifest = await loadBakedManifest()
-      const urls = [
-        ...manifest.textures.map((texture) => texture.url),
-        ...Object.values(RESOURCE_IMAGE),
-        ...Object.values(DEVELOPMENT_ART),
+      const items = [
+        ...manifest.textures.map((texture) => ({ url: texture.url, cost: texture.bytes ?? ASSUMED_BYTES })),
+        ...Object.values(RESOURCE_IMAGE).map((url) => ({ url, cost: ASSUMED_BYTES })),
+        ...Object.values(DEVELOPMENT_ART).map((url) => ({ url, cost: ASSUMED_BYTES })),
       ]
-      await pooled(urls, 6, decodeImage, tick)
+      await pooled(items, 6, decodeImage, tick)
     },
   },
   {
@@ -192,7 +207,7 @@ const buildSteps = (): Step[] => [
       // Fetch only. Decoding needs an AudioContext, and creating one before a
       // user gesture is exactly the kind of thing browsers grumble about, so
       // the sound bank still owns decoding -- it just gets to do it from cache.
-      await pooled(SOUND_IDS.map((id) => SOUNDS[id].file), 6, warmFetch, tick)
+      await pooled(SOUND_IDS.map((id) => ({ url: SOUNDS[id].file, cost: ASSUMED_BYTES })), 6, warmFetch, tick)
     },
   },
 ]
@@ -242,7 +257,11 @@ export const preloadEverything = (): Promise<PreloadState> => (running ??= (asyn
   }
 
   // Per-phase cost, so a slow load can be attributed rather than guessed at.
-  globalThis.__katanLoad = { ...timings, totalMs: Math.round(performance.now() - started) }
+  // `startedAt` and `finishedAt` sit on the same clock as resource timing, so a
+  // fetch can be checked against the window it was supposed to happen in rather
+  // than assumed to have happened there.
+  const finished = performance.now()
+  globalThis.__katanLoad = { ...timings, startedAt: Math.round(started), finishedAt: Math.round(finished), totalMs: Math.round(finished - started) }
 
   publish({ phase: 'done', label: 'Ready', progress: 1, done: true, failures: [...failures], elapsedMs: Math.round(performance.now() - started) })
   if (failures.length) console.warn('[preload] some assets did not load:', failures)
