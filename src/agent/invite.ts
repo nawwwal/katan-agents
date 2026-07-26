@@ -40,4 +40,4 @@ export const buildAgentMcpInstallCommand = (client: AgentClient, serverUrl: stri
     : `claude mcp add --transport http --scope user katan ${shellQuote(endpoint)}`
 }
 
-export const buildAgentPlayPrompt = (code: string) => `Join Katan room ${normalizeCode(code)}, choose your own name and personality, read the bundled player playbook, and play until the game ends.`
+export const buildAgentPlayPrompt = (code: string) => `Join Katan room ${normalizeCode(code)} under the name the runner gives you. Read the bundled player playbook, play the personality in your seat brief, and keep playing until the game ends.`

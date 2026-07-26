@@ -153,7 +153,7 @@ assert.deepEqual(movedRobber.state.robberVictims.toSorted(), ['p1', 'p2'], 'adja
 const emptyRobbery = applyAction(movedRobber.state, { type: 'steal-from', playerId: 'p1' })
 assert.equal(emptyRobbery.ok, true)
 if (!emptyRobbery.ok) throw new Error('zero-card robbery failed')
-assert.equal(emptyRobbery.events.at(-1)?.message, 'Agent Blue had no resource cards to steal.')
+assert.equal(emptyRobbery.events.at(-1)?.message, 'Marlow had nothing to take.')
 
 const roadBuildingGame = createGame({ seed: 76, controllers: ['human', 'agent', 'agent'] })
 setActionTurn(roadBuildingGame, 0)

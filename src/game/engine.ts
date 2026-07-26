@@ -1,6 +1,8 @@
 import { createBoard, seededRandom, shuffle } from './board.js'
 import {
+  DEVELOPMENT_NAME,
   RESOURCES,
+  defaultBoardOptions,
   emptyResources,
   type CreateGameOptions,
   type DevelopmentCard,
@@ -15,7 +17,7 @@ import {
 } from './types.js'
 
 const COLORS: PlayerColor[] = ['coral', 'blue', 'amber', 'ivory']
-const NAMES = ['You', 'Agent Blue', 'Agent Amber', 'Ivory Guild']
+const NAMES = ['You', 'Marlow', 'Ansel', 'Solveig']
 const COSTS = {
   road: { brick: 1, lumber: 1 },
   settlement: { brick: 1, lumber: 1, wool: 1, grain: 1 },
@@ -389,6 +391,7 @@ const secureRandomSeed = () => {
 
 export const createGame = (options: CreateGameOptions = {}): GameState => {
   const seed = options.seed ?? Math.floor(Date.now() / 1000)
+  const boardOptions = options.boardOptions ?? defaultBoardOptions()
   const privateRandomSeed = options.privateRandomSeed ?? secureRandomSeed()
   const controllers = (options.controllers ?? ['human', 'agent', 'agent']).slice(0, 4)
   if (controllers.length < 3) throw new Error('Base game requires 3 or 4 players')
@@ -416,7 +419,7 @@ export const createGame = (options: CreateGameOptions = {}): GameState => {
     seed,
     privateRandomSeed,
     revision: 0,
-    board: createBoard(seed),
+    board: createBoard(seed, boardOptions),
     players,
     activePlayerIndex: setupOrder[0],
     phase: 'setup-settlement',
@@ -443,17 +446,18 @@ export const createGame = (options: CreateGameOptions = {}): GameState => {
 
 export const applyAction = (input: GameState, action: GameAction, randomSource?: () => number): ApplyResult => {
   if (action.type === 'restart') {
-    if (input.phase !== 'game-over') return fail('Restart is only available after the game ends')
-    return { ok: true, state: createGame({ seed: action.seed ?? input.seed + 1, random: randomSource, controllers: input.players.map((player) => player.controller), names: input.players.map((player) => player.name) }), events: [] }
+    if (input.phase !== 'game-over') return fail('A rematch waits until this game ends.')
+    // A rematch keeps the table's board options; only the seed moves on.
+    return { ok: true, state: createGame({ seed: action.seed ?? input.seed + 1, boardOptions: input.board.generation.options, random: randomSource, controllers: input.players.map((player) => player.controller), names: input.players.map((player) => player.name) }), events: [] }
   }
   const state = structuredClone(input)
   const actorId = currentActorId(state)
   const actor = playerById(state, actorId)
-  if (!actor) return fail('No player can act right now')
+  if (!actor) return fail('Nobody can act. Your view is out of step with the room, and it will resync.')
   const events: GameEvent[] = []
 
   if (action.type === 'place-settlement') {
-    if (state.phase !== 'setup-settlement' || !canPlaceSettlement(state, action.vertexId, actor.id, true)) return fail('That starting settlement is not legal')
+    if (state.phase !== 'setup-settlement' || !canPlaceSettlement(state, action.vertexId, actor.id, true)) return fail('Settlements need two edges of space. Pick a corner further out.')
     state.buildings[action.vertexId] = { playerId: actor.id, type: 'settlement' }
     actor.settlements.push(action.vertexId)
     addPort(state, actor, action.vertexId)
@@ -465,7 +469,7 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
   }
 
   if (action.type === 'place-road') {
-    if (state.phase !== 'setup-road' || !canPlaceRoad(state, action.edgeId, actor.id, state.pendingSetupVertexId)) return fail('That starting road is not legal')
+    if (state.phase !== 'setup-road' || !canPlaceRoad(state, action.edgeId, actor.id, state.pendingSetupVertexId)) return fail('The road has to start at the settlement you just placed.')
     state.roadOwners[action.edgeId] = actor.id
     actor.roads.push(action.edgeId)
     events.push(addEvent(state, 'road-built', `${actor.name} laid a road.`, actor.id, { edgeId: action.edgeId }))
@@ -486,7 +490,7 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
   }
 
   if (action.type === 'roll-dice') {
-    if (state.phase !== 'pre-roll' || actor.id !== currentPlayer(state).id) return fail('Roll at the start of your turn')
+    if (state.phase !== 'pre-roll' || actor.id !== currentPlayer(state).id) return fail('Roll the dice first.')
     const random = randomSource ?? seededRandom(state.privateRandomSeed ^ ((state.revision + 1) * 0x9e3779b1))
     const dice: [number, number] = [1 + Math.floor(random() * 6), 1 + Math.floor(random() * 6)]
     state.lastRoll = dice
@@ -502,10 +506,10 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
   }
 
   if (action.type === 'discard') {
-    if (state.phase !== 'discard' || state.actingPlayerId !== actor.id) return fail('You do not need to discard now')
+    if (state.phase !== 'discard' || state.actingPlayerId !== actor.id) return fail('Nothing to discard right now.')
     const required = state.discardRemaining[actor.id] ?? 0
     const amount = RESOURCES.reduce((sum, resource) => sum + (action.resources[resource] ?? 0), 0)
-    if (!validResourceMap(action.resources) || amount !== required || RESOURCES.some((resource) => (action.resources[resource] ?? 0) > actor.resources[resource])) return fail(`Discard exactly ${required} resource cards`)
+    if (!validResourceMap(action.resources) || amount !== required || RESOURCES.some((resource) => (action.resources[resource] ?? 0) > actor.resources[resource])) return fail(`Discard exactly ${required} cards, no more and no fewer.`)
     for (const resource of RESOURCES) {
       const count = action.resources[resource] ?? 0
       actor.resources[resource] -= count
@@ -523,7 +527,7 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
   }
 
   if (action.type === 'move-robber') {
-    if (state.phase !== 'move-robber' || actor.id !== currentPlayer(state).id || action.hexId === state.board.robberHexId || !state.board.hexes.some((hex) => hex.id === action.hexId)) return fail('Move the robber to a different hex')
+    if (state.phase !== 'move-robber' || actor.id !== currentPlayer(state).id || action.hexId === state.board.robberHexId || !state.board.hexes.some((hex) => hex.id === action.hexId)) return fail('The robber has to go somewhere new.')
     state.board.robberHexId = action.hexId
     const hex = state.board.hexes.find((tile) => tile.id === action.hexId)
     const victims = new Set<string>()
@@ -542,9 +546,9 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
   }
 
   if (action.type === 'steal-from') {
-    if (state.phase !== 'choose-victim' || !state.robberVictims.includes(action.playerId)) return fail('Choose an adjacent player')
+    if (state.phase !== 'choose-victim' || !state.robberVictims.includes(action.playerId)) return fail('Pick someone built beside that tile.')
     const victim = playerById(state, action.playerId)
-    if (!victim) return fail('That player is unavailable')
+    if (!victim) return fail('That seat is gone.')
     const cards = RESOURCES.flatMap((resource) => Array<Resource>(victim.resources[resource]).fill(resource))
     if (cards.length) {
       const random = randomSource ?? seededRandom(state.privateRandomSeed ^ ((state.revision + 1) * 0x85ebca6b))
@@ -554,15 +558,17 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
     }
     state.robberVictims = []
     resumeTurnPhase(state)
-    events.push(addEvent(state, 'robbery', cards.length ? `${actor.name} stole a resource from ${victim.name}.` : `${victim.name} had no resource cards to steal.`, actor.id))
+    events.push(addEvent(state, 'robbery', cards.length ? `${actor.name} took a card from ${victim.name}.` : `${victim.name} had nothing to take.`, actor.id))
     return finish(state, events)
   }
 
   if (action.type === 'build-road') {
     const free = state.phase === 'road-building' && action.free
-    if ((state.phase !== 'action' && !free) || !canPlaceRoad(state, action.edgeId, actor.id) || actor.roads.length >= 15) return fail('That road is not legal')
+    if (state.phase !== 'action' && !free) return fail('You cannot do that right now.')
+    if (actor.roads.length >= 15) return fail('All 15 of your roads are on the board. That is every road you get.')
+    if (!canPlaceRoad(state, action.edgeId, actor.id)) return fail('Roads must connect to your own road or settlement.')
     if (!free) {
-      if (!hasResources(actor, COSTS.road)) return fail('A road costs brick and lumber')
+      if (!hasResources(actor, COSTS.road)) return fail('A road costs 1 brick and 1 lumber.')
       pay(state, actor, COSTS.road)
     }
     state.roadOwners[action.edgeId] = actor.id
@@ -577,7 +583,10 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
   }
 
   if (action.type === 'build-settlement') {
-    if (state.phase !== 'action' || !canPlaceSettlement(state, action.vertexId, actor.id) || actor.settlements.length >= 5 || !hasResources(actor, COSTS.settlement)) return fail('That settlement is not legal or affordable')
+    if (state.phase !== 'action') return fail('You cannot do that right now.')
+    if (!canPlaceSettlement(state, action.vertexId, actor.id)) return fail('Settlements need two edges of space, and a road of yours reaching the corner.')
+    if (actor.settlements.length >= 5) return fail('All five of your settlements are on the board. Upgrade one to a city to free it up.')
+    if (!hasResources(actor, COSTS.settlement)) return fail('A settlement costs 1 brick, 1 lumber, 1 grain and 1 wool.')
     pay(state, actor, COSTS.settlement)
     state.buildings[action.vertexId] = { playerId: actor.id, type: 'settlement' }
     actor.settlements.push(action.vertexId)
@@ -587,7 +596,10 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
   }
 
   if (action.type === 'build-city') {
-    if (state.phase !== 'action' || !actor.settlements.includes(action.vertexId) || actor.cities.length >= 4 || !hasResources(actor, COSTS.city)) return fail('Upgrade one of your settlements with 3 ore and 2 grain')
+    if (state.phase !== 'action') return fail('You cannot do that right now.')
+    if (!actor.settlements.includes(action.vertexId)) return fail('A city has to grow from one of your own settlements. Pick one of yours.')
+    if (actor.cities.length >= 4) return fail('All four of your cities are on the board. That is every city you get.')
+    if (!hasResources(actor, COSTS.city)) return fail('A city costs 3 ore and 2 grain.')
     pay(state, actor, COSTS.city)
     actor.settlements = actor.settlements.filter((id) => id !== action.vertexId)
     actor.cities.push(action.vertexId)
@@ -597,20 +609,22 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
   }
 
   if (action.type === 'buy-development') {
-    if (state.phase !== 'action' || !state.developmentDeck.length || !hasResources(actor, COSTS.development)) return fail('A development card costs ore, wool, and grain')
+    if (state.phase !== 'action') return fail('You cannot do that right now.')
+    if (!state.developmentDeck.length) return fail('The development deck is empty.')
+    if (!hasResources(actor, COSTS.development)) return fail('A card costs 1 ore, 1 wool and 1 grain.')
     pay(state, actor, COSTS.development)
     const card = state.developmentDeck.shift()
     if (card) {
       actor.development.push(card)
       actor.boughtDevelopment.push(card)
     }
-    events.push(addEvent(state, 'development-bought', `${actor.name} bought a development card.`, actor.id))
+    events.push(addEvent(state, 'development-bought', `${actor.name} bought a card.`, actor.id))
     return finish(state, events)
   }
 
   if (action.type === 'play-development') {
-    if ((state.phase !== 'pre-roll' && state.phase !== 'action') || state.playedDevelopmentThisTurn || !playableDevelopment(actor, action.card)) return fail('That development card cannot be played now')
-    if (action.card === 'year-of-plenty' && !canSupplyYearOfPlenty(state)) return fail('The bank cannot supply two resources')
+    if ((state.phase !== 'pre-roll' && state.phase !== 'action') || state.playedDevelopmentThisTurn || !playableDevelopment(actor, action.card)) return fail('One development card per turn, and never on the turn you bought it.')
+    if (action.card === 'year-of-plenty' && !canSupplyYearOfPlenty(state)) return fail('The bank is down to its last card.')
     removeCard(actor, action.card)
     state.playedDevelopmentThisTurn = true
     if (action.card === 'knight') {
@@ -622,25 +636,25 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
       else resumeTurnPhase(state)
     } else if (action.card === 'year-of-plenty') state.phase = 'year-of-plenty'
     else state.phase = 'monopoly'
-    events.push(addEvent(state, 'development-played', `${actor.name} played ${action.card.replaceAll('-', ' ')}.`, actor.id))
+    events.push(addEvent(state, 'development-played', `${actor.name} played ${DEVELOPMENT_NAME[action.card]}.`, actor.id))
     return finish(state, events)
   }
 
   if (action.type === 'choose-year-of-plenty') {
-    if (state.phase !== 'year-of-plenty') return fail('Year of Plenty is not active')
+    if (state.phase !== 'year-of-plenty') return fail('Year of Plenty is not in play.')
     const [first, second] = action.resources
-    if (state.bank[first] < 1 || state.bank[second] < (first === second ? 2 : 1)) return fail('The bank cannot supply those resources')
+    if (state.bank[first] < 1 || state.bank[second] < (first === second ? 2 : 1)) return fail('The bank cannot cover both of those. Pick again.')
     state.bank[first] -= 1
     state.bank[second] -= 1
     actor.resources[first] += 1
     actor.resources[second] += 1
     resumeTurnPhase(state)
-    events.push(addEvent(state, 'year-of-plenty', `${actor.name} drew two resources.`, actor.id))
+    events.push(addEvent(state, 'year-of-plenty', `${actor.name} took two cards from the bank.`, actor.id))
     return finish(state, events)
   }
 
   if (action.type === 'choose-monopoly') {
-    if (state.phase !== 'monopoly') return fail('Monopoly is not active')
+    if (state.phase !== 'monopoly') return fail('Monopoly is not in play.')
     let amount = 0
     for (const player of state.players) {
       if (player.id === actor.id) continue
@@ -649,24 +663,24 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
       player.resources[action.resource] = 0
     }
     resumeTurnPhase(state)
-    events.push(addEvent(state, 'monopoly', `${actor.name} claimed ${amount} ${action.resource}.`, actor.id, { amount }))
+    events.push(addEvent(state, 'monopoly', `${actor.name} claimed every ${action.resource} on the table, ${amount} cards.`, actor.id, { amount }))
     return finish(state, events)
   }
 
   if (action.type === 'maritime-trade') {
-    if (state.phase !== 'action' || action.give === action.receive || !tradeRatios(state, actor, action.give).includes(action.ratio) || actor.resources[action.give] < action.ratio || state.bank[action.receive] < 1) return fail('That maritime trade is unavailable')
+    if (state.phase !== 'action' || action.give === action.receive || !tradeRatios(state, actor, action.give).includes(action.ratio) || actor.resources[action.give] < action.ratio || state.bank[action.receive] < 1) return fail('You need the full stack to give, and the bank needs one to hand back.')
     actor.resources[action.give] -= action.ratio
     state.bank[action.give] += action.ratio
     state.bank[action.receive] -= 1
     actor.resources[action.receive] += 1
-    events.push(addEvent(state, 'maritime-trade', `${actor.name} traded ${action.ratio} ${action.give} for ${action.receive}.`, actor.id))
+    events.push(addEvent(state, 'maritime-trade', `${actor.name} traded ${action.ratio} ${action.give} for 1 ${action.receive} at the harbor.`, actor.id))
     return finish(state, events)
   }
 
   if (action.type === 'finish-road-building') {
-    if (state.phase !== 'road-building') return fail('Road Building is not active')
+    if (state.phase !== 'road-building') return fail('Road Building is not in play.')
     const legalRoadRemains = state.pendingRoads > 0 && actor.roads.length < 15 && Object.keys(state.board.edges).some((edgeId) => canPlaceRoad(state, edgeId, actor.id))
-    if (legalRoadRemains) return fail('Place both free roads while legal paths remain')
+    if (legalRoadRemains) return fail('Road Building gives you two. Place the second one.')
     state.pendingRoads = 0
     resumeTurnPhase(state)
     events.push(addEvent(state, 'road-building-finished', `${actor.name} finished placing free roads.`, actor.id))
@@ -678,10 +692,10 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
     const other = playerById(state, trade.toPlayerId)
     const giveTotal = RESOURCES.reduce((sum, resource) => sum + (trade.give[resource] ?? 0), 0)
     const receiveTotal = RESOURCES.reduce((sum, resource) => sum + (trade.receive[resource] ?? 0), 0)
-    if (state.phase !== 'action' || actor.id !== currentPlayer(state).id || trade.fromPlayerId !== actor.id || !other || other.id === actor.id || !validResourceMap(trade.give) || !validResourceMap(trade.receive) || !giveTotal || !receiveTotal) return fail('That domestic trade is invalid')
-    if (RESOURCES.some((resource) => actor.resources[resource] < (trade.give[resource] ?? 0))) return fail('You lack the cards in that offer')
+    if (state.phase !== 'action' || actor.id !== currentPlayer(state).id || trade.fromPlayerId !== actor.id || !other || other.id === actor.id || !validResourceMap(trade.give) || !validResourceMap(trade.receive) || !giveTotal || !receiveTotal) return fail('Put at least one card on each side of the offer.')
+    if (RESOURCES.some((resource) => actor.resources[resource] < (trade.give[resource] ?? 0))) return fail('You do not hold everything in that offer.')
     const givesOnlySame = RESOURCES.every((resource) => !(trade.give[resource] && trade.receive[resource]))
-    if (!givesOnlySame) return fail('A resource cannot be traded for itself')
+    if (!givesOnlySame) return fail('You cannot ask for what you are giving.')
     state.pendingTrade = structuredClone(trade)
     state.phase = 'trade-response'
     state.actingPlayerId = other.id
@@ -691,10 +705,10 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
 
   if (action.type === 'respond-trade') {
     const trade = state.pendingTrade
-    if (state.phase !== 'trade-response' || !trade || trade.toPlayerId !== actor.id) return fail('There is no trade for you to answer')
+    if (state.phase !== 'trade-response' || !trade || trade.toPlayerId !== actor.id) return fail('No trade is waiting on you.')
     const initiator = playerById(state, trade.fromPlayerId)
-    if (!initiator) return fail('The offering player is unavailable')
-    if (action.accept && RESOURCES.some((resource) => actor.resources[resource] < (trade.receive[resource] ?? 0) || initiator.resources[resource] < (trade.give[resource] ?? 0))) return fail('A trader no longer has those cards')
+    if (!initiator) return fail('The other seat is gone. The offer is dead.')
+    if (action.accept && RESOURCES.some((resource) => actor.resources[resource] < (trade.receive[resource] ?? 0) || initiator.resources[resource] < (trade.give[resource] ?? 0))) return fail('One of you no longer holds those cards. The offer is dead.')
     if (action.accept) {
       for (const resource of RESOURCES) {
         const give = trade.give[resource] ?? 0
@@ -717,9 +731,9 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
     const giveTotal = RESOURCES.reduce((sum, resource) => sum + (trade.give[resource] ?? 0), 0)
     const receiveTotal = RESOURCES.reduce((sum, resource) => sum + (trade.receive[resource] ?? 0), 0)
     const participantsIncludeCurrent = [trade.fromPlayerId, trade.toPlayerId].includes(currentPlayer(state).id)
-    if (state.phase !== 'trade-response' || !previous || previous.toPlayerId !== actor.id || previous.fromPlayerId !== trade.toPlayerId || trade.fromPlayerId !== actor.id || !other || !participantsIncludeCurrent || !validResourceMap(trade.give) || !validResourceMap(trade.receive) || !giveTotal || !receiveTotal) return fail('That counteroffer is invalid')
-    if (RESOURCES.some((resource) => actor.resources[resource] < (trade.give[resource] ?? 0))) return fail('You lack the cards in that counteroffer')
-    if (!RESOURCES.every((resource) => !(trade.give[resource] && trade.receive[resource]))) return fail('A resource cannot be traded for itself')
+    if (state.phase !== 'trade-response' || !previous || previous.toPlayerId !== actor.id || previous.fromPlayerId !== trade.toPlayerId || trade.fromPlayerId !== actor.id || !other || !participantsIncludeCurrent || !validResourceMap(trade.give) || !validResourceMap(trade.receive) || !giveTotal || !receiveTotal) return fail('Put at least one card on each side of the counteroffer.')
+    if (RESOURCES.some((resource) => actor.resources[resource] < (trade.give[resource] ?? 0))) return fail('You do not hold everything in that counteroffer.')
+    if (!RESOURCES.every((resource) => !(trade.give[resource] && trade.receive[resource]))) return fail('You cannot ask for what you are giving.')
     state.pendingTrade = structuredClone(trade)
     state.actingPlayerId = other.id
     events.push(addEvent(state, 'trade-countered', `${actor.name} made a counteroffer to ${other.name}.`, actor.id, { toPlayerId: other.id }, trade))
@@ -727,7 +741,7 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
   }
 
   if (action.type === 'end-turn') {
-    if (state.phase !== 'action' || actor.id !== currentPlayer(state).id) return fail('Finish resolving the current action first')
+    if (state.phase !== 'action' || actor.id !== currentPlayer(state).id) return fail('Finish what you started before ending the turn.')
     actor.boughtDevelopment = []
     state.playedDevelopmentThisTurn = false
     state.lastRoll = undefined
@@ -738,7 +752,7 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
     return finish(state, events)
   }
 
-  return fail('That action is not available now')
+  return fail('You cannot do that right now.')
 }
 
 export const getPlayerView = (state: GameState, playerId: string): PlayerView => {
