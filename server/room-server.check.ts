@@ -22,9 +22,16 @@ const post = async (path: string, body: unknown) => fetch(`${baseUrl}${path}`, {
   body: JSON.stringify(body),
 })
 
-const create = await post('/api/rooms', { name: 'Aditya', seatsTotal: 3 })
+const boardOptions = { balancedPips: true, desert: 'center', harbors: 'fixed' }
+const rejectedSeed = await post('/api/rooms', { name: 'Aditya', seatsTotal: 3, boardSeed: -4 })
+assert.equal(rejectedSeed.status, 400)
+assert.equal((await rejectedSeed.json()).error.code, 'invalid_board_seed')
+
+const create = await post('/api/rooms', { name: 'Aditya', seatsTotal: 3, boardSeed: 4_242, boardOptions })
 assert.equal(create.status, 201)
 const host = (await create.json()).data
+assert.equal(host.room.boardSeed, 4_242)
+assert.deepEqual(host.room.boardOptions, boardOptions)
 const code = host.credentials.code as string
 assert.match(code, /^[A-Z2-9]{6}$/)
 
@@ -82,6 +89,14 @@ const views = clients.map(latest)
 assert.deepEqual(views[0].seats.map((seat) => seat.controller), ['human', 'human', 'agent'])
 assert.ok(views.every((view) => view.game?.privateState && view.game.playerId === view.viewerPlayerId))
 
+// The host previewed one island while creating the room; that is the island being played.
+const playedBoard = views[0].game!.publicState.board
+assert.equal(playedBoard.generation.seed, 4_242)
+assert.deepEqual(playedBoard.generation.options, boardOptions)
+assert.deepEqual(playedBoard.generation.relaxed, [])
+const desert = playedBoard.hexes.find((hex) => hex.terrain === 'desert')!
+assert.equal(Math.max(Math.abs(desert.q), Math.abs(desert.r), Math.abs(desert.q + desert.r)), 0)
+
 const actorId = views[0].game!.publicState.actingPlayerId
 const actorIndex = views.findIndex((view) => view.viewerPlayerId === actorId)
 const actor = clients[actorIndex]
@@ -103,4 +118,4 @@ await Promise.all(clients.map((client) => once(client.socket, 'close')))
 await new Promise<void>((resolve) => server.close(() => resolve()))
 await closeRoomStore()
 
-console.log('room server check passed: health, create, join, no bots, pre-auth rejection, private views, realtime action fanout, stale revision, seat auth')
+console.log('room server check passed: health, create, join, board seed and options plumbed into the played island, no bots, pre-auth rejection, private views, realtime action fanout, stale revision, seat auth')

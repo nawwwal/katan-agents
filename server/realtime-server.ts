@@ -15,7 +15,7 @@ const json = (response: http.ServerResponse, status: number, payload: unknown) =
 }
 
 const fail = (response: http.ServerResponse, error: unknown) => {
-  const roomError = error instanceof RoomError ? error : new RoomError('server_error', 'The room service could not complete that request.', 500)
+  const roomError = error instanceof RoomError ? error : new RoomError('server_error', 'The room could not handle that. Try again.', 500)
   json(response, roomError.status, { error: { code: roomError.code, message: roomError.message } })
 }
 
@@ -89,7 +89,7 @@ export const createRealtimeServer = () => {
       try {
         await enforceRateLimit('create', clientIdentity(request), 12, 60)
         const body = await readJson(request)
-        return json(response, 201, { data: await createRoom({ name: body.name, seatsTotal: body.seatsTotal }) })
+        return json(response, 201, { data: await createRoom({ name: body.name, seatsTotal: body.seatsTotal, boardSeed: body.boardSeed, boardOptions: body.boardOptions }) })
       } catch (error) {
         return fail(response, error)
       }
@@ -168,7 +168,7 @@ export const createRealtimeServer = () => {
             syncRoomEvents()
             return send(socket, { type: 'snapshot', room })
           } catch (error) {
-            const roomError = error instanceof RoomError ? error : new RoomError('server_error', 'Could not join the room.', 500)
+            const roomError = error instanceof RoomError ? error : new RoomError('server_error', 'Could not take that seat.', 500)
             send(socket, { type: 'error', error: { code: roomError.code, message: roomError.message } })
             return socket.close(4003, 'Invalid seat')
           }
@@ -181,7 +181,7 @@ export const createRealtimeServer = () => {
           else throw new RoomError('invalid_message', 'Unknown room message.')
           send(socket, { type: 'ack', requestId: message.requestId })
         } catch (error) {
-          const roomError = error instanceof RoomError ? error : new RoomError('server_error', 'The room command failed.', 500)
+          const roomError = error instanceof RoomError ? error : new RoomError('server_error', 'The room could not run that. Your game is safe.', 500)
           send(socket, { type: 'error', requestId: 'requestId' in message ? message.requestId : undefined, error: { code: roomError.code, message: roomError.message } })
           if (roomError.code === 'stale_revision') {
             const room = await getRoomView(connection.code, connection.token)

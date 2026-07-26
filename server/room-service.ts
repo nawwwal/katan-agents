@@ -2,7 +2,8 @@ import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 
 import { Redis } from 'ioredis'
 import { applyAction, createGame, currentActorId, getPlayerView } from '../src/game/engine.js'
 import { parsePlayerAction } from '../src/game/room.js'
-import type { Controller, GameState } from '../src/game/types.js'
+import { parseBoardOptions, parseBoardSeed } from '../src/game/board.js'
+import type { BoardOptions, Controller, GameState } from '../src/game/types.js'
 import type { RoomCredentials, RoomSeat, RoomStatus, RoomView } from '../src/game/room.js'
 
 const ROOM_TTL_SECONDS = 24 * 60 * 60
@@ -24,6 +25,9 @@ type StoredRoom = {
   seatsTotal: 3 | 4
   seats: StoredSeat[]
   game?: GameState
+  /** The board the host chose while creating the room, replayed into the first game. */
+  boardSeed?: number
+  boardOptions: BoardOptions
   gameNumber: number
   createdAt: number
   updatedAt: number
@@ -136,7 +140,7 @@ const mutateRoom = async <T>(code: string, update: (room: StoredRoom) => T) => {
   const normalized = normalizeCode(code)
   const localTask = async () => {
     const room = await getStoredRoom(normalized)
-    if (!room) throw new RoomError('room_not_found', 'That room does not exist or has expired.', 404)
+    if (!room) throw new RoomError('room_not_found', 'No room with that code. Check the six characters, or ask the host for a fresh code.', 404)
     const result = update(room)
     room.updatedAt = nextUpdatedAt(room)
     localRooms.set(normalized, cloneRoom(room))
@@ -146,7 +150,7 @@ const mutateRoom = async <T>(code: string, update: (room: StoredRoom) => T) => {
   if (!redis) return withLocalLock(normalized, localTask)
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const room = await getStoredRoom(normalized)
-    if (!room) throw new RoomError('room_not_found', 'That room does not exist or has expired.', 404)
+    if (!room) throw new RoomError('room_not_found', 'No room with that code. Check the six characters, or ask the host for a fresh code.', 404)
     const observedUpdatedAt = room.updatedAt
     const result = update(room)
     room.updatedAt = nextUpdatedAt(room)
@@ -155,15 +159,15 @@ const mutateRoom = async <T>(code: string, update: (room: StoredRoom) => T) => {
       publishLocal(normalized)
       return result
     }
-    if (committed === -1) throw new RoomError('room_not_found', 'That room does not exist or has expired.', 404)
+    if (committed === -1) throw new RoomError('room_not_found', 'No room with that code. Check the six characters, or ask the host for a fresh code.', 404)
     await new Promise((resolve) => setTimeout(resolve, 4 + randomInt(8)))
   }
-  throw new RoomError('room_busy', 'The room changed too quickly. Read the latest state and try again.', 409)
+  throw new RoomError('room_busy', 'The room moved while that was in flight. Try again.', 409)
 }
 
 const roomView = (room: StoredRoom, token: string): RoomView => {
   const viewer = seatForToken(room, token)
-  if (!viewer) throw new RoomError('invalid_seat_token', 'This seat token is invalid.', 403)
+  if (!viewer) throw new RoomError('invalid_seat_token', 'This seat is no longer yours. Rejoin with the room code.', 403)
   return {
     v: 1,
     code: room.code,
@@ -173,6 +177,8 @@ const roomView = (room: StoredRoom, token: string): RoomView => {
     viewerPlayerId: viewer.id,
     isHost: viewer.isHost,
     updatedAt: room.updatedAt,
+    boardSeed: room.boardSeed,
+    boardOptions: parseBoardOptions(room.boardOptions),
     game: room.game ? getPlayerView(room.game, viewer.id) : undefined,
   }
 }
@@ -201,7 +207,7 @@ export const enforceRateLimit = async (scope: 'create' | 'join' | 'socket' | 'mc
       for (const [candidate, value] of localRateLimits) if (value.expiresAt <= now) localRateLimits.delete(candidate)
     }
   }
-  if (count > limit) throw new RoomError('rate_limited', 'Too many room requests. Wait a moment and try again.', 429)
+  if (count > limit) throw new RoomError('rate_limited', 'Too many requests. Wait a few seconds and try again.', 429)
 }
 
 export const roomStoreHealth = () => ({
@@ -210,11 +216,14 @@ export const roomStoreHealth = () => ({
   ...(redisRequired ? { error: 'REDIS_URL is required on Vercel.' } : {}),
 })
 
-export const createRoom = async (input: { name: unknown; seatsTotal: unknown }) => {
+export const createRoom = async (input: { name: unknown; seatsTotal: unknown; boardSeed?: unknown; boardOptions?: unknown }) => {
   const name = cleanName(input.name)
   const seatsTotal = input.seatsTotal
   if (!name) throw new RoomError('invalid_name', 'Enter a player name.')
-  if (seatsTotal !== 3 && seatsTotal !== 4) throw new RoomError('invalid_seat_count', 'Choose a three or four player room.')
+  if (seatsTotal !== 3 && seatsTotal !== 4) throw new RoomError('invalid_seat_count', 'Tables seat three or four.')
+  if (input.boardSeed !== undefined && parseBoardSeed(input.boardSeed) === undefined) throw new RoomError('invalid_board_seed', 'An island number is a whole number from 0 to 4,294,967,295.')
+  const boardSeed = parseBoardSeed(input.boardSeed)
+  const boardOptions = parseBoardOptions(input.boardOptions)
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const code = freshCode()
     const token = freshToken()
@@ -225,6 +234,8 @@ export const createRoom = async (input: { name: unknown; seatsTotal: unknown }) 
       status: 'lobby',
       seatsTotal,
       seats: [{ id: 'p0', name, controller: 'human', isHost: true, tokenHash: hashToken(token) }],
+      boardSeed,
+      boardOptions,
       gameNumber: 0,
       createdAt: now,
       updatedAt: now,
@@ -234,7 +245,7 @@ export const createRoom = async (input: { name: unknown; seatsTotal: unknown }) 
       return { credentials, room: roomView(room, token) }
     }
   }
-  throw new RoomError('room_code_unavailable', 'Could not reserve a room code. Try again.', 503)
+  throw new RoomError('room_code_unavailable', 'Could not reserve a code. Try again.', 503)
 }
 
 export const joinRoom = async (input: { code: string; name: unknown; controller: unknown; joinId?: unknown; playerKey?: unknown }) => {
@@ -269,7 +280,7 @@ export const joinRoom = async (input: { code: string; name: unknown; controller:
 
   if (joinIdHash) {
     const current = await getStoredRoom(input.code)
-    if (!current) throw new RoomError('room_not_found', 'That room does not exist or has expired.', 404)
+    if (!current) throw new RoomError('room_not_found', 'No room with that code. Check the six characters, or ask the host for a fresh code.', 404)
     if (recoverSeat(current)) {
       const credentials: RoomCredentials = { code: current.code, token, playerId }
       return { credentials, room: roomView(current, token), reused }
@@ -278,30 +289,37 @@ export const joinRoom = async (input: { code: string; name: unknown; controller:
 
   await mutateRoom(input.code, (room) => {
     if (recoverSeat(room)) return
-    if (room.status !== 'lobby') throw new RoomError('room_started', 'That game has already started.', 409)
-    if (room.seats.length >= room.seatsTotal) throw new RoomError('room_full', 'That room is full.', 409)
+    if (room.status !== 'lobby') throw new RoomError('room_started', 'That game already started. Ask the host to open a new room.', 409)
+    if (room.seats.length >= room.seatsTotal) throw new RoomError('room_full', 'Every seat in that room is taken.', 409)
     playerId = `p${room.seats.length}`
     room.seats.push({ id: playerId, name, controller: controller as Controller, isHost: false, tokenHash: hashToken(token), joinIdHash })
   })
   const room = await getStoredRoom(input.code)
-  if (!room) throw new RoomError('room_not_found', 'That room does not exist or has expired.', 404)
+  if (!room) throw new RoomError('room_not_found', 'No room with that code. Check the six characters, or ask the host for a fresh code.', 404)
   const credentials: RoomCredentials = { code: room.code, token, playerId }
   return { credentials, room: roomView(room, token), reused }
 }
 
 export const getRoomView = async (code: string, token: string) => {
   const room = await getStoredRoom(code)
-  if (!room) throw new RoomError('room_not_found', 'That room does not exist or has expired.', 404)
+  if (!room) throw new RoomError('room_not_found', 'No room with that code. Check the six characters, or ask the host for a fresh code.', 404)
   return roomView(room, token)
 }
 
 export const startRoom = async (code: string, token: string) => mutateRoom(code, (room) => {
   const viewer = seatForToken(room, token)
-  if (!viewer?.isHost) throw new RoomError('host_only', 'Only the room host can start the game.', 403)
+  if (!viewer?.isHost) throw new RoomError('host_only', 'Only the host can start. They are looking at the same lobby you are.', 403)
   if (room.status === 'playing') throw new RoomError('room_started', 'The game is already running.', 409)
-  if (room.seats.length !== room.seatsTotal) throw new RoomError('room_not_ready', 'Fill every seat before starting.', 409)
+  if (room.seats.length !== room.seatsTotal) {
+    const open = room.seatsTotal - room.seats.length
+    throw new RoomError('room_not_ready', `${open} seat${open === 1 ? '' : 's'} still open. Send the invite link, or the agent command from the lobby.`, 409)
+  }
+  // The host previewed one island, so the first game plays it. A rematch keeps their board
+  // options and rolls a new seed rather than dealing the same island twice.
+  const seed = room.gameNumber === 0 && room.boardSeed !== undefined ? room.boardSeed : freshSeed()
   room.game = createGame({
-    seed: freshSeed(),
+    seed,
+    boardOptions: room.boardOptions,
     privateRandomSeed: freshSeed(),
     random: secureRandom,
     controllers: room.seats.map((seat) => seat.controller),
@@ -313,12 +331,12 @@ export const startRoom = async (code: string, token: string) => mutateRoom(code,
 
 export const playRoomAction = async (code: string, token: string, expectedRevision: number, input: unknown) => mutateRoom(code, (room) => {
   const viewer = seatForToken(room, token)
-  if (!viewer) throw new RoomError('invalid_seat_token', 'This seat token is invalid.', 403)
-  if (room.status !== 'playing' || !room.game) throw new RoomError('room_not_playing', 'This game is not running.', 409)
-  if (!Number.isSafeInteger(expectedRevision) || expectedRevision !== room.game.revision) throw new RoomError('stale_revision', 'The room advanced before that action arrived.', 409)
-  if (currentActorId(room.game) !== viewer.id) throw new RoomError('not_your_turn', 'Another seat must act first.', 409)
+  if (!viewer) throw new RoomError('invalid_seat_token', 'This seat is no longer yours. Rejoin with the room code.', 403)
+  if (room.status !== 'playing' || !room.game) throw new RoomError('room_not_playing', 'That game is not running.', 409)
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision !== room.game.revision) throw new RoomError('stale_revision', 'Someone moved first. Your view has caught up, so try again.', 409)
+  if (currentActorId(room.game) !== viewer.id) throw new RoomError('not_your_turn', 'It is not your turn yet.', 409)
   const action = parsePlayerAction(getPlayerView(room.game, viewer.id), input)
-  if (!action) throw new RoomError('illegal_action', 'That action is not legal in the current position.', 422)
+  if (!action) throw new RoomError('illegal_action', 'That move is not legal here.', 422)
   const result = applyAction(room.game, action, secureRandom)
   if (result.ok === false) throw new RoomError('illegal_action', result.message, 422)
   room.game = result.state

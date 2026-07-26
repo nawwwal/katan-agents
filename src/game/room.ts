@@ -1,5 +1,5 @@
 import { RESOURCES, emptyResources } from './types.js'
-import type { Controller, GameAction, GameDisplayState, PlayerView, Resources } from './types.js'
+import type { BoardOptions, Controller, GameAction, GameDisplayState, PlayerView, Resources } from './types.js'
 
 export type RoomStatus = 'lobby' | 'playing' | 'finished'
 
@@ -19,6 +19,9 @@ export type RoomView = {
   viewerPlayerId: string
   isHost: boolean
   updatedAt: number
+  /** The island the host previewed. Absent once a rematch has rolled a fresh one. */
+  boardSeed?: number
+  boardOptions: BoardOptions
   game?: PlayerView
 }
 

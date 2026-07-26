@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { currentActorId } from './engine'
 import { RESOURCES } from './types'
 import { toDisplayState } from './room'
-import type { AgentStatus, GameAction, GameDisplayState, GameEvent, Resources } from './types'
+import type { AgentStatus, BoardOptions, GameAction, GameDisplayState, GameEvent, Resources } from './types'
 import type { RoomCredentials, RoomView, ServerRoomMessage } from './room'
 
 export type GamePresentation = {
@@ -39,7 +39,7 @@ const requestRoom = async <T>(path: string, body: unknown): Promise<T> => {
     body: JSON.stringify(body),
   })
   const payload = await response.json() as { data?: T; error?: { message?: string } }
-  if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? 'The room request failed.')
+  if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? 'The room did not answer. Try again.')
   return payload.data
 }
 
@@ -111,9 +111,15 @@ export const useGame = () => {
         return delta ? [[resource, delta]] : []
       }))
       const actionType = events.toReversed().map((event) => eventActionType(event, previous)).find((type) => type !== undefined)
+      const awardChange = (award: 'Longest Road' | 'Largest Army', holder: string | undefined) =>
+        holder ? `${award} passes to ${holder}` : `${award} is unclaimed`
       const awardChanges = [
-        previous.longestRoad?.playerId !== next.longestRoad?.playerId ? `${next.players.find((player) => player.id === next.longestRoad?.playerId)?.name ?? 'No one'} now holds Longest Road` : undefined,
-        previous.largestArmy?.playerId !== next.largestArmy?.playerId ? `${next.players.find((player) => player.id === next.largestArmy?.playerId)?.name ?? 'No one'} now holds Largest Army` : undefined,
+        previous.longestRoad?.playerId !== next.longestRoad?.playerId
+          ? awardChange('Longest Road', next.players.find((player) => player.id === next.longestRoad?.playerId)?.name)
+          : undefined,
+        previous.largestArmy?.playerId !== next.largestArmy?.playerId
+          ? awardChange('Largest Army', next.players.find((player) => player.id === next.largestArmy?.playerId)?.name)
+          : undefined,
       ].filter((change): change is string => Boolean(change))
       if (actionType) setPresentation({
         revision: next.revision,
@@ -152,7 +158,7 @@ export const useGame = () => {
         try {
           message = JSON.parse(String(event.data)) as ServerRoomMessage
         } catch {
-          setError('The room sent an unreadable update. Reconnecting…')
+          setError('Lost the thread of the room. Reconnecting.')
           socket.close()
           return
         }
@@ -208,11 +214,11 @@ export const useGame = () => {
     applySnapshot(next.room)
   }, [applySnapshot])
 
-  const createRoom = useCallback(async (name: string, seatsTotal: 3 | 4) => {
+  const createRoom = useCallback(async (name: string, seatsTotal: 3 | 4, boardSeed?: number, boardOptions?: BoardOptions) => {
     setBusy(true)
     setError(undefined)
     try {
-      remember(await requestRoom('/api/rooms', { name, seatsTotal }))
+      remember(await requestRoom('/api/rooms', { name, seatsTotal, boardSeed, boardOptions }))
       return true
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not create the room.')
@@ -238,7 +244,7 @@ export const useGame = () => {
 
   const send = useCallback((message: object) => {
     if (socketRef.current?.readyState !== WebSocket.OPEN) {
-      setError('The room is reconnecting. Your move was not sent.')
+      setError('Still reconnecting. That move did not go through, so try it again in a second.')
       return false
     }
     socketRef.current.send(JSON.stringify(message))
@@ -284,7 +290,7 @@ export const useGame = () => {
     .filter((player) => player.controller === 'agent')
     .map((player) => [player.id, {
       state: thinkingPlayerId === player.id ? 'thinking' : 'idle',
-      detail: thinkingPlayerId === player.id ? 'Waiting for a local agent action' : 'Agent seat',
+      detail: thinkingPlayerId === player.id ? 'Deciding' : 'Local agent',
       revision: game?.revision,
     } satisfies AgentStatus])), [game, thinkingPlayerId])
 

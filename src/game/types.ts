@@ -64,16 +64,14 @@ export type BoardEdge = {
 export type DesertPlacement = 'random' | 'center' | 'edge'
 export type HarborLayout = 'shuffled' | 'fixed'
 
-/** Constraints the host can ask the generator to satisfy, in the order they are relaxed. */
-export type BoardConstraint = 'balancedPips' | 'balancedResources' | 'noAdjacentSameNumbers' | 'noAdjacentSixEight'
+/**
+ * Optional constraints, in the order the generator relaxes them. The four adjacency
+ * rules (no touching 6/8, no touching 2/12, no repeated adjacent number, no repeated
+ * adjacent terrain) are invariants of `createBoard`, not options, and are never relaxed.
+ */
+export type BoardConstraint = 'balancedPips'
 
 export type BoardOptions = {
-  /** No tile may share its terrain with two or more of its neighbours. */
-  balancedResources: boolean
-  /** No 6 or 8 touches another 6 or 8. */
-  noAdjacentSixEight: boolean
-  /** No two equal numbers touch. */
-  noAdjacentSameNumbers: boolean
   /** Caps the pips on any one intersection and evens the pips across the six wedges of the island. */
   balancedPips: boolean
   desert: DesertPlacement
@@ -86,17 +84,16 @@ export type BoardGeneration = {
   options: BoardOptions
   /** Constraints the generator had to drop to finish. Empty when everything the host asked for held. */
   relaxed: BoardConstraint[]
+  /** Randomised solves run before the board was accepted. */
   attempts: number
+  /** Backtracking nodes explored, for the search-budget headroom check. */
+  nodes: number
 }
 
-export const BOARD_CONSTRAINTS: BoardConstraint[] = ['balancedPips', 'balancedResources', 'noAdjacentSameNumbers', 'noAdjacentSixEight']
+export const BOARD_CONSTRAINTS: BoardConstraint[] = ['balancedPips']
 
-/** Legacy defaults: exactly what the board looked like before options existed. */
 export const defaultBoardOptions = (): BoardOptions => ({
-  balancedResources: false,
-  noAdjacentSixEight: true,
-  noAdjacentSameNumbers: false,
-  balancedPips: false,
+  balancedPips: true,
   desert: 'random',
   harbors: 'shuffled',
 })
@@ -111,6 +108,23 @@ export type Board = {
 }
 
 export type DevelopmentCard = 'knight' | 'road-building' | 'year-of-plenty' | 'monopoly' | 'victory-point'
+
+/** Card names as the rulebook writes them. Lives here so the engine can name a card in the log without importing the UI. */
+export const DEVELOPMENT_NAME: Record<DevelopmentCard, string> = {
+  knight: 'Knight',
+  'road-building': 'Road Building',
+  'year-of-plenty': 'Year of Plenty',
+  monopoly: 'Monopoly',
+  'victory-point': 'Victory Point',
+}
+
+/** One line of behavior per named character, shown in the lobby and sent to an agent with its seat. */
+export const CHARACTER_LINE: Record<string, string> = {
+  Marlow: 'Harbor pilot. Trades early, trades often.',
+  Ansel: 'Surveyor. Quiet until the ore adds up.',
+  Solveig: 'Road boss. Takes the long way and gets there first.',
+  Bram: 'Ferryman. Impatient, and it shows.',
+}
 
 export type Player = {
   id: string
