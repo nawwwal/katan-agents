@@ -3,18 +3,22 @@
 Pre-planned shopping list for ElevenLabs generation. The point of writing it
 down first is credit efficiency: generate deliberately once, do not explore.
 
-> **Status: round two, July 26, 2026.** 39 files in `public/assets/audio`,
-> 1.31 MB. Regenerate with `python3 scripts/generate-audio.py` (`--dry-run`
+> **Status: round three, July 26, 2026.** 45 files in `public/assets/audio`,
+> 2.2 MB. Regenerate with `python3 scripts/generate-audio.py` (`--dry-run`
 > costs nothing, and a rerun re-bills nothing because raw generations are
 > cached in `tmp/audio-raw`). Actual spend and every deviation are recorded
-> below; round two's results are in their own section at the end.
+> below; each round's results are in their own section at the end. The three
+> music files are **not** produced by this script any more — `scripts/compose.py`
+> writes them, and the script's music items carry `ship=False` so a plain run
+> cannot overwrite the score. Read `art/music.md` first.
 
 ## Budget
 
-Free tier, 10,000 credits total. **1,998 spent as of July 26, 2026** across two
-rounds; see "Round two" at the end for the current figure and the per-item
-outcomes. The prompt-intent tables below are the original plan — where round two
-rewrote a prompt, the script is the source of truth, not this list.
+Free tier, 10,000 credits total. **2,038 spent as of July 26, 2026** across
+three rounds; see "Round three" at the end for the current figure and the
+per-item outcomes. The prompt-intent tables below are the original plan — where
+a later round rewrote a prompt, the script is the source of truth, not this
+list.
 
 Measured cost: a 0.5s sound effect billed 5 credits, so **~10 credits per
 second of generated audio**, and `duration_seconds` is billed whether or not
@@ -39,7 +43,19 @@ priced differently and may not be available on the free tier at all.
    the single biggest saving available.
 4. **No regeneration for taste.** Audition, and only regenerate the specific
    items that genuinely failed. Two attempts maximum per item, then take the
-   best and fix it locally.
+   best and fix it locally. Round three spent a third attempt on one item at a
+   cost of 5 credits and it failed too, which is the argument for the rule: a
+   prompt that has failed twice is describing something the model does not
+   have, and a third wording will not conjure it.
+6. **Ask the API for the event, ask ffmpeg for the mood.** Every prompt that
+   asked for a quiet sound got silence. Name a loud, close-miked object and
+   dial the character back locally. Necessary, and round three found it is not
+   sufficient: it reliably returns *a* loud sound, not the contact you asked
+   for.
+7. **Read the spectrograms as images.** Every defect worth catching in three
+   rounds — a five-impact settle, a double-tapping click, a metronomic music
+   bed, a die that lands twice, a seven-strike rattle — was invisible in the
+   level measurements and obvious in a rendered spectrogram.
 5. Generate at `mp3_44100_128`, then trim silence and normalise locally.
    Ship whatever is smallest that still sounds right.
 
@@ -376,3 +392,187 @@ a baked layer rather than a space the sounds sit in; still no positional audio
 tied to where a piece actually is on the board, only a fixed pan on the dice;
 and the trade and card sounds are single samples that will wear thin. Getting
 past 7 needs a paid music plan, not more credits on this one.
+
+---
+
+# Round three, July 26, 2026
+
+One job: more dice settle samples. The rigid-body throw in
+`src/scene/motion/diceThrow.ts` plans a roll from a seed with real gravity,
+contact impulses and cube-on-cube collision, and `useGameAudio` schedules the
+six loudest contacts of that roll at their real contact times, panned to the
+die that made them. Three settle sources cannot carry six knocks: the same
+file fires twice inside 200 ms and the ear reads a flam, not a die.
+
+There are nine now. Five are their own generation, four are derived.
+
+## Spend
+
+| | credits |
+|---|---|
+| On the account before round three | 1,998 |
+| Spent in round three | 40 |
+| **Total on the account** | **2,038** |
+| Remaining of the 5,000 cap | 2,962 |
+| Remaining of the 10,000 tier | 7,962 |
+
+Verified against `/v1/usage/character-stats?breakdown_type=product_type`, which
+reads `Sound Effects: 2038`. Eight generations at the 0.5 s floor, 5 credits
+each, four kept. The remaster of all 45 files cost nothing: raws are cached.
+
+| generation | credits | kept |
+|---|---|---|
+| `dice-settle-d` bone tick | 5 | yes |
+| `dice-settle-e` attempt 1, flat drop | 5 | no |
+| `dice-settle-e` attempt 2, slammed block | 5 | no |
+| `dice-settle-e` attempt 3, mallet on a workbench | 5 | no |
+| `dice-settle-f` deep oak knock | 5 | yes |
+| `dice-settle-g` knock on a cardboard board | 5 | yes |
+| `dice-settle-h` attempt 1, corner landing that tips | 5 | no |
+| `dice-settle-h` attempt 2, die on die | 5 | yes |
+| **total** | **40** | 4 of 8 |
+
+## The family
+
+Ordered by weight, which is the order `DICE_SETTLES` in `soundbank.ts` uses.
+`E200` is the file's energy over its first 200 ms, in dBFS; `gain` is the bank's
+per-sound gain, solved from it.
+
+| id | source | event | E200 | gain |
+|---|---|---|---|---|
+| `dice-settle-d` | generated | polished bone die flicked onto bare hardwood | -27.1 | 0.40 |
+| `dice-settle-i` | derived from `-h` | glancing die-on-die clip | -27.7 | 0.48 |
+| `dice-settle-b` | derived from base | brighter, faster die | -31.4 | 0.78 |
+| `dice-settle` | generated, round two | sharp knock on oak | -31.3 | 0.82 |
+| `dice-settle-h` | generated | two dice cracking together | -27.1 | 0.57 |
+| `dice-settle-c` | derived from base | heavier, duller die | -30.6 | 0.90 |
+| `dice-settle-g` | generated | blunt knock on a cardboard board | -20.0 | 0.30 |
+| `dice-settle-e` | derived from `-f` | flat face slapping oak | -18.9 | 0.29 |
+| `dice-settle-f` | generated | deep resonant oak knock | -18.8 | 0.31 |
+
+Contact energy now picks the *sample*, through `settleSound(strength, nonce)`,
+so a corner clip and a flat landing are different materials rather than one
+material at two volumes. Gain and pitch still move with energy, but over a much
+narrower range than before: they were carrying the whole illusion when there
+were three sources, and a sample stretched that far starts to sound synthetic.
+
+## Why the gains are solved rather than chosen
+
+Left at the equal 0.7 the three settles used to share, the family spanned
+12.6 dB of event energy and the order was wrong in places. That is not a
+mastering mistake, it is physics meeting a ceiling: a bright three-millisecond
+tick runs into the peak limit long before it gets as loud as a deep knock, so
+the loudest a tick can *be* is quiet in energy terms. Every file's first 200 ms
+was measured and the nine placed on an even six-decibel ramp from `-d` to `-f`.
+**If any of these files is regenerated, re-solve the gains.** `E200` in the
+verification pass is the number to match.
+
+## What the API would not do
+
+`dice-settle-e`, the flat-face landing, took three attempts and never arrived.
+The raws are kept under `tmp/audio-raw/failed-round3`.
+
+1. "dropped flat onto a solid oak table from two centimetres, one blunt woody
+   thump with no rattle" — **-63 dBFS**. Round one's lesson in a subtler form:
+   no word in that prompt says quiet, but *two centimetres* and *no rattle*
+   both describe a small event, and the model sizes the sound to the event.
+2. "heavy hardwood block slammed flat down, loud, full volume" — **-42 dBFS**,
+   and a low wash with no transient anywhere in it. Level alone would have read
+   as merely quiet; the spectrogram showed there was no impact to recover.
+3. "wooden mallet head dropped flat onto a solid oak workbench" — audible at
+   last, **-35 dBFS** with a real attack, and then a 2 kHz tone ringing for
+   450 ms. A die does not ring, and six of those a roll is a bell.
+
+So "ask for a loud, close-miked, named object" is necessary and not sufficient.
+It reliably gets you *a* loud sound; it does not get you the specific contact
+you asked for. The slot is derived from `dice-settle-f` instead — the deep oak
+knock, up a tone, sped up and cut to half its length, which turns a resonant
+knock into a flat slap in the same wood. That is derivation doing the job it
+should: filling a gap between two paid events, not standing in for one.
+
+## Two defects the spectrograms caught and the levels did not
+
+Both would have shipped on the strength of their level measurements.
+
+- **`dice-settle-d` lands twice.** Two ticks in the raw, at 10 ms and 100 ms.
+  The second is the richer of the pair, carrying down to 2 kHz where the first
+  is all top, so the slice starts on it. Taking the file from zero would have
+  shipped exactly the defect round two found in the old derived settles.
+- **`dice-settle-h` is a seven-impact rattle.** Strikes at 0, 60, 125, 165,
+  210, 255 and 330 ms, and the second is only 1.6 dB below the first. Read off
+  the raw spectrogram I first put the second strike at 75 ms and cut there; the
+  envelope showed it at 60 ms and the window had to close at 50, where the clip
+  is 25 dB down.
+
+The detector that found the second one is in the verification pass: a block at
+least 25 % of the peak envelope that rises 8 dB over the preceding 20 ms is a
+strike. It was calibrated against known-bad material — it reports seven strikes
+in `dice-tumble`, which is a tumble and correct, and three in the raw `-h`.
+
+## Three bugs fixed in the pipeline
+
+- **A 70 ms clip encodes to an mp3 ffmpeg refuses to open.** Not quiet, not
+  clipped: undecodable, `Invalid data found when processing input`, and only at
+  some gains, which is why nothing caught it. There are too few frames for the
+  decoder to sync on after the ID3 and Xing headers. Output shorter than 160 ms
+  is now padded with silence, which costs a few hundred bytes.
+- **The gain was set from the pre-encode stage and never checked after.** Two
+  things sit between the two: the limiter, which eats 10 dB from a sharp tick
+  and almost nothing from a rounded knock, and the encoder. Both scale with
+  crest factor, so the error was largest exactly where the samples differed
+  most and one pass could not see it. The gain now converges on the measured
+  output. This is what left the settles 13.5 dB apart on the very number they
+  were supposed to be matched on.
+- **The +-24 dB clamp on that gain was binding, silently.** Any hit whose event
+  is short relative to the 20 ms measurement window wanted more; the cardboard
+  knock wanted 27 dB, got 24, and then sat 3 dB under target through every
+  correction pass because the clamp ate the corrections too.
+
+The peak ceiling is now enforced in both directions and the whole bank was
+remastered from cache at no cost. It had never really bound: the fanfares, the
+placements and the click family all shipped within a decibel of full scale
+against a stated target of -1.5.
+
+## Verified, instrumentally
+
+I cannot hear. Everything below is measured or read off a rendered image.
+`afplay` was not used as evidence for anything.
+
+- **0 clipped samples across all 45 files.** Loudest sample peak is -0.57 dBFS
+  (`dice-settle-h`). Measured on each file's own channels: folding a stereo
+  file to mono for measurement sums with a 0.707 factor and can read 3 dB high,
+  which briefly had me chasing a clip in `trade-accept` that does not exist.
+- **Every settle is one impact.** Nine files, nine single strikes, under the
+  detector described above.
+- **No dead air.** Every settle's first block at 25 % of its own peak lands at
+  4 ms. Two of them were at 16 and 24 ms until the slice offsets were moved to
+  the measured attack foot.
+- **Loudness ramps as intended.** Family event energy after the bank's gains
+  spans 6.3 dB, monotonic from `-d` to `-f`. Before the solve it spanned
+  12.6 dB and was not monotonic.
+- **Spectrograms inspected as images** for all five new generations in raw, all
+  three failed `-e` attempts, and all nine mastered members of the family. That
+  inspection is what caught the double landing in `-d` and the rattle in `-h`.
+- **Bed loop seams survive the remaster.** Rendering each bed against itself
+  with the bank's 0.5 s crossfade and measuring the largest sample-to-sample
+  step across the seam gives 0.07 to 0.87 of the file's own 99.99th-percentile
+  step — nothing sharper than the material already contains. A naive
+  end-to-start join steps 2 to 16 times harder, which is why the crossfade is
+  there.
+- `npx tsc -b --noEmit` is clean and `npm test` passes, now including
+  `check:dice`, which proves every die lands on the engine's value at 1.000000
+  worst-case dot across 8,640 dice.
+- **Payload 2.2 MB of the 4 MB budget.** The composed score is most of it.
+
+## Sound id changes
+
+Six ids added: `dice-settle-d` through `dice-settle-i`. None removed.
+`DICE_SETTLES` and `settleSound()` are new exports in `soundbank.ts`.
+
+## What is still missing
+
+More sources will not fix the two things holding this back. There is still no
+reverb send, so the table is a baked layer rather than a space the dice sit in,
+and there is still no positional audio: the dice pan to a fixed pair of
+positions rather than to where they actually land on the board. Both are
+playback-layer work and neither costs a credit.
