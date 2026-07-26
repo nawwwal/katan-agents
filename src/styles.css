@@ -1064,10 +1064,11 @@ button { -webkit-tap-highlight-color: transparent; }
   .player-rail { top: 74px; left: 10px; right: 10px; width: auto; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 5px; }
   .rail-marks { position: static; }
   .rail-marks button { width: 100%; }
-  .player-row { height: 44px; grid-template-columns: 24px minmax(0, 1fr) auto; padding: 0 7px 0 9px; gap: 5px; }
-  .player-row .player-crest { width: 24px; height: 24px; flex-basis: 24px; font-size: 11px; }
-  .player-identity strong { font-size: var(--t-label); }
-  .player-vp { min-width: 18px; font-size: 15px; }
+  /* Crest and score only. A one-letter name plus an ellipsis says less than the crest. */
+  .player-row { height: 44px; grid-template-columns: 26px auto; justify-content: center; padding: 0 8px 0 10px; gap: 8px; }
+  .player-row .player-crest { width: 26px; height: 26px; flex-basis: 26px; font-size: 12px; }
+  .player-identity { display: none; }
+  .player-vp { min-width: 0; font-size: 16px; }
   .table-band { flex-direction: column; align-items: stretch; gap: 6px; padding: 30px 8px 8px; }
   .band-hand { justify-content: center; }
   .resource-hand { flex: 1; justify-content: center; }

@@ -1,33 +1,27 @@
 import { RoundedBox } from '@react-three/drei'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { emitShake } from './beats'
+import { diceThrowPlan, DIE_HALF as SIZE, FACE_NORMALS, sampleDie, type DiceContact, type DiceThrowPlan } from './diceThrow'
 import { Burst, Shockwave } from './Particles'
-import { easeOutQuart, saturate, scaled, seededFrom } from './spring'
-import { DICE_FLIGHT as FLIGHT, DICE_LIFE as LIFE, DICE_SETTLE as SETTLE } from './timing'
+import { saturate, scaled } from './spring'
+import { DICE_LIFE as LIFE } from './timing'
 
-// The engine decides the roll. This is a puppet show that is contractually
-// obliged to end on the number it was handed.
+// Two dice, thrown at the board from the player's side of the table.
 //
-// The tumble is scripted, not simulated: orientation is
-// `target * spin(t)` where `spin(1) = identity`, so at the end of the
-// animation the die is *exactly* on its face by construction. There is no
-// physics solver to disagree with the game state, and no retry loop pretending
-// to be one. A dice library here would be a lie with extra steps.
+// The trajectory, the bounces, the die-on-die knock and the final teeter all
+// come from `diceThrow.ts`, which plans the whole roll once from a seed seeded
+// on the roll and the revision. This file only plays the plan back, yaws it to
+// face the camera, and hangs dust, shadow and sound cues off its contact list.
+//
+// The die still cannot show the wrong number: the plan relabels each cube by an
+// exact rotational symmetry so its resting face is the engine's value, with a
+// face-up dot product of 1.000. See the header of `diceThrow.ts` for why that
+// is a construction rather than a correction, and `diceThrow.check.ts` for the
+// 8,640-die proof.
 
-const SIZE = 0.155
 const PIP = 0.026
-
-/** Local face normals, by pip count. Opposite faces sum to seven. */
-const FACE_NORMALS: Record<number, THREE.Vector3> = {
-  1: new THREE.Vector3(0, 1, 0),
-  6: new THREE.Vector3(0, -1, 0),
-  3: new THREE.Vector3(1, 0, 0),
-  4: new THREE.Vector3(-1, 0, 0),
-  2: new THREE.Vector3(0, 0, 1),
-  5: new THREE.Vector3(0, 0, -1),
-}
 
 const PIP_GRID: Record<number, [number, number][]> = {
   1: [[0, 0]],
@@ -36,14 +30,6 @@ const PIP_GRID: Record<number, [number, number][]> = {
   4: [[-1, -1], [-1, 1], [1, -1], [1, 1]],
   5: [[-1, -1], [-1, 1], [0, 0], [1, -1], [1, 1]],
   6: [[-1, -1], [-1, 0], [-1, 1], [1, -1], [1, 0], [1, 1]],
-}
-
-const UP = new THREE.Vector3(0, 1, 0)
-
-/** Orientation that puts `value` face up, with a seeded yaw so it never twins. */
-const restingQuaternion = (value: number, yaw: number) => {
-  const quaternion = new THREE.Quaternion().setFromUnitVectors(FACE_NORMALS[value], UP)
-  return new THREE.Quaternion().setFromAxisAngle(UP, yaw).multiply(quaternion)
 }
 
 /** Pip transforms for all six faces of one die, in local space. */
@@ -73,12 +59,9 @@ const pipMatrices = () => {
 }
 
 function Pips() {
-  const mesh = useRef<THREE.InstancedMesh>(null)
   const matrices = useMemo(pipMatrices, [])
-  useMemo(() => matrices, [matrices])
   return <instancedMesh
     ref={(instance) => {
-      mesh.current = instance
       if (!instance) return
       matrices.forEach((matrix, index) => instance.setMatrixAt(index, matrix))
       instance.instanceMatrix.needsUpdate = true
@@ -91,149 +74,213 @@ function Pips() {
   </instancedMesh>
 }
 
+// ------------------------------------------------------------------- a die
+
 type DieProps = {
-  value: number
-  seed: string
-  land: [number, number, number]
+  plan: DiceThrowPlan
+  index: number
+  ground: number
   reducedMotion: boolean
-  onImpact: (at: [number, number, number], strength: number) => void
 }
 
-function Die({ value, seed, land, reducedMotion, onImpact }: DieProps) {
+const position = new THREE.Vector3()
+const orientation = new THREE.Quaternion()
+
+function Die({ plan, index, ground, reducedMotion }: DieProps) {
   const group = useRef<THREE.Group>(null)
+  const shadow = useRef<THREE.Mesh>(null)
   const started = useRef<number | undefined>(undefined)
-  const bounced = useRef(0)
-
-  const plan = useMemo(() => {
-    const random = seededFrom(seed)
-    const throwAngle = Math.PI * 0.62 + random() * Math.PI * 0.5
-    return {
-      from: new THREE.Vector3(
-        land[0] + Math.cos(throwAngle) * (1.5 + random() * 0.7),
-        land[1] + 2.4 + random() * 0.5,
-        land[2] + Math.sin(throwAngle) * (1.5 + random() * 0.7),
-      ),
-      target: restingQuaternion(value, random() * Math.PI * 2),
-      axisA: new THREE.Vector3(random() - 0.5, random() * 0.4 - 0.2, random() - 0.5).normalize(),
-      axisB: new THREE.Vector3(random() - 0.5, random() - 0.5, random() - 0.5).normalize(),
-      turnsA: 3 + Math.floor(random() * 3),
-      turnsB: 1 + Math.floor(random() * 2),
-      arc: 0.9 + random() * 0.5,
-      // Two decaying hops after the first contact.
-      hops: [0.42 + random() * 0.12, 0.17 + random() * 0.06],
-    }
-  }, [land, seed, value])
-
-  const spinA = useMemo(() => new THREE.Quaternion(), [])
-  const spinB = useMemo(() => new THREE.Quaternion(), [])
+  const track = plan.dice[index]
 
   useFrame(({ clock }) => {
     const node = group.current
+    const patch = shadow.current
     if (!node) return
     started.current ??= clock.elapsedTime
     const elapsed = scaled(clock.elapsedTime - started.current)
 
     if (reducedMotion) {
-      node.position.set(land[0], land[1], land[2])
-      node.quaternion.copy(plan.target)
-      node.visible = true
+      // The number is information, so the die is on the table showing it from
+      // the first frame: no throw, no tumble, no teeter, nothing that moves.
+      // It still clears on the same schedule a rolled die would, so the board
+      // does not accumulate dice for anyone who asked for less motion.
+      node.position.set(track.rest[0], track.rest[1], track.rest[2])
+      node.quaternion.set(...track.restQuaternion)
+      node.scale.setScalar(1)
+      node.visible = elapsed < LIFE
+      if (patch) patch.visible = false
       return
     }
 
-    if (elapsed > LIFE) { node.visible = false; return }
+    if (elapsed > LIFE) { node.visible = false; if (patch) patch.visible = false; return }
     node.visible = true
 
-    // --- position: one throw, then two decaying hops.
-    if (elapsed < FLIGHT) {
-      const t = elapsed / FLIGHT
-      node.position.lerpVectors(plan.from, new THREE.Vector3(...land), t)
-      node.position.y += Math.sin(t * Math.PI) * plan.arc
-    } else {
-      let hopTime = elapsed - FLIGHT
-      let height = plan.hops[0]
-      let index = 0
-      // Each hop lasts as long as the ballistic time for its height.
-      let duration = Math.sqrt(height / 4.9) * 2
-      while (index < plan.hops.length && hopTime > duration) {
-        hopTime -= duration
-        index += 1
-        if (bounced.current <= index) {
-          bounced.current = index + 1
-          onImpact([land[0], land[1], land[2]], index === 0 ? 0.06 : 0.03)
-        }
-        height = plan.hops[index] ?? 0
-        duration = height ? Math.sqrt(height / 4.9) * 2 : 1
-      }
-      if (bounced.current === 0) {
-        bounced.current = 1
-        onImpact([land[0], land[1], land[2]], 0.12)
-      }
-      const lift = height ? Math.max(0, height * Math.sin(saturate(hopTime / duration) * Math.PI)) : 0
-      node.position.set(land[0], land[1] + lift, land[2])
+    sampleDie(track, plan, elapsed, position, orientation)
+    node.position.copy(position)
+    node.quaternion.copy(orientation)
+
+    // The reveal: one short, small swell as the die comes to rest, so the eye
+    // is pulled to the number at the exact moment it becomes readable.
+    const reveal = saturate((elapsed - plan.duration) / 0.26)
+    const swell = reveal > 0 && reveal < 1 ? Math.sin(reveal * Math.PI) * 0.055 : 0
+
+    // Contact darkening. The scene's shadow map only refreshes every few
+    // frames, so a fast die outruns its own shadow on the way down. This is a
+    // short-range patch that tightens and deepens over the last half metre —
+    // close enough to the die to read as contact, not as a second shadow.
+    if (patch) {
+      const height = saturate((position.y - ground - SIZE) / 0.55)
+      patch.visible = height < 1
+      patch.position.set(position.x, ground + 0.008, position.z)
+      patch.scale.setScalar(SIZE * (1 + height * 0.9))
+      ;(patch.material as THREE.MeshBasicMaterial).opacity = (1 - height) ** 1.5 * 0.3
     }
 
-    // --- orientation: spin that decays to exactly zero, so the target face is
-    // guaranteed rather than hoped for.
-    const u = saturate(elapsed / SETTLE)
-    const decay = 1 - easeOutQuart(u)
-    spinA.setFromAxisAngle(plan.axisA, plan.turnsA * Math.PI * 2 * decay)
-    spinB.setFromAxisAngle(plan.axisB, plan.turnsB * Math.PI * 2 * decay)
-    node.quaternion.copy(plan.target).multiply(spinA).multiply(spinB)
-
-    // --- a last settle wobble once it is down, then dead still.
-    if (u >= 1) {
-      const rest = saturate((elapsed - SETTLE) / 0.4)
-      const wobble = (1 - rest) ** 2 * 0.05 * Math.sin((elapsed - SETTLE) * 34)
-      node.rotateOnAxis(plan.axisA, wobble)
-    }
-
-    // --- sink and shrink away rather than blinking out.
+    // Sink and shrink away rather than blinking out.
     const exit = saturate((elapsed - (LIFE - 0.55)) / 0.55)
-    node.scale.setScalar(Math.max(0.001, 1 - exit))
+    node.scale.setScalar(Math.max(0.001, 1 + swell - exit))
     node.position.y -= exit * 0.12
   })
 
-  return <group ref={group} position={plan.from} scale={reducedMotion ? 1 : 1}>
-    <RoundedBox args={[SIZE * 2, SIZE * 2, SIZE * 2]} radius={SIZE * 0.28} smoothness={3} castShadow receiveShadow>
-      <meshStandardMaterial color="#e4d6b6" roughness={0.46} metalness={0.02} />
-    </RoundedBox>
-    <Pips />
+  return <group>
+    <group ref={group}>
+      <RoundedBox args={[SIZE * 2, SIZE * 2, SIZE * 2]} radius={SIZE * 0.28} smoothness={3} castShadow receiveShadow>
+        <meshStandardMaterial color="#e4d6b6" roughness={0.46} metalness={0.02} />
+      </RoundedBox>
+      <Pips />
+    </group>
+    <mesh ref={shadow} rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
+      <circleGeometry args={[1, 20]} />
+      <meshBasicMaterial color="#241a10" transparent opacity={0} depthWrite={false} />
+    </mesh>
   </group>
+}
+
+// -------------------------------------------------------------- the throw
+
+/**
+ * Shoves the camera on the knocks that had weight behind them.
+ *
+ * A shake on every planned contact would turn a settle into an earthquake, so
+ * only the hard ones are passed on, scaled by impact energy: one solid hit as
+ * the dice land, a couple of lighter ones as they run out, and nothing at all
+ * for the taps at the end.
+ */
+function ContactShakes({ contacts, reducedMotion }: { contacts: DiceContact[]; reducedMotion: boolean }) {
+  const heavy = useMemo(() => contacts.filter((contact) => contact.strength > 0.4), [contacts])
+  const started = useRef<number | undefined>(undefined)
+  const fired = useRef(0)
+  useFrame(({ clock }) => {
+    if (reducedMotion) return
+    started.current ??= clock.elapsedTime
+    const elapsed = scaled(clock.elapsedTime - started.current)
+    while (fired.current < heavy.length && heavy[fired.current].time <= elapsed) {
+      emitShake(0.025 + heavy[fired.current].strength * 0.1)
+      fired.current += 1
+    }
+  })
+  return null
 }
 
 export function DiceRoll({ roll, revision, land, reducedMotion }: { roll: [number, number]; revision: number; land: [number, number]; reducedMotion: boolean }) {
   const ground = 0.5
-  const spots = useMemo<[number, number, number][]>(() => [
-    [land[0] - 0.31, ground + SIZE, land[1] - 0.2],
-    [land[0] + 0.29, ground + SIZE, land[1] + 0.24],
-  ], [land, ground])
+  const camera = useThree((state) => state.camera)
 
-  const onImpact = (_at: [number, number, number], strength: number) => emitShake(strength)
+  // The throw is planned in a local frame that releases on -Z and travels to
+  // +Z, so one yaw points the whole roll at whoever is watching. A yaw about
+  // the vertical axis cannot disturb which face is up, so the guarantee rides
+  // through it untouched.
+  const yaw = useMemo(() => {
+    const dx = camera.position.x - land[0]
+    const dz = camera.position.z - land[1]
+    return Math.hypot(dx, dz) < 1e-4 ? 0 : Math.atan2(-dx, -dz)
+    // Sampled once, at mount: a roll that re-planned itself because the player
+    // nudged the camera would not be deterministic.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const plan = useMemo(() => diceThrowPlan(roll, revision, 0), [roll, revision])
+
+  // Contacts worth spending a particle system on, in world space.
+  const cue = useMemo(() => {
+    const rotation = new THREE.Matrix4().makeRotationY(yaw)
+    const point = new THREE.Vector3()
+    return plan.contacts
+      .filter((contact) => contact.strength > 0.28)
+      .slice(0, 7)
+      .map((contact, order) => {
+        point.set(contact.at[0], contact.at[1], contact.at[2]).applyMatrix4(rotation)
+        return {
+          key: `${revision}-${order}`,
+          delay: contact.time,
+          strength: contact.strength,
+          kind: contact.kind,
+          at: [land[0] + point.x, ground + point.y, land[1] + point.z] as [number, number, number],
+        }
+      })
+  }, [ground, land, plan, revision, yaw])
+
+  const settle = useMemo(() => {
+    const rotation = new THREE.Matrix4().makeRotationY(yaw)
+    const point = new THREE.Vector3()
+    const spots = plan.dice.map((track) => {
+      point.set(track.rest[0], 0, track.rest[2]).applyMatrix4(rotation)
+      return [land[0] + point.x, ground, land[1] + point.z] as [number, number, number]
+    })
+    return { spots }
+  }, [ground, land, plan, yaw])
 
   return <group>
-    {spots.map((spot, index) => <Die
-      key={index}
-      value={roll[index]}
-      seed={`dice-${revision}-${index}`}
-      land={spot}
-      reducedMotion={reducedMotion}
-      onImpact={onImpact}
-    />)}
-    {spots.map((spot, index) => <group key={`fx-${index}`}>
-      <Shockwave origin={[spot[0], ground + 0.012, spot[2]]} color="#f6e6c0" radius={0.62} life={0.5} thickness={0.16} delay={FLIGHT} reducedMotion={reducedMotion} />
-      <Burst
-        id={`dice-dust-${revision}-${index}`}
-        origin={[spot[0], ground + 0.02, spot[2]]}
-        count={9}
-        color="#d9c8a4"
-        speed={1.1}
-        spread={0.92}
-        gravity={3.2}
-        life={0.85}
-        size={0.045}
-        delay={FLIGHT}
+    {/* The roll itself, planned on -Z and yawed to come in from the camera. */}
+    <group position={[land[0], ground, land[1]]} rotation={[0, yaw, 0]}>
+      {plan.dice.map((_, index) => <Die key={index} plan={plan} index={index} ground={0} reducedMotion={reducedMotion} />)}
+    </group>
+
+    {/* Contact cues, already resolved to world space. */}
+    <group>
+      <ContactShakes contacts={plan.contacts} reducedMotion={reducedMotion} />
+
+      {cue.map((contact) => <group key={contact.key}>
+        {/* Grit, not smoke. A 3cm die kicks up specks that stay near the
+            table for a third of a second; anything bigger reads as a bug. */}
+        <Burst
+          id={`dice-grit-${contact.key}`}
+          origin={[contact.at[0], contact.at[1] + 0.01, contact.at[2]]}
+          count={Math.round(3 + contact.strength * 5)}
+          color="#cbb894"
+          speed={0.45 + contact.strength * 0.9}
+          spread={0.99}
+          gravity={5.4}
+          life={0.3 + contact.strength * 0.24}
+          size={0.011 + contact.strength * 0.007}
+          delay={contact.delay}
+          reducedMotion={reducedMotion}
+        />
+        {contact.strength > 0.6 && contact.kind === 'ground'
+          ? <Shockwave
+            origin={[contact.at[0], contact.at[1] + 0.008, contact.at[2]]}
+            color="#e8d6ad"
+            radius={0.16 + contact.strength * 0.26}
+            life={0.26}
+            thickness={0.26}
+            delay={contact.delay}
+            reducedMotion={reducedMotion}
+          />
+          : null}
+      </group>)}
+
+      {/* The reveal beat. Small on purpose: a player sees this dozens of times
+          a match, so it is a nod at the number rather than a firework. */}
+      {settle.spots.map((spot, index) => <Shockwave
+        key={`reveal-${index}`}
+        origin={[spot[0], ground + 0.012, spot[2]]}
+        color="#ffdf9e"
+        radius={0.3}
+        life={0.42}
+        thickness={0.14}
+        delay={plan.duration + 0.02}
         reducedMotion={reducedMotion}
-      />
-    </group>)}
+      />)}
+    </group>
   </group>
 }
