@@ -937,6 +937,9 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
     if (state.phase !== 'action' || actor.id !== currentPlayer(state).id) return fail('Finish what you started before ending the turn.')
     actor.boughtDevelopment = []
     state.playedDevelopmentThisTurn = false
+    // An answer only matters on the turn it was given. Left in place it would ride
+    // in every view for the rest of the game, which is bytes nobody reads.
+    state.tradeResolution = undefined
     state.lastRoll = undefined
     state.activePlayerIndex = (state.activePlayerIndex + 1) % state.players.length
     state.actingPlayerId = currentPlayer(state).id

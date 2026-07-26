@@ -268,6 +268,12 @@ assert.deepEqual(
   'once a game is running the seat colour is the one the board is already using',
 )
 
+// An answer belongs to the turn it was given on. Left in place it would ride in
+// every view for the rest of the game.
+const endsTurn = play(declined, { type: 'end-turn' }, 'end the turn after a trade')
+assert.equal(endsTurn.tradeResolution, undefined, 'a settled answer does not follow the game around')
+assert.equal(declined.tradeResolution?.outcome, 'declined', 'and it was there for the turn it belonged to')
+
 /* ------------------------------------------------- a room stored mid-trade -- */
 
 // A room that was sitting in `trade-response` when this state landed has a
