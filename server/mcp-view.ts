@@ -50,6 +50,38 @@ const CHOICE_FIELD: Record<string, string> = {
 
 export const choiceFieldFor = (type: unknown) => typeof type === 'string' ? CHOICE_FIELD[type] : undefined
 
+const TRADE_TYPES = new Set(['offer-trade', 'counter-trade'])
+
+export const TRADE_TEMPLATE = 'One worked example per partner is listed above. offer-trade and counter-trade take any bundle you can pay for: give and receive are resource maps, both non-empty, with no resource on both sides. Copy the example and change the amounts.'
+
+/**
+ * The engine enumerates every one-card-for-one-card offer to every opponent,
+ * which is forty near-identical objects and three quarters of an action-phase
+ * view. It is also a misleading menu, because the server accepts any bundle a
+ * seat can pay for, not just the singles it happens to list. One real example
+ * per partner plus the rule says strictly more for a twentieth of the bytes.
+ */
+const collapseTradeOffers = (actions: GameAction[]) => {
+  const kept: GameAction[] = []
+  const seen = new Set<string>()
+  let collapsed = 0
+  for (const action of actions) {
+    if (!TRADE_TYPES.has(action.type)) {
+      kept.push(action)
+      continue
+    }
+    const { trade } = action as Extract<GameAction, { type: 'offer-trade' }>
+    const key = `${action.type}:${trade.toPlayerId}`
+    if (seen.has(key)) {
+      collapsed += 1
+      continue
+    }
+    seen.add(key)
+    kept.push(action)
+  }
+  return { kept, collapsed }
+}
+
 export const groupLegalActions = (actions: GameAction[]) => {
   const ordered: Record<string, unknown>[] = []
   const groups = new Map<string, Record<string, unknown>>()
@@ -153,6 +185,7 @@ export const toAgentView = (room: RoomView, options: AgentViewOptions = {}) => {
   const earliest = state.events[0]?.revision ?? view.revision
   const setup = view.phase === 'setup-settlement' || view.phase === 'setup-road'
   const discarding = Object.keys(state.discardRemaining).length > 0
+  const trades = collapseTradeOffers(view.legalActions)
 
   return {
     ...base,
@@ -198,7 +231,8 @@ export const toAgentView = (room: RoomView, options: AgentViewOptions = {}) => {
     ...when(state.winnerId !== undefined, { winnerId: state.winnerId }),
     events: events.map(compactEvent),
     ...when(matching.length > events.length || window > 0 && window < earliest - 1, { eventsTruncated: true }),
-    legalActions: groupLegalActions(view.legalActions),
+    legalActions: groupLegalActions(trades.kept),
+    ...when(trades.collapsed > 0, { tradeTemplate: TRADE_TEMPLATE }),
     ...(finished
       ? { next: null }
       : actionRequired

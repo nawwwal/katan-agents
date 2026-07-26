@@ -76,7 +76,7 @@ if (client === 'claude') {
     type: 'system',
     subtype: 'init',
     session_id: sessionId,
-    tools: ['mcp__katan__get_playbook', 'mcp__katan__read_rules', 'mcp__katan__get_view', 'mcp__katan__play_action'],
+    tools: ['mcp__katan__get_playbook', 'mcp__katan__read_rules', 'mcp__katan__get_board', 'mcp__katan__get_view', 'mcp__katan__play_action'],
     mcp_servers: [{ name: 'katan', status: 'connected' }],
   }))
 }
@@ -297,7 +297,7 @@ try {
   assert.ok(codexRuns.every((entry) => !entry.envKeys.includes('KATAN_PLAYER_KEY')))
   assert.ok(codexRuns.every((entry) => entry.mcpUrl.startsWith('http://127.0.0.1:')))
   assert.ok(codexRuns.every((entry) => entry.args.includes('mcp_servers.katan.default_tools_approval_mode="approve"')))
-  assert.ok(codexRuns.every((entry) => entry.args.includes('mcp_servers.katan.enabled_tools=["get_playbook","read_rules","get_view","play_action"]')))
+  assert.ok(codexRuns.every((entry) => entry.args.includes('mcp_servers.katan.enabled_tools=["get_playbook","read_rules","get_board","get_view","play_action"]')))
   assert.ok(upstreamAuthorizations.every((value) => value?.startsWith('Bearer ')))
   assert.ok(upstreamAuthorizations.includes(`Bearer ${saved.playerKey}`))
   await waitFor(() => socketClosures.some((entry) => entry.reason === 'Authenticated snapshot timeout'))
@@ -340,7 +340,7 @@ try {
   assert.ok(claudeEntries[0].args.includes('--session-id'))
   assert.ok(claudeEntries.slice(1).every((entry) => entry.args.includes('--resume')))
   assert.equal(claudeState.sessionReady, true)
-  assert.ok(claudeEntries.every((entry) => entry.args.includes('mcp__katan__get_playbook,mcp__katan__read_rules,mcp__katan__get_view,mcp__katan__play_action')))
+  assert.ok(claudeEntries.every((entry) => entry.args.includes('mcp__katan__get_playbook,mcp__katan__read_rules,mcp__katan__get_board,mcp__katan__get_view,mcp__katan__play_action')))
   assert.ok(claudeEntries.every((entry) => entry.args.includes('mcp__katan__join_room,mcp__katan__wait_for_event')))
   assert.ok(claudeEntries.every((entry) => !entry.args.includes('--safe-mode')))
   assert.ok(claudeEntries.every((entry) => entry.args[entry.args.indexOf('--setting-sources') + 1] === ''))
