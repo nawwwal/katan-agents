@@ -239,11 +239,17 @@ export function NetworkLab() {
  * one family of legal actions at a time. Presentation only: nothing here can
  * reach the engine, `onAction` is a no-op.
  *
+ * `aff=robber` lights the eighteen hexes a seven offers.
  * `&pend=<n>` marks the nth target pending, so the pending and resting states
  * can be compared in one pass.
  */
 function affordanceActions(game: GameDisplayState, family: string): GameAction[] {
   const you = game.players[0].id
+  if (family === 'robber') {
+    return game.board.hexes
+      .filter((hex) => hex.id !== game.board.robberHexId)
+      .map((hex) => ({ type: 'move-robber', hexId: hex.id }) as GameAction)
+  }
   if (family === 'city') {
     return Object.entries(game.buildings)
       .filter(([, building]) => building.playerId === you && building.type === 'settlement')

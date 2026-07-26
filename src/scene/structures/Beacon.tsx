@@ -53,12 +53,12 @@ export const BEACON_PERIOD = 1.6
  *
  * The height is measured too. At six centimetres the pad was visible on the
  * near half of the board and gone on the far half, because a shallow grazing
- * ray clears the tile shoulder in front of it. Thirteen puts the top face level
- * with a road deck, which is the tallest thing that has to stay legible from
- * every position the rig allows.
+ * ray clears the tile shoulder in front of it. It now clears a road deck, which is the
+ * tallest thing that can already be standing on the seam a legal corner sits
+ * on, since a settlement is normally built onto your own road.
  */
-export const PAD_TOP = 0.13
-const PAD_HEIGHT = 0.21
+export const PAD_TOP = 0.175
+const PAD_HEIGHT = 0.25
 export const PAD_RADIUS = 0.235
 
 const lazy = <T,>(build: () => T) => {
@@ -189,3 +189,57 @@ export const mastGeometry = lazy(() => merge([
  * piece already sitting there, as on a city upgrade.
  */
 export const dropLineGeometry = lazy(() => cyl(0.016, 0.016, 0.26, 6))
+
+// ------------------------------------------------------------------- robber
+
+/**
+ * A hex a robber may be moved to.
+ *
+ * Same grammar as the rest, scaled up to a whole tile: a near-black kerb with
+ * a bright band inlaid along its top. It replaces a flat `#ffd66a` outline at
+ * 0.38 opacity, which was the same hue and value as the sand borders edging
+ * every tile on this island and could not be found in a live capture at all.
+ *
+ * The hue is red rather than the acting player's colour, and that break is
+ * deliberate: everywhere else a beacon says "this could be yours", and here it
+ * says "this is where the robber lands". Red is also the one signal on the
+ * board that never means ownership, since no player carries it as a beacon.
+ */
+export const ROBBER_MARK = '#ff4d2e'
+/** Faster than the placement pulse: one set of answers to one urgent question. */
+export const ROBBER_PERIOD = 1.05
+
+const hexPrism = (inner: number, outer: number, height: number) => {
+  const corners = (radius: number) => Array.from({ length: 6 }, (_, index) => {
+    const angle = Math.PI / 6 + (index * Math.PI) / 3
+    return new THREE.Vector2(Math.cos(angle) * radius, Math.sin(angle) * radius)
+  })
+  const shape = new THREE.Shape(corners(outer))
+  shape.holes.push(new THREE.Path(corners(inner).reverse()))
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false })
+  // Authored in XY and extruded along +Z; this stands it up on the ground plane.
+  geometry.rotateX(-Math.PI / 2)
+  return geometry
+}
+
+/**
+ * The kerb has to clear everything already standing on a hex seam: the sand
+ * path, its two rows of kerbstones and, on most of the northern half of this
+ * board, a built road whose deck tops out sixteen centimetres above the
+ * plateau. At fifteen the ring was visible only on the tiles nobody had paved
+ * yet, which is the wrong half of the board twice over.
+ */
+const KERB_BASE = -0.05
+const KERB_TOP = 0.185
+
+export const robberKerbGeometry = lazy(() => {
+  const geometry = hexPrism(0.862, 0.988, KERB_TOP - KERB_BASE)
+  geometry.translate(0, KERB_BASE, 0)
+  return geometry
+})
+
+export const robberBandGeometry = lazy(() => {
+  const geometry = hexPrism(0.888, 0.962, 0.022)
+  geometry.translate(0, KERB_TOP, 0)
+  return geometry
+})
