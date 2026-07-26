@@ -268,6 +268,27 @@ assert.deepEqual(
   'once a game is running the seat colour is the one the board is already using',
 )
 
+/* ------------------------------------------------- a room stored mid-trade -- */
+
+// A room that was sitting in `trade-response` when this state landed has a
+// pendingTrade and no offer. A reconnect into it must still find a move.
+const legacyRoom = tableAt(213)
+legacyRoom.players[0].resources.brick = 1
+legacyRoom.players[1].resources.grain = 1
+legacyRoom.phase = 'trade-response'
+legacyRoom.actingPlayerId = 'p1'
+legacyRoom.pendingTrade = { fromPlayerId: 'p0', toPlayerId: 'p1', give: { brick: 1 }, receive: { grain: 1 } }
+delete (legacyRoom as Partial<GameState>).tradeOffer
+delete (legacyRoom as Partial<GameState>).nextTradeId
+const legacyActions = legalActionsForPlayer(legacyRoom, 'p1')
+assert.equal(legacyActions.some((action) => action.type === 'respond-trade' && action.accept), true, 'a room stored mid-trade still offers an answer')
+const legacyAccepted = play(legacyRoom, { type: 'respond-trade', accept: true }, 'answer a room stored mid-trade')
+assert.equal(legacyAccepted.phase, 'action')
+assert.equal(legacyAccepted.players[0].resources.grain, 1)
+assert.equal(legacyAccepted.tradeResolution?.outcome, 'accepted')
+const legacyNext = play(legacyAccepted, { type: 'offer-trade', trade: { fromPlayerId: 'p0', toPlayerId: 'p2', give: { grain: 1 }, receive: { wool: 1 } } }, 'a fresh offer in a room stored mid-trade')
+assert.equal(legacyNext.tradeOffer!.id > legacyAccepted.tradeResolution!.id, true, 'ids keep climbing even where they had to start from nothing')
+
 const monopolyGame = createGame({ seed: 43, controllers: ['agent', 'agent', 'agent'] })
 monopolyGame.phase = 'monopoly'
 monopolyGame.activePlayerIndex = 0

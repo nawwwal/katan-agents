@@ -105,6 +105,26 @@ const resourceTotalOf = (resources: Partial<Resources>) => RESOURCES.reduce((tot
 const canCover = (player: Player | undefined, bundle: Partial<Resources>) =>
   Boolean(player) && RESOURCES.every((resource) => player!.resources[resource] >= (bundle[resource] ?? 0))
 const openRecipients = (offer: TradeOffer) => offer.toPlayerIds.filter((playerId) => !offer.declinedBy.includes(playerId))
+
+/**
+ * The offer on the table, reading a room that was stored mid-negotiation before
+ * offers carried an id. Without this a reconnect into that room finds a
+ * `trade-response` phase with nothing to respond to, and the seat has no move.
+ */
+const currentOffer = (state: GameState): TradeOffer | undefined => {
+  if (state.tradeOffer) return state.tradeOffer
+  const trade = state.pendingTrade
+  if (state.phase !== 'trade-response' || !trade) return undefined
+  return {
+    id: 0,
+    fromPlayerId: trade.fromPlayerId,
+    toPlayerIds: [trade.toPlayerId],
+    give: structuredClone(trade.give),
+    receive: structuredClone(trade.receive),
+    declinedBy: [],
+    openedAtRevision: state.revision,
+  }
+}
 /** Ids are handed out from the game, so a room stored before offers existed still works. */
 const takeTradeId = (state: GameState) => {
   const id = Number.isSafeInteger(state.nextTradeId) && state.nextTradeId > 0 ? state.nextTradeId : 1
@@ -241,7 +261,8 @@ export const legalActionsForPlayer = (state: GameState, playerId: string): GameA
   if (state.phase === 'game-over') return [{ type: 'restart', seed: state.seed + 1 }]
   // An open offer is the one place several seats have something to say at once, so
   // it is answered before the single-actor gate below.
-  if (state.phase === 'trade-response' && state.tradeOffer) return tradeResponseActions(state, state.tradeOffer, playerId)
+  const offerOnTable = currentOffer(state)
+  if (state.phase === 'trade-response' && offerOnTable) return tradeResponseActions(state, offerOnTable, playerId)
   if (currentActorId(state) !== playerId) return []
   const player = playerById(state, playerId)
   if (!player) return []
@@ -579,6 +600,8 @@ export const applyAction = (input: GameState, action: GameAction, randomSource?:
     return { ok: true, state: createGame({ seed: action.seed ?? input.seed + 1, boardOptions: input.board.generation.options, random: randomSource, controllers: input.players.map((player) => player.controller), names: input.players.map((player) => player.name) }), events: [] }
   }
   const state = structuredClone(input)
+  // A room stored mid-negotiation before offers carried an id still resolves.
+  state.tradeOffer = currentOffer(state)
   const actorId = currentActorId(state)
   const actor = playerById(state, actorId)
   if (!actor) return fail('Nobody can act. Your view is out of step with the room, and it will resync.')
