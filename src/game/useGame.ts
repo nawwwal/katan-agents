@@ -16,6 +16,24 @@ export type GamePresentation = {
 export type RoomConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting'
 
 const SESSION_PREFIX = 'katan:room-seat'
+
+/**
+ * How often the seat asks the room whether it is still there. The room answers
+ * for the seat rather than for the socket, so an unanswered beat means the room
+ * is gone or the connection died without saying so.
+ */
+const HEARTBEAT_MS = 15_000
+
+/**
+ * The longest wait between reconnects. The old ceiling was five seconds and the
+ * backoff reset the moment a socket opened, so a seat that was being opened and
+ * immediately closed, which is exactly what a throttled seat gets, reconnected
+ * about four times a second and held the throttle open for the whole table.
+ */
+const MAX_RECONNECT_MS = 10_000
+
+/** Consecutive attempts that never reached a snapshot before we say so out loud. */
+const UNREACHABLE_AFTER = 3
 const normalizeRoomCode = (value: string | null | undefined) => value?.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6) ?? ''
 const sessionKey = (code: string) => `${SESSION_PREFIX}:${normalizeRoomCode(code)}`
 
@@ -139,21 +157,38 @@ export const useGame = () => {
     let reconnectTimer = 0
     let heartbeat = 0
     let reconnectDelay = 250
+    let failures = 0
 
     const connect = () => {
       if (stopped) return
       setConnectionState((state) => state === 'connected' ? 'reconnecting' : 'connecting')
       const socket = new WebSocket(`${window.location.origin.replace(/^http/, 'ws')}/api/ws`)
       socketRef.current = socket
+      // Per attempt: whether this socket ever became a live seat, whether the room
+      // gave a reason for refusing it, and whether a heartbeat is outstanding.
+      let seated = false
+      let told = false
+      let awaitingBeat = false
       socket.addEventListener('open', () => {
-        reconnectDelay = 250
+        // The backoff deliberately does not reset here. Opening is not the same as
+        // being let in, and resetting on open is what turned a brief throttle into
+        // a reconnect storm that kept the throttle alive.
         setConnectionState((state) => state === 'reconnecting' ? 'reconnecting' : 'connecting')
         socket.send(JSON.stringify({ type: 'hello', code: credentials.code, token: credentials.token }))
         heartbeat = window.setInterval(() => {
-          if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'ping' }))
-        }, 15_000)
+          if (socket.readyState !== WebSocket.OPEN) return
+          // Nothing came back from the last beat, so this connection is not live
+          // however open it looks. Drop it and let the reconnect find out why.
+          if (awaitingBeat) {
+            socket.close()
+            return
+          }
+          awaitingBeat = true
+          socket.send(JSON.stringify({ type: 'ping' }))
+        }, HEARTBEAT_MS)
       })
       socket.addEventListener('message', (event) => {
+        awaitingBeat = false
         let message: ServerRoomMessage
         try {
           message = JSON.parse(String(event.data)) as ServerRoomMessage
@@ -163,9 +198,13 @@ export const useGame = () => {
           return
         }
         if (message.type === 'snapshot') {
+          seated = true
+          failures = 0
+          reconnectDelay = 250
           setConnectionState('connected')
           applySnapshot(message.room)
         } else if (message.type === 'error') {
+          told = true
           setError(message.error.message)
           if (message.requestId) {
             pendingRevisionRef.current = undefined
@@ -191,9 +230,19 @@ export const useGame = () => {
       socket.addEventListener('close', () => {
         window.clearInterval(heartbeat)
         if (stopped) return
+        // A move that was in flight did not land. Releasing it is what keeps the
+        // next tap from being swallowed by a submit that can never resolve.
+        const lostMove = pendingRevisionRef.current !== undefined
+        if (lostMove) {
+          pendingRevisionRef.current = undefined
+          setSubmitting(false)
+        }
+        if (!seated) failures += 1
         setConnectionState('reconnecting')
-        reconnectTimer = window.setTimeout(connect, reconnectDelay)
-        reconnectDelay = Math.min(reconnectDelay * 2, 5_000)
+        if (failures >= UNREACHABLE_AFTER && !told) setError('Cannot reach the room. Still trying, and your seat is held.')
+        else if (lostMove && !told) setError('That move did not reach the room. Try it again in a second.')
+        reconnectTimer = window.setTimeout(connect, reconnectDelay + Math.random() * reconnectDelay * 0.3)
+        reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_MS)
       })
       socket.addEventListener('error', () => socket.close())
     }
