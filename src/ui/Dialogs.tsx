@@ -6,6 +6,7 @@ import { RESOURCES, emptyResources } from '../game/types'
 import type { DialogName } from './Hud'
 import { BookIcon, CardsIcon, CheckIcon, CloseIcon, HandIcon, HarborIcon, ResourceGlyph, ScrollIcon, TradeIcon, VictoryIcon } from './Icons'
 import { DEVELOPMENT_ART, DEVELOPMENT_CARDS, DEVELOPMENT_NAME, DEVELOPMENT_SHORT, RESOURCE_LABEL } from './gameVisuals'
+import { uiSound } from './uiSound'
 
 type DialogProps = {
   game: GameDisplayState
@@ -25,9 +26,16 @@ function Modal({ title, icon, children, onClose, locked = false, wide = false }:
     const dialog = dialogRef.current
     const backdrop = backdropRef.current
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
-    const siblings = backdrop?.parentElement ? [...backdrop.parentElement.children].filter((element): element is HTMLElement => element instanceof HTMLElement && element !== backdrop) : []
+    // Discard, choose-victim, year-of-plenty, monopoly and trade-response are all
+    // decisions *about the board*, so the world layers stay live and pannable while
+    // a modal is open. They hold nothing focusable, so the focus trap is unaffected.
+    const worldLayers = '.game-canvas, .ocean-layer, .vignette, .copyright-note'
+    const siblings = backdrop?.parentElement
+      ? [...backdrop.parentElement.children].filter((element): element is HTMLElement => element instanceof HTMLElement && element !== backdrop && !element.matches(worldLayers))
+      : []
     const previousInert = siblings.map((element) => element.inert)
     siblings.forEach((element) => { element.inert = true })
+    uiSound('ui-open')
     const focusable = dialog?.querySelector<HTMLElement>('button:not(:disabled), select:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])')
     ;(focusable ?? dialog)?.focus()
 
@@ -48,6 +56,7 @@ function Modal({ title, icon, children, onClose, locked = false, wide = false }:
     document.addEventListener('keydown', handleKeyDown)
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
+      uiSound('ui-close')
       siblings.forEach((element, index) => { element.inert = previousInert[index] })
       if (previousFocus?.isConnected) previousFocus.focus()
       else document.querySelector<HTMLElement>('.board-targets button, .turn-panel, .utility-controls button:not(:disabled)')?.focus()
@@ -184,16 +193,56 @@ function TradeResponseDialog({ game, onAction }: Pick<DialogProps, 'game' | 'onA
   </Modal>
 }
 
+/**
+ * Only the cards you hold, fanned with the same physics as the resource hand.
+ * Victory points sit face down at the end of the fan; the play control lives under
+ * the fan rather than stamped across the artwork.
+ */
 function CardsDialog({ game, humanId, onClose, onAction }: Pick<DialogProps, 'game' | 'humanId' | 'onClose' | 'onAction'>) {
   const player = game.players.find((candidate) => candidate.id === humanId)!
-  const counts = useMemo(() => player.development.reduce<Partial<Record<DevelopmentCard, number>>>((result, card) => ({ ...result, [card]: (result[card] ?? 0) + 1 }), {}), [player.development])
   const playable = game.legalActions.filter((action): action is Extract<GameAction, { type: 'play-development' }> => action.type === 'play-development')
-  return <Modal title="Development hand" icon={<CardsIcon />} onClose={onClose} wide>
-    <div className="card-list">{DEVELOPMENT_CARDS.map((card) => {
-      const action = playable.find((candidate) => candidate.card === card)
-      const count = counts[card] ?? 0
-      return <article className={count ? '' : 'empty'} key={card}><img src={DEVELOPMENT_ART[card]} alt="" /><div><strong>{DEVELOPMENT_NAME[card]}</strong><p>{DEVELOPMENT_SHORT[card]}</p></div><span aria-label={`${count} owned`}>{count}</span>{card === 'victory-point' ? (count ? <em>Keep hidden</em> : null) : action ? <button onClick={() => { if (onAction(action)) onClose() }}>Play</button> : null}</article>
-    })}</div>
+  // Victory points sit face down at the end of the fan.
+  const held = useMemo(() => {
+    const rank = (card: DevelopmentCard) => card === 'victory-point' ? DEVELOPMENT_CARDS.length : DEVELOPMENT_CARDS.indexOf(card)
+    return [...player.development].sort((left, right) => rank(left) - rank(right))
+  }, [player.development])
+  const [active, setActive] = useState(0)
+  const index = held.length ? Math.min(active, held.length - 1) : 0
+  const current = held[index] as DevelopmentCard | undefined
+  const action = current ? playable.find((candidate) => candidate.card === current) : undefined
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
+    if (!step || !held.length) return
+    event.preventDefault()
+    const next = Math.max(0, Math.min(held.length - 1, index + step))
+    setActive(next)
+    ;(event.currentTarget.querySelectorAll<HTMLElement>('[data-roving]')[next])?.focus()
+  }
+  return <Modal title="Development hand" icon={<CardsIcon />} onClose={onClose}>
+    {held.length ? <>
+      <div className="dev-fan" role="group" aria-label="Development cards you hold" style={{ '--n': held.length } as React.CSSProperties} onKeyDown={onKeyDown}>
+        {held.map((card, position) => {
+          const hidden = card === 'victory-point'
+          return <button
+            key={`${card}-${position}`}
+            data-roving=""
+            type="button"
+            tabIndex={position === index ? 0 : -1}
+            className={`dev-card ${hidden ? 'facedown' : ''} ${position === index ? 'raised' : ''}`}
+            style={{ '--i': position } as React.CSSProperties}
+            onFocus={() => setActive(position)}
+            onMouseEnter={() => setActive(position)}
+            aria-label={hidden ? 'Victory point, held face down' : DEVELOPMENT_NAME[card]}
+          >
+            {hidden ? <span className="dev-back" aria-hidden="true"><VictoryIcon /></span> : <img src={DEVELOPMENT_ART[card]} alt="" draggable={false} />}
+          </button>
+        })}
+      </div>
+      <div className="dev-control" aria-live="polite">
+        <div><strong>{current === 'victory-point' ? 'Victory Point' : current ? DEVELOPMENT_NAME[current] : ''}</strong><span>{current === 'victory-point' ? 'Kept hidden until the final count' : current ? DEVELOPMENT_SHORT[current] : ''}</span></div>
+        <button className="modal-primary" disabled={!action} onClick={() => { if (action && onAction(action)) { uiSound('ui-click-deep'); onClose() } }}>{current === 'victory-point' ? 'Keep hidden' : 'Play card'}</button>
+      </div>
+    </> : <p className="modal-empty">You hold no development cards.</p>}
     {game.playedDevelopmentThisTurn ? <p className="modal-note">You have already played a development card this turn.</p> : null}
   </Modal>
 }
@@ -202,7 +251,9 @@ function DiscardDialog({ game, humanId, onAction }: Pick<DialogProps, 'game' | '
   const player = game.players.find((candidate) => candidate.id === humanId)!
   const required = game.discardRemaining[humanId] ?? 0
   const [chosen, setChosen] = useState<Resources>(() => emptyResources())
-  useEffect(() => setChosen(emptyResources()), [game.revision])
+  // Reset when *your* discard obligation changes, not on every revision. Another
+  // player discarding used to bump the revision and wipe a selection mid-choice.
+  useEffect(() => setChosen(emptyResources()), [required])
   const total = RESOURCES.reduce((sum, resource) => sum + chosen[resource], 0)
   return <Modal title={`Discard ${required}`} locked onClose={() => {}}><TradeBundle title="Choose cards" values={chosen} limits={player.resources} onChange={setChosen} /><button className="modal-primary" disabled={total !== required} onClick={() => onAction({ type: 'discard', resources: chosen })}>Discard {total} / {required}</button></Modal>
 }
@@ -228,26 +279,47 @@ function ChoiceDialog({ game, onAction }: Pick<DialogProps, 'game' | 'onAction'>
   if (game.phase === 'monopoly') {
     return <Modal title="Monopoly" locked onClose={() => {}}><div className="resource-choice-grid">{RESOURCES.map((resource) => <button key={resource} onClick={() => onAction({ type: 'choose-monopoly', resource })} aria-label={RESOURCE_LABEL[resource]}><ResourceGlyph resource={resource} /><span>{RESOURCE_LABEL[resource]}</span></button>)}</div></Modal>
   }
-  if (game.phase === 'game-over') {
-    const winner = game.players.find((player) => player.id === game.winnerId)
-    return <Modal title={`${winner?.name ?? 'A player'} wins`} locked onClose={() => {}}><div className="victory-copy"><div className={`victory-crest ${winner?.color ?? 'amber'}`}><VictoryIcon /></div><p>The island recognizes a new steward with <strong>{winner ? visibleScore(game, winner.id) : 10} victory points</strong>.</p></div></Modal>
-  }
   return null
+}
+
+/**
+ * The victory announcement, which is not a decision. It renders in the window
+ * between the winning move and the server flipping room status, so it must always
+ * have a way out: a close mark, Escape, and a button. `locked` is reserved for
+ * modals the player genuinely has to answer.
+ */
+function VictoryDialog({ game }: Pick<DialogProps, 'game'>) {
+  const [dismissed, setDismissed] = useState(false)
+  const winner = game.players.find((player) => player.id === game.winnerId)
+  if (dismissed) return null
+  return <Modal title={`${winner?.name ?? 'A player'} wins`} onClose={() => setDismissed(true)}>
+    <div className="victory-copy">
+      <div className={`victory-crest ${winner?.color ?? 'amber'}`}><VictoryIcon /></div>
+      <p>The island recognizes a new steward with <strong>{winner ? visibleScore(game, winner.id) : 10} victory points</strong>.</p>
+      <button className="modal-primary" onClick={() => setDismissed(true)}>View the board</button>
+    </div>
+  </Modal>
 }
 
 function RulesDialog({ onClose }: { onClose: () => void }) {
   return <Modal title="Base rules" icon={<BookIcon />} onClose={onClose} wide><div className="rules-columns"><section><h3>Your turn</h3><ol><li>Roll both dice.</li><li>Trade with rivals or the bank.</li><li>Build roads, settlements, cities, or development cards.</li><li>End your turn.</li></ol><h3>Build costs</h3><p><strong>Road:</strong> brick + lumber<br /><strong>Settlement:</strong> brick + lumber + wool + grain<br /><strong>City:</strong> 3 ore + 2 grain<br /><strong>Development:</strong> ore + wool + grain</p></section><section><h3>Seven and the robber</h3><p>Players holding more than seven resource cards discard half, rounded down. Move the robber, block that hex, and steal one random card from an adjacent rival.</p><h3>Victory</h3><p>Settlements are 1 point, cities are 2, and Largest Army and Longest Road are 2 each. Reach 10 points on your own turn to win.</p><p className="modal-note">Rules follow the attached 2020 fifth-edition base-game rulebook. The advanced combined trade/build phase is enabled.</p></section></div></Modal>
 }
 
-function HistoryDialog({ game, agentStatuses, onClose }: Pick<DialogProps, 'game' | 'agentStatuses' | 'onClose'>) {
-  return <Modal title="Match history" icon={<ScrollIcon />} onClose={onClose} wide>
-    <div className="history-layout">
-      <section><h3>Controllers</h3><div className="history-players">{game.players.map((player) => {
-        const status = agentStatuses?.[player.id]
-        return <article key={player.id} className={player.color}><span className={`player-crest ${player.color}`}>{player.name[0]}</span><div><strong>{player.name}</strong><small>{player.controller === 'agent' ? `Local agent seat${status?.state === 'thinking' ? ' · turn pending' : ''}` : 'Human player'}</small></div><p><span title="Victory points"><VictoryIcon />{player.publicScore}</span><span title="Resource cards"><HandIcon />{player.resourceCount}</span><span title="Development cards"><CardsIcon />{player.developmentCount}</span></p></article>
-      })}</div></section>
-      <section><h3>Public timeline</h3><ol className="history-events">{game.events.slice(-24).toReversed().map((event) => <li key={event.id}><span>{event.revision}</span><p>{event.message}</p></li>)}</ol></section>
-    </div>
+/**
+ * One chronological column. The Controllers grid is gone: it duplicated the player
+ * rail, which is on screen four inches away for the whole match.
+ */
+function HistoryDialog({ game, onClose }: Pick<DialogProps, 'game' | 'onClose'>) {
+  const colorOf = (playerId?: string) => game.players.find((player) => player.id === playerId)?.color
+  const events = game.events.slice(-40).toReversed()
+  return <Modal title="Match history" icon={<ScrollIcon />} onClose={onClose}>
+    {events.length ? <ol className="history-events">{events.map((event, position) => {
+      const color = colorOf(event.playerId)
+      const boundary = position > 0 && events[position - 1].revision !== event.revision
+      return <li key={event.id} className={`${color ?? ''} ${boundary ? 'turn-boundary' : ''}`}>
+        <span className="tnum">{event.revision}</span><p>{event.message}</p>
+      </li>
+    })}</ol> : <p className="modal-empty">Nothing has happened yet.</p>}
   </Modal>
 }
 
@@ -256,10 +328,10 @@ export function Dialogs(props: DialogProps) {
   if (humanMustAct && props.game.phase === 'discard') return <DiscardDialog game={props.game} humanId={props.humanId} onAction={props.onAction} />
   if (humanMustAct && props.game.phase === 'trade-response') return <TradeResponseDialog game={props.game} onAction={props.onAction} />
   if (humanMustAct && ['choose-victim', 'year-of-plenty', 'monopoly'].includes(props.game.phase)) return <ChoiceDialog game={props.game} onAction={props.onAction} />
-  if (props.game.phase === 'game-over') return <ChoiceDialog game={props.game} onAction={props.onAction} />
+  if (props.game.phase === 'game-over') return <VictoryDialog game={props.game} />
   if (props.dialog === 'trade') return <TradeDialog game={props.game} humanId={props.humanId} onClose={props.onClose} onAction={props.onAction} />
   if (props.dialog === 'cards') return <CardsDialog game={props.game} humanId={props.humanId} onClose={props.onClose} onAction={props.onAction} />
   if (props.dialog === 'rules') return <RulesDialog onClose={props.onClose} />
-  if (props.dialog === 'history') return <HistoryDialog game={props.game} agentStatuses={props.agentStatuses} onClose={props.onClose} />
+  if (props.dialog === 'history') return <HistoryDialog game={props.game} onClose={props.onClose} />
   return null
 }
