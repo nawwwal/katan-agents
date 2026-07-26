@@ -17,13 +17,14 @@ const BEATS: Record<string, Beat> = {
   road: { action: 'build-road', label: 'road' },
   city: { action: 'build-city', label: 'city' },
   robber: { action: 'move-robber', label: 'robber' },
+  handoff: { action: 'end-turn', label: 'turn handoff' },
   trade: { action: 'maritime-trade', label: 'trade' },
   award: { action: 'build-road', label: 'longest road' },
   army: { action: 'play-development', label: 'largest army' },
   victory: { action: 'build-city', label: 'victory' },
 }
 
-const CYCLE = ['roll', 'place', 'city', 'robber', 'trade', 'award'] as const
+const CYCLE = ['roll', 'handoff', 'place', 'city', 'robber', 'trade', 'award'] as const
 
 export type MotionDemo = { game: GameDisplayState; presentation?: GamePresentation }
 

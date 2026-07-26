@@ -6,6 +6,14 @@ import { easeOutCubic, easeOutQuart, easeOutQuint, saturate, scaled, seededFrom 
 // Every emitter here is a single InstancedMesh so a burst costs one draw call,
 // and every particle's direction comes from a seed derived from a board id —
 // the same event always throws the same debris.
+//
+// Reduced motion, stated once for the whole file: a decorative transient does
+// not render at all. It does not render frozen. A ring stopped at t=0 is not a
+// calmer animation, it is a permanent mark on the board that never clears, and
+// a match's worth of them stacks up into clutter for exactly the people who
+// asked for less. Effects that carry information — which tiles produced, what
+// the dice show — live in `ActionEffects` and `Dice`; those present their end
+// state immediately and clear on the schedule they always would have.
 
 type BurstProps = {
   /** Stable id: same id, same scatter, every time. */
@@ -56,10 +64,6 @@ export function Burst({ id, origin, count, color, emissive, speed, spread, gravi
     if (!instanced) return
     started.current ??= clock.elapsedTime
     const elapsed = scaled(clock.elapsedTime - started.current) - delay
-    if (reducedMotion) {
-      instanced.visible = false
-      return
-    }
     if (elapsed < 0 || elapsed > life) { instanced.visible = false; return }
     instanced.visible = true
     const fade = 1 - saturate(elapsed / life)
@@ -86,6 +90,7 @@ export function Burst({ id, origin, count, color, emissive, speed, spread, gravi
     material.opacity = shape === 'dust' ? fade * 0.72 : easeOutCubic(fade)
   })
 
+  if (reducedMotion) return null
   return <instancedMesh ref={mesh} args={[undefined, undefined, count]} frustumCulled={false}>
     {shape === 'dust'
       ? <icosahedronGeometry args={[1, 1]} />
@@ -122,18 +127,13 @@ export function Shockwave({ origin, color, radius, life, thickness = 0.1, delay 
     if (!ring) return
     started.current ??= clock.elapsedTime
     const elapsed = scaled(clock.elapsedTime - started.current) - delay
-    if (reducedMotion) {
-      ring.visible = true
-      ring.scale.setScalar(radius * 0.8)
-      ;(ring.material as THREE.MeshBasicMaterial).opacity = 0.3
-      return
-    }
     if (elapsed < 0 || elapsed > life) { ring.visible = false; return }
     ring.visible = true
     const t = saturate(elapsed / life)
     ring.scale.setScalar(0.12 + easeOutQuint(t) * radius)
     ;(ring.material as THREE.MeshBasicMaterial).opacity = (1 - t) ** 1.7 * 0.85
   })
+  if (reducedMotion) return null
   return <mesh ref={mesh} position={origin} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
     <ringGeometry args={[1 - thickness, 1, 48]} />
     <meshBasicMaterial color={color} transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} toneMapped={false} />
@@ -150,13 +150,13 @@ export function Flare({ origin, color, size, life, delay = 0, reducedMotion }: {
     if (!sprite) return
     started.current ??= clock.elapsedTime
     const elapsed = scaled(clock.elapsedTime - started.current) - delay
-    if (reducedMotion) { sprite.visible = false; return }
     if (elapsed < 0 || elapsed > life) { sprite.visible = false; return }
     sprite.visible = true
     const t = saturate(elapsed / life)
     sprite.scale.setScalar(size * (0.35 + easeOutQuart(t) * 0.9))
     sprite.material.opacity = (1 - t) ** 2.4 * 0.9
   })
+  if (reducedMotion) return null
   return <sprite ref={mesh} position={origin} renderOrder={3}>
     <spriteMaterial map={texture} color={color} transparent opacity={0} depthWrite={false} depthTest={false} blending={THREE.AdditiveBlending} toneMapped={false} />
   </sprite>
@@ -218,7 +218,6 @@ export function Motes({ id, origin, count, color, spread, rise, life, size, redu
     if (!instanced) return
     started.current ??= clock.elapsedTime
     const elapsed = scaled(clock.elapsedTime - started.current)
-    if (reducedMotion) { instanced.visible = false; return }
     if (elapsed > life) { instanced.visible = false; return }
     instanced.visible = true
     for (let index = 0; index < seeds.length; index += 1) {
@@ -239,6 +238,7 @@ export function Motes({ id, origin, count, color, spread, rise, life, size, redu
     ;(instanced.material as THREE.MeshBasicMaterial).opacity = opacity * (1 - saturate((elapsed - life * 0.7) / (life * 0.3)))
   })
 
+  if (reducedMotion) return null
   return <instancedMesh ref={mesh} args={[undefined, undefined, count]} frustumCulled={false}>
     <octahedronGeometry args={[1, 0]} />
     <meshBasicMaterial color={color} transparent opacity={opacity} depthWrite={false} toneMapped={false} />

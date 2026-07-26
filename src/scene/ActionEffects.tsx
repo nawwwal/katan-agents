@@ -75,9 +75,12 @@ function ResourceFlows({ flows, reducedMotion }: { flows: Flow[]; reducedMotion:
     started.current ??= clock.elapsedTime
     const elapsed = scaled(clock.elapsedTime - started.current) - (reducedMotion ? 0 : PRODUCTION_DELAY)
     if (reducedMotion) {
-      // Show the payout as a static marker at each destination, no travel.
+      // The payout is information, so it appears at once as a static marker at
+      // each destination — and then clears on the same schedule the animated
+      // version would have, rather than staying on the board for the match.
       mesh.visible = false
-      flash.visible = true
+      flash.visible = elapsed < 2.1
+      if (!flash.visible) return
       for (let index = 0; index < flows.length; index += 1) {
         const flow = flows[index]
         dummy.position.set(flow.to.x, flow.to.y + 0.02, flow.to.z)
@@ -169,7 +172,11 @@ function TilePulses({ tiles, reducedMotion }: { tiles: { x: number; z: number; c
       ring.instanceMatrix.needsUpdate = true
     }
     if (reducedMotion) {
-      ring.visible = true
+      // Which tiles produced is information. Draw it steady, and take it away
+      // when the pulse would have finished — a ring left on the board forever
+      // is not a calmer animation, it is permanent clutter.
+      ring.visible = elapsed < 1.9
+      if (!ring.visible) return
       write(0.78)
       ;(ring.material as THREE.MeshBasicMaterial).opacity = 0.4
       return
@@ -248,12 +255,6 @@ function RobberMoment({ id, at, reducedMotion }: { id: string; at: THREE.Vector3
     if (!mesh) return
     started.current ??= clock.elapsedTime
     const elapsed = scaled(clock.elapsedTime - started.current)
-    if (reducedMotion) {
-      mesh.visible = true
-      mesh.scale.setScalar(0.95)
-      ;(mesh.material as THREE.MeshBasicMaterial).opacity = 0.3
-      return
-    }
     mesh.visible = elapsed < 1.5
     if (!mesh.visible) return
     // Darkness closes in, then lifts. The tile is being taken, not celebrated.
@@ -261,11 +262,13 @@ function RobberMoment({ id, at, reducedMotion }: { id: string; at: THREE.Vector3
     mesh.scale.setScalar(1.25 - easeOutCubic(saturate(t * 2.6)) * 0.32)
     ;(mesh.material as THREE.MeshBasicMaterial).opacity = Math.sin(t * Math.PI) ** 0.7 * 0.55
   })
+  // The shroud is decoration; the robber model already says which tile it is
+  // on, so under reduced motion it simply is not drawn.
   return <group>
-    <mesh ref={shroud} position={[at.x, GROUND + 0.015, at.z]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
+    {reducedMotion ? null : <mesh ref={shroud} position={[at.x, GROUND + 0.015, at.z]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
       <circleGeometry args={[0.98, 6, Math.PI / 6]} />
       <meshBasicMaterial color="#10131a" transparent opacity={0} depthWrite={false} />
-    </mesh>
+    </mesh>}
     <Shockwave origin={[at.x, GROUND + 0.02, at.z]} color="#7c2a20" radius={1.15} life={0.7} thickness={0.09} reducedMotion={reducedMotion} />
     <Burst id={`${id}-ink`} origin={[at.x, GROUND + 0.08, at.z]} count={14} color="#232830" emissive="#5d1a14" speed={1.9} spread={0.8} gravity={4.4} life={1} size={0.055} shape="debris" reducedMotion={reducedMotion} />
   </group>
@@ -295,7 +298,6 @@ function LongestRoadSweep({ game, playerId, color, reducedMotion }: { game: Game
     if (!instanced || !nodes.length) return
     started.current ??= clock.elapsedTime
     const elapsed = scaled(clock.elapsedTime - started.current)
-    if (reducedMotion) { instanced.visible = false; return }
     const life = 0.42 + nodes.length * 0.09 + 0.5
     if (elapsed > life) { instanced.visible = false; return }
     instanced.visible = true
@@ -312,7 +314,7 @@ function LongestRoadSweep({ game, playerId, color, reducedMotion }: { game: Game
     instanced.instanceMatrix.needsUpdate = true
   })
 
-  if (!nodes.length) return null
+  if (!nodes.length || reducedMotion) return null
   return <instancedMesh ref={mesh} args={[undefined, undefined, nodes.length]} frustumCulled={false} renderOrder={3}>
     <ringGeometry args={[0.45, 1, 16]} />
     <meshBasicMaterial color={color} transparent opacity={0.9} depthWrite={false} side={THREE.DoubleSide} toneMapped={false} />
@@ -351,11 +353,49 @@ function VictoryMoment({ game, color, reducedMotion }: { game: GameDisplayState;
   </group>
 }
 
+// ----------------------------------------------------------------- handoff
+
+/**
+ * The baton pass.
+ *
+ * A player sees this sixty times a match, so it is deliberately the quietest
+ * thing in the file: one thin ring in the incoming player's colour, over their
+ * own holdings, for half a second. It answers "whose board is this now" in the
+ * place on the board where the answer matters, and then it is gone. Anything
+ * with more presence than this would be exhausting by the third turn.
+ */
+function HandoffMoment({ game, reducedMotion }: { game: GameDisplayState; reducedMotion: boolean }) {
+  const incoming = game.players[game.activePlayerIndex]
+  const home = useMemo(() => {
+    if (!incoming) return undefined
+    const spots = Object.entries(game.buildings).flatMap(([vertexId, building]) => {
+      if (building.playerId !== incoming.id) return []
+      const vertex = game.board.vertices[vertexId]
+      return vertex ? [[vertex.x, vertex.z] as const] : []
+    })
+    if (!spots.length) return undefined
+    const x = spots.reduce((total, spot) => total + spot[0], 0) / spots.length
+    const z = spots.reduce((total, spot) => total + spot[1], 0) / spots.length
+    return [x, z] as const
+  }, [game.board.vertices, game.buildings, incoming])
+
+  if (!incoming || !home) return null
+  return <Shockwave
+    origin={[home[0], GROUND + 0.62, home[1]]}
+    color={PLAYER_COLORS[incoming.color]}
+    radius={1.05}
+    life={0.5}
+    thickness={0.075}
+    reducedMotion={reducedMotion}
+  />
+}
+
 // ------------------------------------------------------------------ entry
 
 const beatFor = (actionType: string, awards: boolean, victory: boolean): BeatKind => {
   if (victory) return 'victory'
   if (awards) return 'award'
+  if (actionType === 'end-turn') return 'handoff'
   if (actionType === 'roll-dice') return 'roll'
   if (actionType === 'build-city') return 'city'
   if (BUILD_ACTIONS.has(actionType)) return 'place'
@@ -407,6 +447,7 @@ function ActionMoment({ game, presentation, reducedMotion }: { game: GameDisplay
   return <group>
     {dice ? <DiceRoll roll={game.lastRoll!} revision={presentation.revision} land={[desert?.x ?? 0, desert?.z ?? 0]} reducedMotion={reducedMotion} /> : null}
     {type === 'roll-dice' ? <ProductionEffects game={game} reducedMotion={reducedMotion} /> : null}
+    {type === 'end-turn' ? <HandoffMoment game={game} reducedMotion={reducedMotion} /> : null}
     {at && (BUILD_ACTIONS.has(type) || type === 'build-city')
       ? <PlacementImpact id={`impact-${presentation.revision}`} at={at} heavy={type === 'build-city'} color={actorColor} reducedMotion={reducedMotion} />
       : null}

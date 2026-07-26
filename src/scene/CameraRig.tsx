@@ -56,6 +56,11 @@ type Recipe = {
 const RECIPES: Record<BeatKind, Recipe> = {
   // Dice want air: settle wide and a touch more top-down so every tile reads.
   roll: { distance: 1.14, polar: -0.05, azimuth: -0.03, fov: 1.5, follow: 0, hold: 3.1, frequency: 0.62, ratio: 0.82 },
+  // Turn handoff. The most repeated beat in the game — sixty times a match —
+  // so it gets the smallest move in the table: half a degree of drift and a
+  // two-percent breath out, critically damped so it never bounces. Enough to
+  // register as "the board changed hands", not enough to notice twice.
+  handoff: { distance: 1.02, polar: -0.012, azimuth: 0.028, fov: 0, follow: 0, hold: 1.1, frequency: 0.75, ratio: 1 },
   // Placement pushes in on the contact point, after a short pull-back.
   place: { distance: 0.81, polar: 0.06, azimuth: 0.05, fov: -1, follow: 0.56, hold: 2.4, frequency: 0.9, ratio: 0.68, anticipate: { distance: 1.16, duration: 0.24, kick: 3.4 } },
   city: { distance: 0.74, polar: 0.05, azimuth: 0.09, fov: -1.5, follow: 0.62, hold: 2.7, frequency: 0.85, ratio: 0.64, anticipate: { distance: 1.2, duration: 0.28, kick: 4.1 } },

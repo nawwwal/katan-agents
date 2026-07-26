@@ -5,6 +5,7 @@
 
 export type BeatKind =
   | 'roll'
+  | 'handoff'
   | 'place'
   | 'city'
   | 'robber'
