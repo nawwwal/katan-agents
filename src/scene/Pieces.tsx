@@ -21,7 +21,7 @@ import {
   padGeometry,
   roadPoolMaterial,
 } from './structures/Beacon'
-import { CityModel, SettlementModel } from './structures/Buildings'
+import { BUILDING_SCALE, CityModel, SettlementModel, buildingSightScale } from './structures/Buildings'
 import { FREE_JOINS, RoadGhost, RoadModel, type RoadJoins } from './structures/Road'
 import { apronMaterial, kerbRingMaterial, terraceMaterial } from './structures/materials'
 import { hashString, makeRng } from './structures/textures'
@@ -265,10 +265,14 @@ export function Building({ game, vertexId, playerId, type, legalCity, pendingCit
   useCursor(legalCity && hovered)
   const owner: PlayerColor = player?.color ?? 'ivory'
   const yaw = useMemo(() => buildingYaw(vertex.x, vertex.z, hashString(vertexId), type === 'city' ? 'z' : 'x'), [vertex.x, vertex.z, vertexId, type])
+  // A building at a corner stands partly over the tile behind it, so it obeys
+  // the same token sight line the terrain does. Normally 1: the models are
+  // authored to clear it, and this is the guard rail rather than the mechanism.
+  const sight = useMemo(() => buildingSightScale(game.board, vertexId, type), [game.board, vertexId, type])
   return <group position={[vertex.x, 0.478, vertex.z]} onClick={(event) => { event.stopPropagation(); if (legalCity) onCity?.() }} onPointerOver={(event) => { event.stopPropagation(); setHovered(true) }} onPointerOut={() => setHovered(false)}>
     <group ref={drop}><group ref={emphasis}>
       <Footing type={type} owner={owner} />
-      <group rotation={[0, yaw, 0]} scale={type === 'city' ? 1.05 : 1.14}>
+      <group rotation={[0, yaw, 0]} scale={BUILDING_SCALE[type] * sight}>
         {type === 'city' ? <CityModel color={owner} /> : <SettlementModel color={owner} />}
       </group>
     </group></group>

@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { PlayerColor } from '../../game/types'
+import type { Board, PlayerColor } from '../../game/types'
 import { PLAYER_BANNER, PLAYER_ROOF, PLAYER_TRIM } from '../playerColors'
 import { banner, box, cone, cyl, gableRoof, merge, merlons, pennant, prism, type Part } from './geometry'
 import {
@@ -13,6 +13,7 @@ import {
   variedMasonryMaterial,
   variedPlasterMaterial,
 } from './materials'
+import { GROUND_Y, sightCeiling } from '../terrain/hex'
 import { makeRng } from './textures'
 
 // Settlement and city are authored as merged geometry groups — one group per
@@ -322,11 +323,15 @@ const buildCity = (): Groups => {
   cloth.push({ geo: banner(0.09, 0.2), pos: [0.0, 0.235, 0.318], rot: [0, 0, 0], uv: [1, 1] })
   metal.push({ geo: cyl(0.005, 0.005, 0.07, 6), pos: [-0.115, 0.278, -0.352], rot: [Math.PI / 2, 0, 0.32] })
   metal.push({ geo: cyl(0.005, 0.005, 0.07, 6), pos: [0.075, 0.278, -0.352], rot: [Math.PI / 2, 0, -0.32] })
-  timber.push({ geo: cyl(0.007, 0.008, 0.2, 6), pos: [0.19, towerBase + towerH + 0.21, 0.13], uv: [1, 3] })
-  cloth.push({ geo: pennant(0.2, 0.118), pos: [0.196, towerBase + towerH + 0.248, 0.13], rot: [0, 0.2, 0], uv: [1, 1] })
+  // Both flagpoles are shorter than they want to be, and the reason is the
+  // number tokens. The tallest thing on this piece stands a hex radius from a
+  // neighbouring tile's disc, well inside the sight cone that terrain now obeys,
+  // and a pole is the cheapest 15cm on the model to give back.
+  timber.push({ geo: cyl(0.007, 0.008, 0.14, 6), pos: [0.19, towerBase + towerH + 0.15, 0.13], uv: [1, 3] })
+  cloth.push({ geo: pennant(0.2, 0.1), pos: [0.196, towerBase + towerH + 0.175, 0.13], rot: [0, 0.2, 0], uv: [1, 1] })
   // Keep pennant as well: the tallest point on the piece should say who owns it.
-  timber.push({ geo: cyl(0.007, 0.008, 0.16, 6), pos: [-0.02, keepBase + keepH + 0.26, -0.02], uv: [1, 3] })
-  cloth.push({ geo: pennant(0.17, 0.1), pos: [-0.014, keepBase + keepH + 0.3, -0.02], rot: [0, -0.5, 0], uv: [1, 1] })
+  timber.push({ geo: cyl(0.007, 0.008, 0.12, 6), pos: [-0.02, keepBase + keepH + 0.15, -0.02], uv: [1, 3] })
+  cloth.push({ geo: pennant(0.17, 0.09), pos: [-0.014, keepBase + keepH + 0.17, -0.02], rot: [0, -0.5, 0], uv: [1, 1] })
 
   return {
     masonry: merge(masonry),
@@ -343,6 +348,84 @@ const buildCity = (): Groups => {
 
 const settlementGeometry = lazy(buildSettlement)
 const cityGeometry = lazy(buildCity)
+
+// ---------------------------------------------------------------------------
+// The number token's sight line
+//
+// A number is game state, and a building standing at a hex corner sits partly
+// over the tile behind it. The terrain now obeys `sightCeiling` so no landform
+// can bury a token; the pieces have to obey the same contract, because with the
+// ground clear the walls were the next thing in the way at grazing angles.
+//
+// Measured off the merged geometry rather than guessed, and tested as a cone
+// across the footprint the way `TerrainField` tests a crag. A building is much
+// narrower at its ridge than at its talus, and treating it as a cylinder of its
+// widest course protects airspace nothing is occupying — which for the city
+// would mean shrinking every one of them by a fifth to clear eleven samples.
+// ---------------------------------------------------------------------------
+
+/** Where a piece stands relative to the plateau the tokens are measured from. */
+const PIECE_BASE = 0.478 - GROUND_Y
+
+/**
+ * The scale each model is placed at, and the bounding box it was measured at.
+ * The city came down from 1.05: with the flagpoles already shortened it still
+ * broke a neighbouring token's cone, and an eighth off a keep is a far smaller
+ * loss than a number you cannot read.
+ */
+export const BUILDING_SCALE = { settlement: 1.14, city: 0.9 } as const
+
+export const BUILDING_PROFILE = {
+  settlement: { top: 0.652 * BUILDING_SCALE.settlement, radius: 0.275 * BUILDING_SCALE.settlement, base: PIECE_BASE },
+  city: { top: 0.885 * BUILDING_SCALE.city, radius: 0.456 * BUILDING_SCALE.city, base: PIECE_BASE },
+} as const
+
+/**
+ * Footprint samples, as fractions of the base radius, each with the share of
+ * full height the silhouette actually carries there. Same shape as the terrain
+ * field's prop cone and deliberately so: two rules for one contract is how the
+ * board ends up with a token you can read from the ground and not from the air.
+ */
+const CONE_SAMPLES: Array<[number, number, number]> = (() => {
+  const out: Array<[number, number, number]> = [[0, 0, 1]]
+  for (let index = 0; index < 8; index += 1) {
+    const angle = (index / 8) * Math.PI * 2
+    for (const fraction of [0.45, 0.85]) {
+      out.push([Math.cos(angle) * fraction, Math.sin(angle) * fraction, Math.max(0.18, 1 - 0.85 * fraction)])
+    }
+  }
+  return out
+})()
+
+/** Highest a building at this corner may reach, in relief units above the plateau. */
+export const buildingHeadroom = (board: Board, vertexId: string, type: 'settlement' | 'city') => {
+  const vertex = board.vertices[vertexId]
+  const profile = BUILDING_PROFILE[type]
+  let allowed = Infinity
+  for (const hexId of vertex.hexes) {
+    const hex = board.hexes.find((candidate) => candidate.id === hexId)
+    if (!hex) continue
+    const localX = vertex.x - hex.x
+    const localZ = vertex.z - hex.z
+    for (const [ux, uz, share] of CONE_SAMPLES) {
+      const ceiling = sightCeiling(localX + ux * profile.radius, localZ + uz * profile.radius)
+      allowed = Math.min(allowed, (ceiling - profile.base) / share)
+    }
+  }
+  return allowed
+}
+
+/**
+ * How far a building at this corner has to be taken in to stay under every
+ * token's cone. Normally 1, and never below 0.82 on a legal board — a corner is
+ * a full hex radius from the token it could hide, which is most of the way to
+ * the cone's reach already.
+ */
+export const buildingSightScale = (board: Board, vertexId: string, type: 'settlement' | 'city') => {
+  const reach = BUILDING_PROFILE[type].top
+  const allowed = buildingHeadroom(board, vertexId, type)
+  return reach <= allowed ? 1 : Math.max(0.6, allowed / reach)
+}
 
 function Structure({ groups, color }: { groups: Groups; color: PlayerColor }) {
   return <group>
