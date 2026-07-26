@@ -19,12 +19,19 @@ type DialogProps = {
   onAction: (action: GameAction) => boolean
 }
 
-function Modal({ title, icon, children, onClose, locked = false, wide = false }: { title: string; icon?: React.ReactNode; children: React.ReactNode; onClose: () => void; locked?: boolean; wide?: boolean }) {
+/**
+ * `overBoard` is for a modal whose subject is on the island: it drops the scrim
+ * and steps down out of the middle so the markers the player is choosing between
+ * stay visible. `useOverlay` already exempts the world layers from inerting, so
+ * they were live the whole time; they were simply underneath a full-bleed scrim
+ * and a centred card.
+ */
+function Modal({ title, icon, children, onClose, locked = false, wide = false, overBoard = false }: { title: string; icon?: React.ReactNode; children: React.ReactNode; onClose: () => void; locked?: boolean; wide?: boolean; overBoard?: boolean }) {
   const backdropRef = useRef<HTMLDivElement>(null)
   const dialogRef = useRef<HTMLElement>(null)
   useOverlay(backdropRef, dialogRef, { locked, onClose })
 
-  return <div ref={backdropRef} className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (!locked && event.target === event.currentTarget) onClose() }}>
+  return <div ref={backdropRef} className={`modal-backdrop ${overBoard ? 'over-board' : ''}`} role="presentation" onMouseDown={(event) => { if (!locked && event.target === event.currentTarget) onClose() }}>
     <section ref={dialogRef} tabIndex={-1} className={`game-modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
       <header>{icon ?? <span className="modal-icon-spacer" />}<h2>{title}</h2>{!locked ? <button className="icon-button" onClick={onClose} aria-label="Close"><CloseIcon /></button> : <span />}</header>
       <div className="modal-body">{children}</div>
@@ -108,7 +115,24 @@ function DiscardDialog({ game, humanId, onAction }: Pick<DialogProps, 'game' | '
   // player discarding used to bump the revision and wipe a selection mid-choice.
   useEffect(() => setChosen(emptyResources()), [required])
   const total = RESOURCES.reduce((sum, resource) => sum + chosen[resource], 0)
-  return <Modal title={`Discard ${required}`} locked onClose={() => {}}><ResourceStepperGrid title="Choose cards" values={chosen} limits={player.resources} onChange={setChosen} /><button className="modal-primary" disabled={total !== required} onClick={() => onAction({ type: 'discard', resources: chosen })}>Discard {total} / {required}</button></Modal>
+  // The button says what to do next, not what the score is. A disabled control
+  // reading "Discard 2 / 4" leaves the player to work out the subtraction.
+  const label = total === required
+    ? `Discard ${required}`
+    : total < required ? `Choose ${required - total} more` : `Put ${total - required} back`
+  // The rule itself is in the log once per roll, so this does not restate it. It
+  // says what *this* player owes, who else owes one, and that the robber is a
+  // separate step: the two arrive together and were being read as one punishment,
+  // and a player who knows Catan read a bare "Discard 4" as a broken game.
+  const others = game.discardQueue.filter((id) => id !== humanId).map((id) => game.players.find((candidate) => candidate.id === id)?.name).filter(Boolean)
+  return <Modal title={`Over the hand limit: discard ${required}`} locked onClose={() => {}}>
+    <p className="modal-note">You hold {player.resourceCount} cards and the limit is seven, so {required} go back to the bank.</p>
+    <p className="modal-note">{others.length
+      ? `${others.join(' and ')} ${others.length > 1 ? 'are' : 'is'} over seven too and ${others.length > 1 ? 'are' : 'is'} discarding as well.`
+      : 'Nobody else is over seven, so nobody else is discarding.'} The robber moves after this, and it does not take these cards.</p>
+    <ResourceStepperGrid title="Choose what goes" values={chosen} limits={player.resources} onChange={setChosen} />
+    <button className="modal-primary" disabled={total !== required} onClick={() => onAction({ type: 'discard', resources: chosen })}>{label}</button>
+  </Modal>
 }
 
 function ChoiceDialog({ game, onAction }: Pick<DialogProps, 'game' | 'onAction'>) {
@@ -124,13 +148,13 @@ function ChoiceDialog({ game, onAction }: Pick<DialogProps, 'game' | 'onAction'>
   const addPlenty = (resource: Resource) => setPlenty((current) => current.length >= 2 ? [resource] : [...current, resource])
   if (game.phase === 'choose-victim') {
     const actions = game.legalActions.filter((action): action is Extract<GameAction, { type: 'steal-from' }> => action.type === 'steal-from')
-    return <Modal title="Choose a rival" locked onClose={() => {}}><div className="choice-list">{actions.map((action) => { const player = game.players.find((candidate) => candidate.id === action.playerId)!; return <button key={action.playerId} onClick={() => onAction(action)}><span className={`player-crest ${player.color}`}>{player.name[0]}</span><strong>{player.name}</strong><small><span><HandIcon />{player.resourceCount}</span><span><CardsIcon />{player.developmentCount}</span></small></button> })}</div></Modal>
+    return <Modal title="Choose a rival" locked overBoard onClose={() => {}}><div className="choice-list">{actions.map((action) => { const player = game.players.find((candidate) => candidate.id === action.playerId)!; return <button key={action.playerId} onClick={() => onAction(action)}><span className={`player-crest ${player.color}`}>{player.name[0]}</span><strong>{player.name}</strong><small><span><HandIcon />{player.resourceCount}</span><span><CardsIcon />{player.developmentCount}</span></small></button> })}</div></Modal>
   }
   if (game.phase === 'year-of-plenty') {
     return <Modal title="Year of Plenty" locked onClose={() => {}}><div className="choice-slots" aria-label="Chosen resources">{[0, 1].map((index) => <button key={index} disabled={!plenty[index]} onClick={() => setPlenty((current) => current.slice(0, index))}>{plenty[index] ? <ResourceGlyph resource={plenty[index]} aria-label={RESOURCE_LABEL[plenty[index]]} /> : <CloseIcon className="slot-plus" style={{ transform: 'rotate(45deg)' }} />}</button>)}</div><div className="resource-choice-grid">{RESOURCES.map((resource) => <button key={resource} disabled={!canAddPlenty(resource)} onClick={() => addPlenty(resource)} aria-label={RESOURCE_LABEL[resource]}><ResourceGlyph resource={resource} /><span>{RESOURCE_LABEL[resource]}</span></button>)}</div><button className="modal-primary" disabled={!plentyAction} onClick={() => plentyAction && onAction(plentyAction)}>Take selected pair</button></Modal>
   }
   if (game.phase === 'monopoly') {
-    return <Modal title="Monopoly" locked onClose={() => {}}><div className="resource-choice-grid">{RESOURCES.map((resource) => <button key={resource} onClick={() => onAction({ type: 'choose-monopoly', resource })} aria-label={RESOURCE_LABEL[resource]}><ResourceGlyph resource={resource} /><span>{RESOURCE_LABEL[resource]}</span></button>)}</div></Modal>
+    return <Modal title="Monopoly" locked onClose={() => {}}><p className="modal-note">Name a resource. Every other player hands you all of theirs.</p><div className="resource-choice-grid">{RESOURCES.map((resource) => <button key={resource} onClick={() => onAction({ type: 'choose-monopoly', resource })} aria-label={RESOURCE_LABEL[resource]}><ResourceGlyph resource={resource} /><span>{RESOURCE_LABEL[resource]}</span></button>)}</div></Modal>
   }
   return null
 }

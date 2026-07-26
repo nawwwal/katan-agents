@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { currentActorId } from '../game/engine'
 import { visibleScore } from '../game/room'
 import type { DomesticTrade, GameAction, GameDisplayState, Resource, Resources } from '../game/types'
 import { RESOURCES, emptyResources } from '../game/types'
@@ -242,6 +243,7 @@ function HarborRail({ game, humanId, onAction, onClose }: TradeProps) {
   const [give, setGive] = useState<Resource>()
   const maritime = game.legalActions.filter((action): action is Extract<GameAction, { type: 'maritime-trade' }> => action.type === 'maritime-trade')
   const held = game.players.find((candidate) => candidate.id === humanId)?.resources ?? emptyResources()
+  const yourMove = currentActorId(game) === humanId && game.phase === 'action'
   const rateFor = (resource: Resource) => maritime.filter((action) => action.give === resource).map((action) => action.ratio).sort((left, right) => left - right)[0] ?? 4
   const commit = (receive: Resource) => {
     if (!give) return
@@ -285,8 +287,11 @@ function HarborRail({ game, humanId, onAction, onClose }: TradeProps) {
           title={RESOURCE_LABEL[resource]}
         ><ResourceGlyph resource={resource} /></button>)}
       </div>
+      {/* Three different reasons the rail is closed, and they used to share one
+          line: it said the harbor opens on your turn while it *was* your turn. */}
       <p className="harbor-note">{!maritime.length
-        ? resourceTotal(held) ? 'The harbor opens on your turn.' : 'The bank wants a full stack. You hold none.'
+        ? !yourMove ? 'The harbor opens on your turn.'
+          : resourceTotal(held) ? 'The bank trades whole stacks. Nothing in your hand reaches the rate yet.' : 'The bank wants a full stack. You hold none.'
         : give ? `Pick what to take for ${rateFor(give)} ${RESOURCE_LABEL[give].toLowerCase()}.` : 'Pick a stack to give first.'}</p>
     </div>
   </aside>
@@ -300,46 +305,56 @@ export function TradeTable({ game, humanId, onClose, onAction }: TradeProps) {
   const [give, setGive] = useState<Resources>(emptyResources)
   const [ask, setAsk] = useState<Resources>(emptyResources)
   const [target, setTarget] = useState(rivals[0]?.id ?? '')
-  const [refused, setRefused] = useState<string[]>([])
-  const [answer, setAnswer] = useState<{ kind: 'declined' | 'accepted'; by: string }>()
   const [tab, setTab] = useState<'players' | 'harbor'>('players')
   const narrow = useNarrow()
   const closeRef = useRef(onClose)
   closeRef.current = onClose
 
-  // An answer to *your* offer, read off the event at the current revision. The
-  // engine has no "trade resolved" signal, so the log is the channel.
-  useEffect(() => {
-    const answers = game.events.filter((candidate) => candidate.revision === game.revision
-      && (candidate.type === 'trade-rejected' || candidate.type === 'trade-accepted')
-      && candidate.trade?.fromPlayerId === humanId)
-    const taken = answers.find((candidate) => candidate.type === 'trade-accepted')
-    if (taken?.trade) { setAnswer({ kind: 'accepted', by: taken.trade.toPlayerId }); return }
-    const last = answers.at(-1)
-    if (!last?.trade) return
-    // Declined offers come back intact so they can be retargeted in one click.
-    const said = answers.map((candidate) => candidate.trade!.toPlayerId)
-    setGive(fill(last.trade.give))
-    setAsk(fill(last.trade.receive))
-    setRefused((current) => [...new Set([...current, ...said])])
-    setTarget(rivals.find((rival) => !said.includes(rival.id))?.id ?? last.trade.toPlayerId)
-    setAnswer({ kind: 'declined', by: last.trade.toPlayerId })
-    uiSound('ui-close')
-  }, [game.revision])
+  const outgoing = game.tradeOffer?.fromPlayerId === humanId ? game.tradeOffer : undefined
 
-  const accepted = answer?.kind === 'accepted'
+  /*
+   * Which offer this table is reporting on. It is component state on purpose.
+   *
+   * The old code read the answer out of `game.events` at the current revision,
+   * and that predicate stays true until the revision moves, so every remount
+   * replayed the last answer: reopen the table after one completed trade and it
+   * opened on "Marlow accepted." with Send dead, then closed itself, forever.
+   * A remount has no `sentOfferId`, so it now opens composing, and an offer id
+   * never repeats, so an answer is shown exactly once.
+   */
+  const [sentOfferId, setSentOfferId] = useState<number>()
+  useEffect(() => {
+    if (game.tradeOffer?.fromPlayerId === humanId) setSentOfferId(game.tradeOffer.id)
+  }, [game.tradeOffer?.id])
+  const resolution = sentOfferId !== undefined && game.tradeResolution?.id === sentOfferId ? game.tradeResolution : undefined
+
+  // A refused offer comes back intact so it can be retargeted in one click.
+  const restored = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (!resolution || resolution.outcome === 'accepted' || restored.current === resolution.id) return
+    restored.current = resolution.id
+    setGive(fill(resolution.give))
+    setAsk(fill(resolution.receive))
+    const next = rivals.find((rival) => !resolution.declinedBy.includes(rival.id))
+    if (next) setTarget(next.id)
+    uiSound('ui-close')
+  }, [resolution?.id, resolution?.outcome])
+
+  const accepted = resolution?.outcome === 'accepted'
   useEffect(() => {
     if (!accepted) return
     const timeout = window.setTimeout(() => closeRef.current(), 1_300)
     return () => window.clearTimeout(timeout)
   }, [accepted])
 
-  const outgoing = game.pendingTrade?.fromPlayerId === humanId ? game.pendingTrade : undefined
   const handEmpty = resourceTotal(player.resources) === 0
+  // Countered, withdrawn and invalidated all end with nothing on the table and
+  // nothing to answer, so the table simply returns to composing.
   const state: TableState = outgoing ? 'sent'
     : accepted ? 'accepted'
-      : answer?.kind === 'declined' ? (refused.length >= rivals.length ? 'no-takers' : 'declined')
-        : handEmpty ? 'empty' : 'composing'
+      : resolution?.outcome === 'no-takers' ? 'no-takers'
+        : resolution?.outcome === 'declined' ? 'declined'
+          : handEmpty ? 'empty' : 'composing'
   const composing = state === 'composing' || state === 'empty'
   const retarget = state === 'declined' || state === 'no-takers'
 
@@ -348,12 +363,17 @@ export function TradeTable({ game, humanId, onClose, onAction }: TradeProps) {
   const giveTotal = resourceTotal(shown)
   const askTotal = resourceTotal(wanted)
   const overlap = anyOverlap(give, ask)
-  const partner = game.players.find((candidate) => candidate.id === (outgoing?.toPlayerId ?? answer?.by ?? target))
-  const decliner = game.players.find((candidate) => candidate.id === answer?.by)
+  // Who is on the other side of the table. A broadcast has no single seat, so it
+  // is the table itself, and the copy says so rather than naming one rival.
+  const openTo = outgoing?.toPlayerIds ?? []
+  const toTable = openTo.length > 1
+  const lastDecliner = resolution?.declinedBy.at(-1)
+  const partner = game.players.find((candidate) => candidate.id === (toTable ? undefined : openTo[0] ?? resolution?.acceptedBy ?? lastDecliner ?? target))
+  const decliner = game.players.find((candidate) => candidate.id === lastDecliner)
   const nextSeat = game.players.find((candidate) => candidate.id === target)
 
   // Editing the offer retires the last answer: a changed offer is a new offer.
-  const edit = (next: () => void) => { next(); setAnswer(undefined); setRefused([]) }
+  const edit = (next: () => void) => { next(); setSentOfferId(undefined) }
   const stage = (resource: Resource) => edit(() => setGive((current) => current[resource] >= player.resources[resource] ? current : { ...current, [resource]: current[resource] + 1 }))
   const unstage = (resource: Resource) => edit(() => setGive((current) => ({ ...current, [resource]: Math.max(0, current[resource] - 1) })))
   const addAsk = (resource: Resource) => edit(() => setAsk((current) => ({ ...current, [resource]: Math.min(19, current[resource] + 1) })))
@@ -361,14 +381,21 @@ export function TradeTable({ game, humanId, onClose, onAction }: TradeProps) {
   const clear = () => edit(() => { setGive(emptyResources()); setAsk(emptyResources()) })
 
   const legalTo = (playerId: string) => game.legalActions.some((action) => action.type === 'offer-trade' && action.trade.toPlayerId === playerId)
+  const canBroadcast = game.legalActions.some((action) => action.type === 'broadcast-trade')
   const sendable = giveTotal > 0 && askTotal > 0 && !overlap && RESOURCES.every((resource) => give[resource] <= player.resources[resource])
   const send = (toPlayerId: string) => {
     if (!sendable || !legalTo(toPlayerId)) return
     const action: GameAction = { type: 'offer-trade', trade: { fromPlayerId: humanId, toPlayerId, give, receive: ask } }
-    if (onAction(action)) { setAnswer(undefined); setTarget(toPlayerId) }
+    if (onAction(action)) { setSentOfferId(undefined); setTarget(toPlayerId) }
+  }
+  // One offer in front of everyone, rather than the same bundle walked around
+  // the table one refusal at a time.
+  const offerTable = () => {
+    if (!sendable || !canBroadcast) return
+    if (onAction({ type: 'broadcast-trade', trade: { fromPlayerId: humanId, give, receive: ask } })) setSentOfferId(undefined)
   }
 
-  const status = state === 'sent' ? `${partner?.name ?? 'They'} is considering.`
+  const status = state === 'sent' ? toTable ? 'The table is considering.' : `${partner?.name ?? 'They'} is considering.`
     : state === 'accepted' ? `${partner?.name ?? 'They'} accepted.`
       : state === 'no-takers' ? 'No takers. Change the offer, or trade with the harbor.'
         : state === 'declined' ? `${decliner?.name ?? 'They'} declined. Send the same offer to ${nextSeat?.name ?? 'the other seat'}, or change it.`
@@ -394,9 +421,9 @@ export function TradeTable({ game, humanId, onClose, onAction }: TradeProps) {
         <PartnerSeats
           game={game}
           humanId={humanId}
-          target={outgoing?.toPlayerId ?? target}
-          refused={refused}
-          declinedBy={answer?.kind === 'declined' ? answer.by : undefined}
+          target={toTable ? '' : openTo[0] ?? target}
+          refused={outgoing?.declinedBy ?? resolution?.declinedBy ?? []}
+          declinedBy={state === 'declined' || state === 'no-takers' ? lastDecliner : undefined}
           onPick={(playerId) => retarget ? send(playerId) : setTarget(playerId)}
           disabled={state === 'sent' || state === 'accepted'}
           retarget={retarget}
@@ -427,9 +454,16 @@ export function TradeTable({ game, humanId, onClose, onAction }: TradeProps) {
           <button type="button" className="table-reset" disabled={state === 'sent' || accepted || (!giveTotal && !askTotal)} onClick={clear}>Clear offer</button>
           <button
             type="button"
+            className="table-counter"
+            disabled={state === 'sent' || accepted || !sendable || !canBroadcast}
+            onClick={offerTable}
+            aria-label={sendable ? `Offer to every rival at once: give ${describeResources(shown)} for ${describeResources(wanted)}` : 'Offer to the table'}
+          >Offer to the table</button>
+          <button
+            type="button"
             className="table-send"
             data-weight="deep"
-            disabled={state === 'sent' || accepted || state === 'no-takers' || !sendable || !legalTo(outgoing?.toPlayerId ?? target)}
+            disabled={state === 'sent' || accepted || state === 'no-takers' || !sendable || !legalTo(openTo[0] ?? target)}
             onClick={() => send(target)}
             aria-label={sendable && partner ? `Send offer to ${partner.name}: give ${describeResources(shown)} for ${describeResources(wanted)}` : 'Send offer'}
           ><CheckIcon />Send offer</button>

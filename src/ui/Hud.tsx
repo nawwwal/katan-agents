@@ -5,6 +5,8 @@ import type { AgentStatus, GameAction, GameDisplayState, Resource } from '../gam
 import type { GamePresentation } from '../game/useGame'
 import { RESOURCES, emptyResources } from '../game/types'
 import type { PlacementMode } from '../scene/GameScene'
+import { diceThrowPlan } from '../scene/motion/diceThrow'
+import { useReducedMotion } from '../scene/useReducedMotion'
 import {
   BUILD_ICON, BookIcon, CardsIcon, DiceIcon, DiePips, FlagIcon, HandIcon, HomeIcon, KnightIcon,
   LargestArmyIcon, LongestRoadIcon, ResourceGlyph, RobberIcon, ScrollIcon, SoundOffIcon, SoundOnIcon, TradeIcon,
@@ -63,7 +65,7 @@ const coachCopy: Partial<Record<GameDisplayState['phase'], string>> = {
   'setup-settlement': 'Pick a corner touching productive numbers and a mix of resources.',
   'setup-road': 'Your road must touch the settlement you just placed.',
   discard: 'Hands above seven discard half before the robber moves.',
-  'move-robber': 'The robber stops production and may let you steal from a neighbour.',
+  'move-robber': 'The robber stops production and may let you steal from a neighbor.',
   'choose-victim': 'You steal one random resource without seeing their hand.',
   'road-building': 'Place up to two free roads, or finish early.',
   'year-of-plenty': 'Take any two cards the bank can still supply.',
@@ -323,21 +325,46 @@ function Commands(props: CommandProps) {
 
 /* -------------------------------------------------------------- moments -- */
 
+/** One roll, held whole, so the reveal is never assembled from two moments. */
+type DiceThrow = { roll: [number, number]; revision: number; deltas: GamePresentation['resourceDeltas'] }
+
 function DiceMoment({ game, presentation }: { game: GameDisplayState; presentation?: GamePresentation }) {
-  const [dice, setDice] = useState<[number, number]>()
+  const reducedMotion = useReducedMotion()
+  const [dice, setDice] = useState<DiceThrow>()
+  // The throw is latched apart from the reveal so a later action landing while
+  // the dice are still in the air cannot cancel a reveal that has not happened.
+  // The deltas are latched with it: the panel now appears a second later than it
+  // used to, and by then `presentation` can already be describing someone else's
+  // move, which would print the wrong production under the right total.
+  const [thrown, setThrown] = useState<DiceThrow>()
   useEffect(() => {
     if (!game.lastRoll || presentation?.actionType !== 'roll-dice') return
-    setDice(game.lastRoll)
-    const timeout = window.setTimeout(() => setDice(undefined), 1_450)
-    return () => window.clearTimeout(timeout)
+    setThrown({ roll: game.lastRoll, revision: presentation.revision, deltas: presentation.resourceDeltas })
   }, [game.lastRoll?.[0], game.lastRoll?.[1], presentation?.revision])
+  useEffect(() => {
+    if (!thrown) return
+    // The physical dice tumble for about 1.28s. Printing the total while they
+    // are still deciding is what makes a fair roll feel fixed, so the panel
+    // waits out the same memoised plan the renderer and the audio scheduler
+    // play back rather than a constant that could drift from either. Under
+    // reduced motion the die shows its number from the first frame, so there
+    // is nothing left to spoil.
+    const land = reducedMotion ? 0 : diceThrowPlan(thrown.roll, thrown.revision, 0).duration * 1_000
+    setDice(land ? undefined : thrown)
+    const reveal = land ? window.setTimeout(() => setDice(thrown), land) : undefined
+    const clear = window.setTimeout(() => setDice(undefined), land + 1_450)
+    return () => {
+      if (reveal !== undefined) window.clearTimeout(reveal)
+      window.clearTimeout(clear)
+    }
+  }, [thrown, reducedMotion])
   if (!dice) return null
   const allocations = game.players.map((player) => ({
     player,
-    resources: RESOURCES.filter((resource) => (presentation?.resourceDeltas[player.id]?.[resource] ?? 0) > 0).map((resource) => ({ resource, amount: presentation?.resourceDeltas[player.id]?.[resource] ?? 0 })),
+    resources: RESOURCES.filter((resource) => (dice.deltas[player.id]?.[resource] ?? 0) > 0).map((resource) => ({ resource, amount: dice.deltas[player.id]?.[resource] ?? 0 })),
   })).filter(({ resources }) => resources.length)
-  return <div className="dice-moment" role="status" aria-label={`Rolled ${dice[0] + dice[1]}`}>
-    <div>{dice.map((face, index) => <span key={index}><DiePips value={face} /></span>)}</div><strong className="tnum">{dice[0] + dice[1]}</strong>
+  return <div className="dice-moment" role="status" aria-label={`Rolled ${dice.roll[0] + dice.roll[1]}`}>
+    <div>{dice.roll.map((face, index) => <span key={index}><DiePips value={face} /></span>)}</div><strong className="tnum">{dice.roll[0] + dice.roll[1]}</strong>
     {allocations.length ? <ul className="production-summary">{allocations.map(({ player, resources }) => <li key={player.id} className={player.color}><b>{player.name}</b><div>{resources.map(({ resource, amount }) => <span key={resource} title={RESOURCE_LABEL[resource]}><ResourceGlyph resource={resource} />+{amount}</span>)}</div></li>)}</ul> : <small className="production-none">No settlement produced</small>}
   </div>
 }

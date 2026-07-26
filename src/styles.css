@@ -665,6 +665,15 @@ button { -webkit-tap-highlight-color: transparent; }
 .connection-pill { min-width: 92px; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 13px; border: 1px solid rgba(216, 177, 104, .24); border-radius: 999px; color: var(--fg-2); background: rgba(2, 7, 10, .5); font-size: var(--t-micro); font-weight: 650; letter-spacing: .1em; text-transform: uppercase; }
 .connection-pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--brass); box-shadow: 0 0 8px rgba(216, 177, 104, .7); }
 .connection-pill.connected i { background: var(--jade); box-shadow: 0 0 9px rgba(79, 181, 135, .8); animation: pulse-dot 2s var(--ease-in-out) infinite; }
+/* Reconnecting is not connecting. It beats faster so a seat that keeps failing
+   reads differently from a first attempt that has simply not landed yet. */
+.connection-pill.reconnecting i { background: #e0a04c; box-shadow: 0 0 9px rgba(224, 160, 76, .8); animation: pulse-dot 1s var(--ease-in-out) infinite; }
+
+.reconnect-card { width: min(560px, 94vw); }
+.reconnect-body { padding: 24px 22px; }
+.reconnect-body p { margin: 0; color: var(--fg-2); font-size: var(--t-body); line-height: 1.6; }
+.reconnect-body .journey-error { margin-top: 16px; }
+.lobby-error { margin: 22px 22px 0; }
 
 .room-invite { display: flex; align-items: center; justify-content: space-between; gap: 22px; margin: 22px 22px 0; padding: 18px 20px; border: 1px solid rgba(216, 177, 104, .26); border-radius: var(--r-card); background: linear-gradient(120deg, rgba(48, 62, 65, .55), rgba(4, 10, 13, .5)); }
 .room-invite > div:first-child { display: grid; gap: 4px; }
@@ -746,6 +755,11 @@ button { -webkit-tap-highlight-color: transparent; }
 /* --------------------------------------------------------------- modals -- */
 
 .modal-backdrop { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; padding: 24px; overflow: auto; background: var(--scrim); animation: veil-in var(--dur-2) ease both; }
+/* A decision about the island cannot cover the island. No scrim, no pointer
+   interception, and the card steps down to the same line the confirm bar uses,
+   so the rings on the robber's hex stay visible and clickable behind it. */
+.modal-backdrop.over-board { padding: 0; overflow: visible; background: none; align-items: end; pointer-events: none; }
+.modal-backdrop.over-board .game-modal { width: min(420px, 94vw); margin-bottom: 156px; pointer-events: auto; }
 .game-modal {
   position: relative; width: min(540px, 94vw); max-height: min(80dvh, 800px); overflow: hidden;
   border: 1px solid var(--edge-brass-strong); border-radius: var(--r-panel); color: var(--fg);
