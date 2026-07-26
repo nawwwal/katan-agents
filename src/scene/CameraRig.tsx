@@ -9,17 +9,33 @@ import { clampDelta, easeInOutCubic, easeInOutSine, impulse, saturate, setSpring
 
 // The board stays readable because the rig is expressed in spherical framing
 // terms — target, distance, polar, azimuth, fov — and every one of them is
-// clamped before it ever reaches the camera. MapControls still owns the
+// bounded before it ever reaches the camera. MapControls still owns the
 // pointer; the director only drives when the player is not touching it.
+//
+// Azimuth is deliberately absent: the island turns all the way round. What is
+// still bounded is height, because that is what keeps the board readable and
+// the camera out of the water. Polar runs from very nearly overhead to a low
+// three-quarter; at the shallow end and the closest distance the eye still sits
+// about 3.2 above the sea, and the near end never reaches zero, so the camera
+// can neither dive nor tip over its own vertical.
 const LIMITS = {
-  polar: [0.34, 1.05] as const,
-  azimuth: [-1.25, 1.25] as const,
+  polar: [0.14, 1.22] as const,
   distance: [8.5, 32] as const,
   fov: [22, 48] as const,
   pan: 6.2,
 }
 
 const clamp = (value: number, [min, max]: readonly [number, number]) => Math.min(max, Math.max(min, value))
+
+const TAU = Math.PI * 2
+/**
+ * Spherical hands back theta in (-pi, pi]. With the azimuth unbounded the
+ * player walks over that seam every time they turn the board round, and a
+ * spring reading the wrapped value would unwind the long way home. Lifting each
+ * reading onto the branch nearest the one the rig is already holding keeps the
+ * azimuth on one continuous line, however many turns the player has made.
+ */
+const unwrap = (angle: number, near: number) => angle + Math.round((near - angle) / TAU) * TAU
 
 type Framing = { tx: number; ty: number; tz: number; distance: number; polar: number; azimuth: number; fov: number }
 
@@ -133,6 +149,10 @@ export function CameraRig({ cinematic = false, reducedMotion = false, focus, foc
   const springs = useRef(springSet()).current
   const punch = useRef<Spring>(spring()).current
   const base = useRef<Framing>(baseFraming(size.width, size.height))
+  // The heading the current viewport would rest at on its own. The title
+  // sequence is composed against it, so what the shots actually follow is the
+  // player's departure from home rather than a fixed world axis.
+  const home = useRef(base.current.azimuth)
   const beat = useRef<{ recipe: Recipe; at?: [number, number]; started: number; remaining: number } | undefined>(undefined)
   const beatRevision = useRef(-1)
   const userUntil = useRef(0)
@@ -150,10 +170,16 @@ export function CameraRig({ cinematic = false, reducedMotion = false, focus, foc
   }, [springs])
 
   // Resting framing follows the viewport. Re-derive it, but never stomp a
-  // framing the player has panned or zoomed to themselves.
+  // framing the player has turned to themselves: a phone rotating from portrait
+  // to landscape should change how much board fits on screen, not which side of
+  // the island the player is standing on. So the viewport owns height, distance
+  // and lens, and once the player has driven, they own the heading.
   useEffect(() => {
     const next = baseFraming(size.width, size.height)
-    base.current = next
+    home.current = next.azimuth
+    base.current = ready.current
+      ? { ...next, tx: base.current.tx, tz: base.current.tz, polar: base.current.polar, azimuth: base.current.azimuth }
+      : next
     if (!ready.current) {
       applyFraming(next)
       ready.current = true
@@ -204,7 +230,8 @@ export function CameraRig({ cinematic = false, reducedMotion = false, focus, foc
       spherical.setFromVector3(offset)
       const framing: Framing = {
         tx: rig.target.x, ty: rig.target.y, tz: rig.target.z,
-        distance: spherical.radius, polar: spherical.phi, azimuth: spherical.theta,
+        distance: spherical.radius, polar: spherical.phi,
+        azimuth: unwrap(spherical.theta, springs.azimuth.value),
         fov: camera instanceof THREE.PerspectiveCamera ? camera.fov : base.current.fov,
       }
       applyFraming(framing)
@@ -222,12 +249,12 @@ export function CameraRig({ cinematic = false, reducedMotion = false, focus, foc
       // The accessibility contract, honoured literally: the camera does not
       // move on its own at all. No reframing, no cut, no orbit, no drift, no
       // punch. Whatever the player last set is what they keep looking at.
-      applyFraming(cinematic ? { ...rest, polar: HERO.polar, azimuth: HERO.azimuth, distance: rest.distance * HERO.distance, fov: HERO.fov } : rest)
+      applyFraming(cinematic ? { ...rest, polar: HERO.polar, azimuth: rest.azimuth - home.current + HERO.azimuth, distance: rest.distance * HERO.distance, fov: HERO.fov } : rest)
       setSpring(punch, 0)
       spherical.set(
         clamp(springs.distance.value, LIMITS.distance),
         clamp(springs.polar.value, LIMITS.polar),
-        clamp(springs.azimuth.value, LIMITS.azimuth),
+        springs.azimuth.value,
       )
       rig.target.set(springs.tx.value, springs.ty.value, springs.tz.value)
       camera.position.copy(rig.target).add(offset.setFromSpherical(spherical))
@@ -243,7 +270,7 @@ export function CameraRig({ cinematic = false, reducedMotion = false, focus, foc
 
     if (cinematic) {
       cineTime.current = reducedMotion ? 0 : (cineTime.current + delta) % CINEMATIC_LENGTH
-      want = cinematicFraming(rest, cineTime.current, reducedMotion)
+      want = cinematicFraming(rest, cineTime.current, reducedMotion, home.current)
       frequency = 1.4
       ratio = 1
     } else {
@@ -281,7 +308,6 @@ export function CameraRig({ cinematic = false, reducedMotion = false, focus, foc
       ...want,
       distance: clamp(want.distance, LIMITS.distance),
       polar: clamp(want.polar, LIMITS.polar),
-      azimuth: clamp(want.azimuth, LIMITS.azimuth),
       fov: clamp(want.fov, LIMITS.fov),
     }
 
@@ -303,7 +329,7 @@ export function CameraRig({ cinematic = false, reducedMotion = false, focus, foc
     spherical.set(
       clamp(springs.distance.value + driftDistance + punch.value * 0.42, LIMITS.distance),
       clamp(springs.polar.value + driftPolar, LIMITS.polar),
-      clamp(springs.azimuth.value + driftAzimuth, LIMITS.azimuth),
+      springs.azimuth.value + driftAzimuth,
     )
     rig.target.set(springs.tx.value, springs.ty.value + punch.value * 0.06, springs.tz.value)
     camera.position.copy(rig.target).add(offset.setFromSpherical(spherical))
@@ -319,27 +345,40 @@ export function CameraRig({ cinematic = false, reducedMotion = false, focus, foc
     if (probe) probe(spherical, delta)
   })
 
+  // Drag turns the island. MapControls ships with the map-reading bindings —
+  // left drag pans, rotation hides on the right button and on two fingers —
+  // which on a board that is already centred means the obvious gesture slides
+  // the island sideways and the interesting one is undiscoverable. The board is
+  // an object on a table, not a map, so the primary gesture orbits it and
+  // panning moves to the right button and the second finger.
   return <MapControls
     ref={controls}
     makeDefault
     enableDamping
     dampingFactor={0.085}
     enableRotate
+    screenSpacePanning={false}
     onStart={onUserStart}
     onEnd={onUserEnd}
+    mouseButtons={{ LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }}
+    touches={{ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }}
     minPolarAngle={LIMITS.polar[0]}
     maxPolarAngle={LIMITS.polar[1]}
-    minAzimuthAngle={LIMITS.azimuth[0]}
-    maxAzimuthAngle={LIMITS.azimuth[1]}
     minDistance={LIMITS.distance[0]}
     maxDistance={LIMITS.distance[1]}
+    rotateSpeed={0.62}
     zoomSpeed={0.6}
     panSpeed={0.45}
   />
 }
 
-function cinematicFraming(rest: Framing, time: number, reducedMotion: boolean): Framing {
-  if (reducedMotion) return { ...rest, polar: HERO.polar, azimuth: HERO.azimuth, distance: rest.distance * HERO.distance, fov: HERO.fov }
+function cinematicFraming(rest: Framing, time: number, reducedMotion: boolean, home: number): Framing {
+  // Shots are composed as headings relative to home, then carried by however
+  // far the player has turned away from it. On a board nobody has touched that
+  // is the composition as authored; on one they have spun round it is the same
+  // four shots, seen from where they chose to stand.
+  const anchor = rest.azimuth - home
+  if (reducedMotion) return { ...rest, polar: HERO.polar, azimuth: anchor + HERO.azimuth, distance: rest.distance * HERO.distance, fov: HERO.fov }
   let elapsed = time
   let index = 0
   while (elapsed >= CINEMATIC[index].duration) {
@@ -355,7 +394,7 @@ function cinematicFraming(rest: Framing, time: number, reducedMotion: boolean): 
   return {
     tx: rest.tx, ty: rest.ty + 0.25, tz: rest.tz,
     polar: previous.polar + (shot.polar - previous.polar) * travel,
-    azimuth: previous.azimuth + (shot.azimuth - previous.azimuth) * travel + drift,
+    azimuth: anchor + previous.azimuth + (shot.azimuth - previous.azimuth) * travel + drift,
     distance: rest.distance * (previous.distance + (shot.distance - previous.distance) * travel),
     fov: previous.fov + (shot.fov - previous.fov) * travel,
   }
