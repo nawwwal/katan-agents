@@ -140,7 +140,7 @@ export function PiecesLab() {
  * camera, so the answer is honest.
  */
 function networkState(): GameDisplayState {
-  let state = createGame({ seed: 28, controllers: ['human', 'agent', 'agent'], names: ['You', 'Atlas', 'Ember'] })
+  let state = createGame({ seed: 28, controllers: ['human', 'agent', 'agent'], names: ['You', 'Marlow', 'Ansel'] })
   for (let step = 0; step < 40 && state.phase !== 'action'; step += 1) {
     const action = legalActionsForPlayer(state, currentActorId(state))[0]
     if (!action) break

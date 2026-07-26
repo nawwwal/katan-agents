@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+
 // One state machine for moving the robber, with three ways in.
 //
 // Drag is the right gesture here and only here: the robber is the only board
@@ -88,4 +90,32 @@ export const refuseRobber = () => {
 export const onRobberRefused = (listener: (token: number) => void) => {
   refusalListeners.add(listener)
   return () => { refusalListeners.delete(listener) }
+}
+
+/**
+ * React's view of the machine. Only the discrete fields come through here —
+ * `setRobberPose` deliberately stays quiet while a drag is only moving `held`,
+ * so the nineteen tiles rerender when the answer changes and not sixty times a
+ * second while a finger is moving.
+ */
+export const useRobberPose = () => {
+  const [pose, setPose] = useState(current)
+  useEffect(() => {
+    setPose(current)
+    return onRobberPose(setPose)
+  }, [])
+  return pose
+}
+
+/**
+ * Put the machine back to `idle` and forget the candidate.
+ *
+ * Called whenever the phase closes, from whichever side closed it. The pose is
+ * module state and outlives any component, so something has to say when the
+ * question is over or the next seven opens with the last one's candidate still
+ * armed.
+ */
+export const releaseRobber = () => {
+  if (current.stage === 'idle' && !current.candidateHexId) return
+  setRobberPose({ stage: 'idle', held: undefined, candidateHexId: undefined, originHexId: undefined })
 }

@@ -4,13 +4,23 @@ import { applyAction, createGame, currentActorId, getPlayerView } from './game/e
 import { toDisplayState } from './game/room'
 import { defaultBoardOptions, type BoardOptions, type GameAction } from './game/types'
 import { useGame } from './game/useGame'
+import { robberPose, setRobberPose } from './scene/motion/robber'
 import { GameScene, type PlacementMode } from './scene/GameScene'
 import { Dialogs } from './ui/Dialogs'
 import { Hud, type DialogName } from './ui/Hud'
 import { Journey, type JourneyStage } from './ui/Journey'
 
 const freshBoardSeed = () => Math.floor(Math.random() * 0x1_00_00_00_00)
-const boardActionTypes = new Set<GameAction['type']>(['place-settlement', 'place-road', 'build-road', 'build-settlement', 'build-city', 'move-robber'])
+/**
+ * Board actions that stage a target and wait for a confirm.
+ *
+ * `move-robber` is deliberately not one of them. The robber is dragged, and the
+ * drag *is* the confirmation: a two-step confirm bar on top of a gesture the
+ * player has already completed is exactly the interaction the client called
+ * unintuitive. Clicking a legal hex commits for the same reason — it is the
+ * same decision made with a different input, and it should not answer twice.
+ */
+const boardActionTypes = new Set<GameAction['type']>(['place-settlement', 'place-road', 'build-road', 'build-settlement', 'build-city'])
 /** Board actions are identified by their target, which is all a staged one carries. */
 const targetOf = (action: GameAction) => 'vertexId' in action ? action.vertexId : 'edgeId' in action ? action.edgeId : 'hexId' in action ? action.hexId : undefined
 const sameTarget = (left: GameAction, right: GameAction) => left.type === right.type && targetOf(left) === targetOf(right)
@@ -30,9 +40,9 @@ const boardSector = (x: number, z: number) => {
  * the `import.meta.env.DEV` guard and never reachable from the shipped app.
  */
 type UiPreviewStage = 'match' | 'trade' | 'trade-sent' | 'trade-declined' | 'trade-no-takers' | 'trade-accepted' | 'trade-empty' | 'trade-response' | 'trade-watch'
-  | 'cards' | 'rules' | 'history' | 'summary' | 'introduction'
+  | 'cards' | 'rules' | 'history' | 'summary' | 'introduction' | 'robber' | 'victim'
 const UI_PREVIEW_STAGES: UiPreviewStage[] = ['match', 'trade', 'trade-sent', 'trade-declined', 'trade-no-takers', 'trade-accepted', 'trade-empty', 'trade-response', 'trade-watch',
-  'cards', 'rules', 'history', 'summary', 'introduction']
+  'cards', 'rules', 'history', 'summary', 'introduction', 'robber', 'victim']
 
 const uiPreviewStage = (): UiPreviewStage | undefined => {
   if (!import.meta.env.DEV) return undefined
@@ -41,7 +51,7 @@ const uiPreviewStage = (): UiPreviewStage | undefined => {
 }
 
 const buildUiPreview = (stage: UiPreviewStage) => {
-  let state = createGame({ seed: 28, controllers: ['human', 'agent', 'agent'], names: ['You', 'Atlas', 'Ember'] })
+  let state = createGame({ seed: 28, controllers: ['human', 'agent', 'agent'], names: ['You', 'Marlow', 'Ansel'] })
   // Deterministic source so the harness renders the same state on every load.
   let tick = 0
   const random = () => { tick += 1; return ((tick * 9301 + 49297) % 233280) / 233280 }
@@ -78,32 +88,52 @@ const buildUiPreview = (stage: UiPreviewStage) => {
   }
   // Trade is the one surface whose states cannot be reached by clicking in a
   // harness with no live opponents, so each is pinned to its own stage.
-  const [you, atlas, ember] = state.players
-  const offer = { fromPlayerId: you.id, toPlayerId: atlas.id, give: { lumber: 2 }, receive: { ore: 1 } }
+  const [you, marlow, ansel] = state.players
+  const offer = { fromPlayerId: you.id, toPlayerId: marlow.id, give: { lumber: 2 }, receive: { ore: 1 } }
   if (stage === 'trade-sent') {
     state.pendingTrade = offer
     state.phase = 'trade-response'
-    state.actingPlayerId = atlas.id
+    state.actingPlayerId = marlow.id
   }
   if (stage === 'trade-declined' || stage === 'trade-no-takers') {
-    state.events.push({ id: `ev-${state.revision}-9`, revision: state.revision, type: 'trade-rejected', message: `${atlas.name} declined ${you.name}'s trade.`, playerId: atlas.id, trade: offer })
+    state.events.push({ id: `ev-${state.revision}-9`, revision: state.revision, type: 'trade-rejected', message: `${marlow.name} declined ${you.name}'s trade.`, playerId: marlow.id, trade: offer })
   }
   if (stage === 'trade-no-takers') {
-    state.events.push({ id: `ev-${state.revision}-10`, revision: state.revision, type: 'trade-rejected', message: `${ember.name} declined ${you.name}'s trade.`, playerId: ember.id, trade: { ...offer, toPlayerId: ember.id } })
+    state.events.push({ id: `ev-${state.revision}-10`, revision: state.revision, type: 'trade-rejected', message: `${ansel.name} declined ${you.name}'s trade.`, playerId: ansel.id, trade: { ...offer, toPlayerId: ansel.id } })
   }
   if (stage === 'trade-accepted') {
-    state.events.push({ id: `ev-${state.revision}-9`, revision: state.revision, type: 'trade-accepted', message: `${atlas.name} accepted ${you.name}'s trade.`, playerId: atlas.id, trade: offer })
+    state.events.push({ id: `ev-${state.revision}-9`, revision: state.revision, type: 'trade-accepted', message: `${marlow.name} accepted ${you.name}'s trade.`, playerId: marlow.id, trade: offer })
   }
   if (stage === 'trade-empty') state.players[0].resources = { brick: 0, lumber: 0, ore: 0, grain: 0, wool: 0 }
+  // The two halves of the seven. Neither can be reached by clicking: a seven is
+  // the dice's business and the harness has no dice. `legalActions` is derived
+  // in `getPlayerView`, so setting the phase is enough to get the real set.
+  if (stage === 'robber') {
+    state.phase = 'move-robber'
+    state.actingPlayerId = you.id
+  }
+  if (stage === 'victim') {
+    state.phase = 'choose-victim'
+    state.actingPlayerId = you.id
+    // Park the robber where the choice is actually interesting: the hex with
+    // the most rivals built on it. The desert it starts on usually touches
+    // nobody, and a preview of an empty decision is not a preview.
+    const rivalsOn = (hexId: string) => new Set(Object.entries(state.buildings)
+      .filter(([vertexId, building]) => building.playerId !== you.id && state.board.vertices[vertexId]?.hexes.includes(hexId))
+      .map(([, building]) => building.playerId))
+    const best = state.board.hexes.reduce((chosen, tile) => rivalsOn(tile.id).size > rivalsOn(chosen.id).size ? tile : chosen, state.board.hexes[0])
+    state.board.robberHexId = best.id
+    state.robberVictims = [...rivalsOn(best.id)]
+  }
   if (stage === 'trade-response') {
-    state.pendingTrade = { fromPlayerId: atlas.id, toPlayerId: you.id, give: { ore: 3 }, receive: { grain: 1, wool: 1 } }
+    state.pendingTrade = { fromPlayerId: marlow.id, toPlayerId: you.id, give: { ore: 3 }, receive: { grain: 1, wool: 1 } }
     state.phase = 'trade-response'
     state.actingPlayerId = you.id
   }
   if (stage === 'trade-watch') {
-    state.pendingTrade = { fromPlayerId: atlas.id, toPlayerId: ember.id, give: { brick: 1 }, receive: { wool: 2 } }
+    state.pendingTrade = { fromPlayerId: marlow.id, toPlayerId: ansel.id, give: { brick: 1 }, receive: { wool: 2 } }
     state.phase = 'trade-response'
-    state.actingPlayerId = ember.id
+    state.actingPlayerId = ansel.id
   }
   const view = getPlayerView(state, state.players[0].id)
   return { game: toDisplayState(view), viewerPlayerId: state.players[0].id }
@@ -118,7 +148,7 @@ export default function App() {
   const [boardSeed, setBoardSeed] = useState(freshBoardSeed)
   const [boardOptions, setBoardOptions] = useState<BoardOptions>(defaultBoardOptions)
   const previewGame = useMemo(() => {
-    const preview = createGame({ seed: boardSeed, boardOptions, controllers: ['human', 'agent', 'agent'], names: ['You', 'Atlas', 'Ember'] })
+    const preview = createGame({ seed: boardSeed, boardOptions, controllers: ['human', 'agent', 'agent'], names: ['You', 'Marlow', 'Ansel'] })
     return toDisplayState(getPlayerView(preview, preview.players[0].id))
   }, [boardSeed, boardOptions])
   const preview = useMemo(uiPreviewStage, [])
@@ -136,9 +166,13 @@ export default function App() {
   // stays true across a submit so the affordance layer holds instead of blinking
   // out for the length of a round trip. `interactive` is "a new action will be
   // accepted right now", which is what actually guards the send.
-  const yourMove = stage === 'match' && room?.status === 'playing' && viewerMustAct && connectionState === 'connected'
+  // The visual harness has no room and no server, so the live test would make
+  // every board affordance dead on exactly the screens the harness exists to
+  // photograph. A preview seat always has the move.
+  const previewLive = Boolean(previewState) && preview !== 'summary'
+  const yourMove = previewLive || (stage === 'match' && room?.status === 'playing' && viewerMustAct && connectionState === 'connected')
   const interactive = yourMove && !submitting
-  const boardActions = yourMove && game ? game.legalActions.filter((action) => boardActionTypes.has(action.type)) : []
+  const boardActions = yourMove ? displayedGame.legalActions.filter((action) => boardActionTypes.has(action.type) || action.type === 'move-robber') : []
   // The old call passed `stage === 'summary'` as "victorious", so the fanfare
   // played at everyone who reached the end screen, winner or not. Split the two
   // and tell the hook which part of the app it is scoring so the ambience beds
@@ -210,7 +244,7 @@ export default function App() {
   }
 
   const describeBoardAction = (action: GameAction, option: number, total: number) => {
-    if (!game) return action.type.replaceAll('-', ' ')
+    const game = displayedGame
     const describeHexes = (hexIds: string[]) => hexIds.map((hexId) => {
       const tile = game.board.hexes.find((candidate) => candidate.id === hexId)
       return tile ? `${terrainName(tile.terrain)}${tile.number ? ` ${tile.number}` : ''}` : undefined
@@ -267,7 +301,7 @@ export default function App() {
   return <main className="game-shell">
     <div className="ocean-layer" />
     <div className="vignette" />
-    <GameScene game={displayedGame} placementMode={placementMode} pendingAction={pendingAction} presentation={presentation} cinematic={stage !== 'match'} onAction={act} interactive={yourMove} />
+    <GameScene game={displayedGame} placementMode={placementMode} pendingAction={pendingAction} presentation={presentation} cinematic={stage !== 'match'} onAction={act} interactive={yourMove} sending={submitting} viewerPlayerId={viewerPlayerId ?? previewState?.viewerPlayerId} />
     {stage === 'match' && (game ?? previewState?.game) && (viewerPlayerId ?? previewState?.viewerPlayerId) ? <><Hud
       game={(game ?? previewState!.game)}
       humanId={(viewerPlayerId ?? previewState!.viewerPlayerId)}
@@ -288,10 +322,20 @@ export default function App() {
       onExitMatch={returnToTitle}
     />
     <Dialogs game={(game ?? previewState!.game)} humanId={(viewerPlayerId ?? previewState!.viewerPlayerId)} dialog={dialog} agentStatuses={agentStatuses} onClose={() => setDialog(null)} onAction={act} /></> : null}
-    {yourMove && game ? <div className="sr-only board-targets" role="group" aria-label="Board targets">
+    {yourMove ? <div className="sr-only board-targets" role="group" aria-label="Board targets">
       {boardActions.map((action, index) => {
         const target = 'vertexId' in action ? action.vertexId : 'edgeId' in action ? action.edgeId : 'hexId' in action ? action.hexId : index
-        return <button key={`${action.type}-${target}`} onClick={() => act(action)}>{describeBoardAction(action, index, boardActions.length)}</button>
+        // Highlight follows focus. Tabbing through this list drives the same
+        // candidate the drag does, so the 3D board answers a keyboard the way
+        // it answers a finger, and the list stops being a screen-reader
+        // accommodation bolted onto a mouse-only board.
+        const robber = action.type === 'move-robber'
+        return <button
+          key={`${action.type}-${target}`}
+          onClick={() => act(action)}
+          onFocus={robber ? () => setRobberPose({ stage: 'armed', candidateHexId: action.hexId }) : undefined}
+          onBlur={robber ? () => { if (robberPose().candidateHexId === action.hexId) setRobberPose({ stage: 'called', candidateHexId: undefined }) } : undefined}
+        >{describeBoardAction(action, index, boardActions.length)}</button>
       })}
     </div> : null}
     <Journey

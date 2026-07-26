@@ -1,13 +1,13 @@
-import { useCursor } from '@react-three/drei'
-import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
+import { Canvas, useThree } from '@react-three/fiber'
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
-import type { BoardEdge, GameAction, GameDisplayState, PlayerColor } from '../game/types'
+import type { GameAction, GameDisplayState } from '../game/types'
 import type { GamePresentation } from '../game/useGame'
 import { ActionEffects } from './ActionEffects'
 import { CameraRig } from './CameraRig'
 import { Island } from './Island'
 import { Lighting } from './Lighting'
+import { clearPrompt, emitPrompt } from './motion/prompts'
 import { SEA_LEVEL } from './ocean/oceanConfig'
 import { FrameStats } from './loading/FrameStats'
 import { LoadingScreen } from './loading/LoadingScreen'
@@ -30,6 +30,19 @@ type SceneProps = {
   cinematic?: boolean
   onAction: (action: GameAction) => void
   interactive: boolean
+  /**
+   * A committed action is in flight.
+   *
+   * Distinct from `interactive` going false, and the distinction is the whole
+   * point: `interactive` says "a new action will not be accepted", which is
+   * true during a round trip and also true when it is somebody else's turn.
+   * Only the first of those should leave the markers on the board, held at
+   * reduced strength. A board that empties for the length of a round trip reads
+   * as a click that failed.
+   */
+  sending?: boolean
+  /** Which seat is watching, so the board can tell your buildings from theirs. */
+  viewerPlayerId?: string
 }
 
 /**
@@ -67,7 +80,7 @@ function SeaShadowCatcher() {
   </mesh>
 }
 
-function SceneContent({ game, placementMode, pendingAction, presentation, cinematic, onAction, interactive, reducedMotion }: SceneProps & { reducedMotion: boolean }) {
+function SceneContent({ game, placementMode, pendingAction, presentation, cinematic, onAction, interactive, sending = false, viewerPlayerId, reducedMotion }: SceneProps & { reducedMotion: boolean }) {
   const { size } = useThree()
   const mobile = size.width <= 520
   const actions = interactive ? game.legalActions : []
@@ -76,6 +89,7 @@ function SceneContent({ game, placementMode, pendingAction, presentation, cinema
     action.type === 'place-settlement' || (placementMode === 'settlement' && action.type === 'build-settlement')), [actions, placementMode])
   const roadActions = useMemo(() => actions.filter((action): action is Extract<GameAction, { type: 'place-road' | 'build-road' }> =>
     action.type === 'place-road' || (action.type === 'build-road' && (placementMode === 'road' || game.phase === 'road-building'))), [actions, placementMode, game.phase])
+  const stealActions = new Map(actions.filter((action): action is Extract<GameAction, { type: 'steal-from' }> => action.type === 'steal-from').map((action) => [action.playerId, action as GameAction]))
   const cityActions = new Map(actions.filter((action): action is Extract<GameAction, { type: 'build-city' }> => placementMode === 'city' && action.type === 'build-city').map((action) => [action.vertexId, action]))
   const cameraFocus = useMemo(() => {
     const event = presentation?.events.findLast((candidate) => candidate.publicData?.vertexId || candidate.publicData?.edgeId || candidate.publicData?.hexId)
@@ -99,13 +113,53 @@ function SceneContent({ game, placementMode, pendingAction, presentation, cinema
     }
   }, [game.board, presentation])
 
+  // The affordance channel's one publisher.
+  //
+  // `beats.ts` fires from an effect on the presentation revision, so the only
+  // sentence the scene could form was "that happened". This is the other half:
+  // it states what is open right now, it is idempotent, and it therefore runs
+  // on every render without any dependency bookkeeping to get wrong. The prompt
+  // stays current for as long as the decision does, which is what lets the
+  // markers hold through a round trip instead of blinking out.
+  const robberHexId = game.board.robberHexId
+  const robberHex = useMemo(() => game.board.hexes.find((tile) => tile.id === robberHexId), [game.board.hexes, robberHexId])
+  useEffect(() => {
+    if (robberActions.size) {
+      emitPrompt({
+        kind: 'robber',
+        family: 'hex',
+        at: robberHex ? [robberHex.x, robberHex.z] : undefined,
+        targets: [...robberActions.keys()],
+        sending,
+      })
+      return
+    }
+    if (vertexActions.length) {
+      emitPrompt({ kind: 'place', family: 'settlement', targets: vertexActions.map((action) => action.vertexId), sending })
+      return
+    }
+    if (roadActions.length) {
+      emitPrompt({ kind: 'place', family: 'road', targets: roadActions.map((action) => action.edgeId), sending })
+      return
+    }
+    if (cityActions.size) {
+      emitPrompt({ kind: 'place', family: 'city', targets: [...cityActions.keys()], sending })
+      return
+    }
+    if (interactive && game.legalActions.some((action) => action.type === 'roll-dice')) {
+      emitPrompt({ kind: 'roll', sending })
+      return
+    }
+    clearPrompt()
+  })
+
   return <>
     <Sky />
     <Lighting mobile={mobile} />
     <Water reducedMotion={reducedMotion} />
     <SeaShadowCatcher />
     <group rotation={[0, -0.04, 0]}>
-      <Island game={game} robberActions={robberActions} onAction={onAction} />
+      <Island game={game} robberActions={robberActions} stealActions={stealActions} sending={sending} viewerPlayerId={viewerPlayerId} onAction={onAction} />
       {Object.entries(game.roadOwners).map(([edgeId, playerId]) => {
         const player = game.players.find((candidate) => candidate.id === playerId)
         return <Road key={edgeId} game={game} edgeId={edgeId} color={player ? PLAYER_COLORS[player.color] : undefined} reducedMotion={reducedMotion} />

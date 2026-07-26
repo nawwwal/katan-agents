@@ -235,16 +235,22 @@ export const ROBBER_PERIOD = 1.05
  *
  * And the mark stops being closed. Two short arms at each corner state the hex
  * as clearly as a full outline does — the eye completes a hexagon from six
- * corners without being asked — while removing something like sixty percent of
- * the red ink. Eighteen bracketed hexes read as eighteen offers. Eighteen
+ * corners without being asked — while removing something like seventy percent
+ * of the red ink. Eighteen bracketed hexes read as eighteen offers. Eighteen
  * ringed hexes read as a lattice, which is a texture, not a set.
+ *
+ * The arm length was measured against a live capture rather than guessed. At
+ * thirty centimetres the arms of neighbouring hexes very nearly met across the
+ * shared seam and the set closed back up into the lattice this was supposed to
+ * break, one inset ring further in. Twenty-two leaves a clear gap along every
+ * side, and a corner still reads as a corner.
  *
  * The bracket is also the robber's letter in the shape alphabet the rest of
  * the board already speaks: caret down for "found here", bar for "pave here",
  * caret lifting for "raise this", corner brackets for "the robber lands here".
  */
 const BRACKET_INSET = 0.8
-const BRACKET_ARM = 0.3
+const BRACKET_ARM = 0.22
 const KERB_BASE = -0.06
 const KERB_TOP = 0.12
 const KERB_WIDTH = 0.105
@@ -301,16 +307,25 @@ export const robberBandGeometry = lazy(() => bracketRing(BAND_WIDTH, 0.02, KERB_
 export const AURA_RADIUS = 0.44
 
 export const robberAuraGeometry = lazy(() => {
-  const geometry = new THREE.TorusGeometry(AURA_RADIUS, 0.036, 8, 44)
+  const geometry = new THREE.TorusGeometry(AURA_RADIUS, 0.03, 8, 44)
   geometry.rotateX(Math.PI / 2)
-  geometry.scale(1, 0.55, 1)
+  geometry.scale(1, 0.5, 1)
   return geometry
 })
 
+/**
+ * The bright half carries most of the ring, not a highlight along the top of
+ * it. At the first tuning the dark torus was 0.036 and the band 0.018, and the
+ * whole thing came back from a live capture reading as a dark ellipse drawn on
+ * the sand with a hint of warmth in it — a shadow, which is precisely the one
+ * thing the aura must not be mistaken for while the piece is still standing in
+ * it. The dark half is now a rim around the bright one rather than the other
+ * way round.
+ */
 export const robberAuraBandGeometry = lazy(() => {
-  const geometry = new THREE.TorusGeometry(AURA_RADIUS, 0.018, 8, 44)
+  const geometry = new THREE.TorusGeometry(AURA_RADIUS, 0.026, 8, 44)
   geometry.rotateX(Math.PI / 2)
-  geometry.scale(1, 0.6, 1)
-  geometry.translate(0, 0.016, 0)
+  geometry.scale(1, 0.62, 1)
+  geometry.translate(0, 0.014, 0)
   return geometry
 })
