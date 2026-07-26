@@ -180,7 +180,7 @@ class AtmosphereEffect extends Effect {
       blendFunction: BlendFunction.NORMAL,
       attributes: EffectAttribute.DEPTH,
       uniforms: new Map<string, THREE.Uniform<unknown>>([
-        ['exposure', new THREE.Uniform(1.08)],
+        ['exposure', new THREE.Uniform(0.97)],
         ['hazeLow', new THREE.Uniform(HAZE_LOW.clone())],
         ['hazeHigh', new THREE.Uniform(HAZE_HIGH.clone())],
         // The board sits about 16 units from the default camera and the far
@@ -270,8 +270,29 @@ const gradeShader = /* glsl */`
   uniform float saturation;
   uniform float contrast;
   uniform float shoulder;
+  uniform float toe;
+  uniform float toeRange;
   uniform vec3 shadowTint;
   uniform vec3 highlightTint;
+
+  /**
+   * Shadow toe.
+   *
+   * A curve that only has a shoulder squeezes from one end and runs the other
+   * end into the floor. Once real cast shadows landed, the frame measured 12
+   * per cent of its pixels below 20/255 with a first percentile of 0.9, against
+   * 0.2 per cent and 28 in the reference board -- black holes where a mountain
+   * face or a forest interior should still show material.
+   *
+   * Film does not do that. Negative stock keeps responding below the point
+   * where it stops being efficient, so deep shade lifts off the floor and holds
+   * separation instead of clipping to nothing. This lifts the bottom of the
+   * range and leaves the midtones where they are, so shade gets lighter without
+   * the whole image going flat and milky.
+   */
+  vec3 liftToe(vec3 color) {
+    return color + toe * (1.0 - smoothstep(0.0, toeRange, color));
+  }
 
   /**
    * Highlight rolloff.
@@ -300,7 +321,8 @@ const gradeShader = /* glsl */`
     // without it a bright scene just reads as a bright scene.
     color += shadowTint * (1.0 - smoothstep(0.0, 0.58, luma));
     color += highlightTint * smoothstep(0.40, 1.0, luma);
-    color = rolloff(max(color, 0.0));
+    color = liftToe(max(color, 0.0));
+    color = rolloff(color);
     color = pow(clamp(color, 0.0, 1.0), vec3(2.2));
     outputColor = vec4(color, inputColor.a);
   }
@@ -321,11 +343,15 @@ class GradeEffect extends Effect {
         // warm/cool split below and from distance haze, not from a global
         // saturation push that only makes the sea louder.
         ['saturation', new THREE.Uniform(1.03)],
-        ['contrast', new THREE.Uniform(1.12)],
+        // Down from 1.12. Contrast around a 0.5 pivot pushes both ends outward,
+        // which is the last thing an image with real cast shadows needs.
+        ['contrast', new THREE.Uniform(1.02)],
         // Foam and snow live just above this; keeping it below the clip point is
         // the whole reason they hold texture.
-        ['shoulder', new THREE.Uniform(0.74)],
-        ['shadowTint', new THREE.Uniform(new THREE.Vector3(-0.022, 0.001, 0.044))],
+        ['shoulder', new THREE.Uniform(0.66)],
+        ['toe', new THREE.Uniform(0.075)],
+        ['toeRange', new THREE.Uniform(0.34)],
+        ['shadowTint', new THREE.Uniform(new THREE.Vector3(-0.014, 0.004, 0.042))],
         ['highlightTint', new THREE.Uniform(new THREE.Vector3(0.042, 0.018, -0.028))],
       ]),
     })
@@ -384,7 +410,9 @@ export function PostFX({ mobile = false, reducedMotion = false }: { mobile?: boo
     {light ? <></> : <Bloom mipmapBlur luminanceThreshold={0.68} luminanceSmoothing={0.22} intensity={0.5} radius={0.78} />}
     <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
     <Grade />
-    <Vignette offset={0.32} darkness={0.5} eskil={false} />
+    {/* Halved. Half a stop of corner falloff is a frame; a full one was a
+        third source of darkness on an image that already had two too many. */}
+    <Vignette offset={0.34} darkness={0.26} eskil={false} />
     <SMAA />
   </EffectComposer>
 }
