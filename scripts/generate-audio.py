@@ -61,6 +61,14 @@ RMS_PEAK = {"sfx": -13.0, "accent": -11.0}
 # Nothing ships above this decoded true peak.
 TRUE_PEAK_CEILING = -1.5
 
+# Shortest file we will encode. A 70 ms mono clip at 96 kbps came out as an mp3
+# that ffmpeg refuses to open at all -- not quiet, not clipped, *undecodable*,
+# and only at some gains, which is what makes it so easy to miss. There are too
+# few frames for the decoder to sync on after the ID3 and Xing headers. Padding
+# the tail with digital silence costs a few hundred bytes and removes the whole
+# class of failure; a one-shot with silence on the end plays identically.
+MIN_ENCODED = 0.16
+
 
 @dataclass(frozen=True)
 class Item:
@@ -129,6 +137,75 @@ ITEMS: tuple[Item, ...] = (
          "close microphone, dry, loud",
          mono=True, influence=0.3, start=0.025, keep=0.30, trim_head=False,
          filters="lowpass=f=14000:poles=2"),
+    # Round three. The rigid-body throw schedules the six loudest contacts of a
+    # roll at their real contact times, gained and pitched by impact energy.
+    # Three sources cannot carry that: at six knocks a roll you hear the same
+    # sample twice within 200 ms and the ear reads it as a flam, not a die.
+    #
+    # These five are *different physical events*, not five pitches of one. The
+    # playback layer already varies pitch and gain, so more of that adds
+    # nothing; what it cannot synthesise is a different contact. A die dropping
+    # its last two millimetres flat onto wood, a corner landing that tips over,
+    # and a cube slapping a cardboard board are three different noises with
+    # three different spectra, and the scheduler now picks between them by the
+    # contact's own energy.
+    #
+    # Every prompt names a loud, close-miked object. Round one proved that
+    # asking for "soft" or "muted" returns 40 dB of nothing; the softness is
+    # dialled in afterwards with a lowpass and the bank's per-hit gain.
+    # The raw holds two ticks, at 10 ms and 100 ms. The second is the richer of
+    # the pair — it carries down to 2 kHz where the first is all top — so the
+    # slice starts on it. Taking the file from zero would have shipped a die
+    # that lands twice, which is the exact defect round two found in the old
+    # derived settles.
+    Item("dice-settle-d", 0.5,
+         "a small polished bone die flicked hard onto a bare hardwood tabletop, one very bright "
+         "sharp tick, close microphone, dry, loud",
+         mono=True, influence=0.35, start=0.098, keep=0.14, trim_head=False,
+         filters="lowpass=f=16000:poles=2"),
+    # Attempt 1 ("dropped flat ... from two centimetres ... no rattle") came
+    # back at -63 dBFS. Round one's lesson again, and it is a subtle version of
+    # it: no adjective in that prompt says "quiet", but *two centimetres* and
+    # *no rattle* both describe a small event, and the model sizes the sound to
+    # the event. Attempt 2 describes the same physical contact as a large one.
+    # `dice-settle-e`, the flat-face landing, is the one slot the API would not
+    # fill. Three attempts, three different failures, all in the raws under
+    # `tmp/audio-raw/failed-round3`: -63 dBFS silence, then -42 dBFS of low wash
+    # with no transient in it, then a mallet on a workbench that does have an
+    # attack but rings on a 2 kHz tone for 450 ms. A die does not ring. Six of
+    # those a roll would be a bell, so the slot is derived from the deep knock
+    # below instead — see DERIVED. Recorded rather than quietly dropped because
+    # "ask for a loud named object" is necessary and, here, not sufficient.
+    Item("dice-settle-f", 0.5,
+         "a solid oak cube knocked down hard onto a thick wooden tabletop, one deep resonant woody "
+         "knock with body, close microphone, dry, loud",
+         mono=True, influence=0.4, start=0.050, keep=0.28, trim_head=False,
+         filters="lowpass=f=9000:poles=2"),
+    Item("dice-settle-g", 0.5,
+         "a wooden die lands hard on a thick cardboard game board, one blunt dry papery knock, "
+         "close microphone, no reverb, loud",
+         mono=True, influence=0.4, start=0.026, keep=0.22, trim_head=False,
+         filters="lowpass=f=7000:poles=2,highpass=f=70"),
+    # Attempt 1 asked for a corner landing that tips over — a sharp tick then a
+    # heavier settle — and came back as one thin mid scuff at -29 dBFS. Two
+    # reasons not to retry it: the model does not sequence a two-part event
+    # reliably, and the scheduler does not want one, because it already places
+    # each contact at its own simulated time. A sample that lands twice would
+    # double every knock. Attempt 2 asks for the one contact the family was
+    # missing entirely: die on die, which the simulation models and the old
+    # three sources had no sound for.
+    #
+    # Attempt 2 is loud (-6.7 dBFS) and its first crack is clean, but the clip
+    # is a seven-impact rattle: strikes at 0, 60, 125, 165, 210, 255 and 330 ms,
+    # visible on the spectrogram and invisible in every level number. The second
+    # is only 1.6 dB down on the first, so a slice that keeps it ships a die that
+    # lands twice. The window takes the first crack alone and is fully faded by
+    # 50 ms, where the clip is 25 dB down and the next strike has not started.
+    Item("dice-settle-h", 0.5,
+         "two hardwood dice smacked together hard in mid air, one loud sharp wooden crack, "
+         "close microphone, dry, no reverb",
+         mono=True, influence=0.45, start=0.001, keep=0.05, trim_head=False,
+         filters="lowpass=f=15000:poles=2"),
     # -- Placement ---------------------------------------------------------
     # The attack in these raws sits 219 ms and 348 ms in, behind low-level room
     # tone that survives the -40 dB silence trim. Slicing to the measured
@@ -212,13 +289,18 @@ ITEMS: tuple[Item, ...] = (
          "close microphone, dry",
          influence=0.5, mono=True, trim_head=False, ship=False),
     # -- Music beds --------------------------------------------------------
-    # The /v1/music endpoint is paid-plan only (verified: 402 paid_plan_required),
-    # so these are honest looping ambient beds from the sound-effects model
-    # rather than a thin generated "theme".
+    # SUPERSEDED. `scripts/compose.py` writes music-title.mp3, music-match.mp3
+    # and music-victory.mp3 now -- they are composed and synthesised in code,
+    # not generated, and they are a different piece of music from these drones.
+    # All three carry `ship=False` so a plain `python3 scripts/generate-audio.py`
+    # cannot quietly overwrite the score with the raws still sitting in the
+    # cache. The Items stay only because they record what was paid for and why.
+    # Read art/music.md before touching any of this.
     Item("music-title", 22.0,
          "slow warm seafaring ambient bed, sustained strings and a soft low drone, distant hand drum pulse, hopeful, "
          "no melody, no vocals, continuous",
-         bus="music", loop=True, influence=0.55, trim_head=False, wrap=0.8, bitrate="96k"),
+         bus="music", loop=True, influence=0.55, trim_head=False, wrap=0.8, bitrate="96k",
+         ship=False),
     # Round two. Round one's two attempts came back at -59 and -66 LUFS and the
     # bed shipped as a lowpassed copy of the title drone. A third attempt, built
     # on the *title* prompt's shape (which demonstrably produced a rich bed)
@@ -229,7 +311,8 @@ ITEMS: tuple[Item, ...] = (
          "slow dark seafaring ambient music bed, deep sustained low strings and a warm cello drone "
          "with slowly shifting harmony, distant wind and faint ocean swell underneath, brooding but calm, "
          "rich and full, no melody, no percussion, no drums, no vocals, continuous",
-         bus="music", loop=True, influence=0.5, trim_head=False, wrap=0.8, bitrate="80k"),
+         bus="music", loop=True, influence=0.5, trim_head=False, wrap=0.8, bitrate="80k",
+         ship=False),
     Item("music-victory", 8.0,
          "short triumphant orchestral resolve, warm brass and strings swelling and settling on a major chord, "
          "seafaring, ends cleanly, no loop",
@@ -249,6 +332,25 @@ DERIVED: tuple[Derived, ...] = (
     Derived("dice-settle-c", "dice-settle", start=0.025, semitones=-2.4, tempo=0.96, mono=True,
             keep=0.30, trim_head=False, filters="lowpass=f=14000:poles=2",
             notes="heavier, duller die"),
+    # Round three. These two are derivation used the way it should be: filling
+    # the gaps *between* paid events, not standing in for them. Both sit between
+    # two real sources rather than pretending to be a source of their own.
+    #
+    # `-e` is the flat-face landing the API refused three times. Taking the deep
+    # oak knock up a tone, speeding it slightly and cutting the length in half
+    # turns a resonant knock into a flat slap with the same wood in it. It is
+    # the one derived member of the family doing a job no paid clip covers, and
+    # it is honest about being derived.
+    Derived("dice-settle-e", "dice-settle-f", start=0.050, semitones=2.2, tempo=1.12, mono=True,
+            keep=0.16, trim_head=False, filters="lowpass=f=10000:poles=2",
+            notes="flat-face slap; the generation this replaces failed three times"),
+    # `-i` is the light end of the die-on-die crack: the glancing clip two dice
+    # give each other in the air rather than the square hit.
+    # 1.1x speed, so the source's second strike at 60 ms arrives at 55 ms and
+    # the window has to close before it.
+    Derived("dice-settle-i", "dice-settle-h", start=0.001, semitones=3.5, tempo=1.1, gain_db=-2.0,
+            mono=True, keep=0.044, trim_head=False, filters="lowpass=f=15000:poles=2",
+            notes="glancing die-on-die clip"),
     # The click family is one piece of wood, which is why it reads as a single
     # UI. Round one made that the hover tick; round two moves it onto the paid
     # `ui-click` rap, which has real body, and keeps the same principle.
@@ -497,17 +599,48 @@ def master(src: Path, dst: Path, *, bus: str, trim_head: bool, keep: float | Non
         # them on the loudest windowed RMS instead, which tracks how loud a
         # transient actually feels.
         offset = RMS_PEAK[bus] - rms_peak
-    offset = max(min(offset, 24.0), -24.0)
+    # +-24 dB used to be the clamp, and it silently pinned any hit whose event
+    # is short enough that a 20 ms window reads well below its peak: the
+    # cardboard knock wanted 27 dB, got 24, and then sat 3 dB under target
+    # through every correction pass because the clamp ate the correction too.
+    # The peak ceiling in the loop below is the safety that matters, so this
+    # only has to be wide enough not to be the binding constraint.
+    offset = max(min(offset, 36.0), -36.0)
 
-    run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(stage),
-         "-af", f"volume={offset:.2f}dB,alimiter=limit=0.65:level=disabled",
-         "-ac", "1" if mono else "2", "-ar", "44100", "-b:a", bitrate, str(dst)])
+    pad = "" if probe_duration(stage) >= MIN_ENCODED else f",apad=whole_dur={MIN_ENCODED}"
 
-    overshoot = true_peak(dst) - TRUE_PEAK_CEILING
-    if overshoot > 0.2:
+    def encode(gain: float) -> None:
         run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(stage),
-             "-af", f"volume={offset - overshoot - 0.2:.2f}dB,alimiter=limit=0.65:level=disabled",
+             "-af", f"volume={gain:.2f}dB,alimiter=limit=0.65:level=disabled{pad}",
              "-ac", "1" if mono else "2", "-ar", "44100", "-b:a", bitrate, str(dst)])
+
+    encode(offset)
+
+    # Converge on the target by measuring the *output*, not the stage.
+    #
+    # Setting the gain from the stage and trusting it is what left the settle
+    # family 13.5 dB apart on the very number it was supposed to be matched on.
+    # Two things sit between the gain and the file: the limiter, which eats
+    # 10 dB from a sharp tick and almost nothing from a rounded knock, and the
+    # encoder. Both scale with crest factor, so the error is largest exactly
+    # where the family differs most, and a single pass cannot see it.
+    #
+    # Peak wins over loudness. A hit whose crest is too high to reach the RMS
+    # target without breaching the ceiling stays under the ceiling and quiet;
+    # that is the honest answer, and the bank's per-sound gain is the place to
+    # trim the rest.
+    for _ in range(3):
+        peak = true_peak(dst)
+        integrated_out, rms_out = measure(dst)
+        target = LUFS[bus] if bus in ("ambience", "music") else RMS_PEAK[bus]
+        measured = integrated_out if bus in ("ambience", "music") else rms_out
+        error = target - measured
+        headroom = TRUE_PEAK_CEILING - peak
+        step = min(error, headroom) if error > 0 else error
+        if abs(step) < 0.3:
+            break
+        offset = max(min(offset + step, 36.0), -36.0)
+        encode(offset)
     stage.unlink(missing_ok=True)
 
 
