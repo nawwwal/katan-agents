@@ -121,7 +121,7 @@ button { -webkit-tap-highlight-color: transparent; }
 /* Cinzel is a display face. Every numeral in the app is Inter tabular. */
 .tnum, .player-counts, .player-vp, .card-count, .cost-row, .seat-number, .standings-list b,
 .resource-stepper > strong, .turn-order li > span, .standings-list li > span, .public-stack,
-.harbor-rates b, .ratio-picker button, .dice-moment strong { font-variant-numeric: tabular-nums; font-family: var(--text); }
+.harbor-rates b, .dice-moment strong, .partner-seat small, .watch-side b { font-variant-numeric: tabular-nums; font-family: var(--text); }
 
 .sr-only { position: fixed; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .board-targets:focus-within {
@@ -353,6 +353,10 @@ button { -webkit-tap-highlight-color: transparent; }
   padding: 62px 20px 14px;
   background: linear-gradient(to top, rgba(1, 6, 10, .92) 0%, rgba(1, 6, 10, .74) 34%, rgba(1, 6, 10, .3) 70%, rgba(1, 6, 10, 0) 100%);
 }
+/* The trade table draws the same hand at the same edge, so the band steps aside
+   rather than stacking a second fan. Hidden, never unmounted: nothing in the
+   bottom band is allowed to reflow. */
+.table-band.handed-off { visibility: hidden; }
 .table-band > * { pointer-events: none; }
 .table-band button, .table-band .build-plinth { pointer-events: auto; }
 .band-hand { display: flex; align-items: flex-end; gap: 14px; min-width: 0; }
@@ -804,54 +808,13 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 .modal-primary:disabled { opacity: .38; cursor: not-allowed; transform: none; filter: none; }
 
-/* Trade ------------------------------------------------------------------ */
+/* Modal reading surfaces ------------------------------------------------- */
 .rules-columns { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 18px; }
-/* The stepper grid drives this split: the domestic column needs the width to
-   keep each +/- control above the AA minimum target size. */
-.trade-columns { display: grid; grid-template-columns: .82fr 1.18fr; align-items: start; gap: 18px; }
-.trade-columns > section, .rules-columns > section { min-width: 0; padding: 16px; border: 1px solid rgba(216, 177, 104, .26); border-radius: var(--r-card); background: rgba(255, 255, 255, .04); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1); }
-.trade-columns section > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
-.trade-columns h3 { margin: 0; }
-.trade-columns p, .rules-columns p, .rules-columns li { color: var(--fg-2); font-size: var(--t-ui); line-height: 1.55; }
-.public-stack { min-width: 54px; display: inline-flex; align-items: baseline; justify-content: center; gap: 2px; padding: 6px 11px; border-radius: 999px; color: var(--brass-hi); background: rgba(2, 7, 10, .6); box-shadow: inset 0 1px 0 rgba(255, 220, 160, .2); font-size: 17px; font-weight: 700; }
-.public-stack small { font-size: 10px; }
+.rules-columns p, .rules-columns li { color: var(--fg-2); font-size: var(--t-ui); line-height: 1.55; }
+.rules-columns > section { min-width: 0; padding: 16px; border: 1px solid rgba(216, 177, 104, .26); border-radius: var(--r-card); background: rgba(255, 255, 255, .04); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1); }
 .privacy-mark { padding: 5px 10px; border: 1px solid rgba(216, 177, 104, .3); border-radius: 999px; color: var(--fg-2); font-size: 9px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; }
-.trade-exchange-picker { display: grid; grid-template-columns: 1fr 30px 1fr; align-items: center; gap: 7px; }
-.trade-arrow { display: grid; place-items: center; color: var(--brass); }
-.trade-arrow svg { width: 22px; height: 22px; }
-.resource-picker { min-width: 0; margin: 0; padding: 9px; border: 1px solid rgba(216, 177, 104, .24); border-radius: var(--r-ctl); }
-.resource-picker legend { padding: 0 6px; color: var(--fg-2); font-size: var(--t-micro); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
-.resource-picker > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.resource-picker button {
-  aspect-ratio: 1; min-width: 0; display: grid; place-items: center; padding: 7px; border: 1px solid rgba(216, 177, 104, .24); border-radius: var(--r-ctl);
-  background: linear-gradient(170deg, rgba(52, 66, 69, .92), rgba(12, 19, 22, .96)); box-shadow: var(--rim-light);
-  cursor: pointer; transition: transform var(--dur-1) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
-}
-.resource-picker button:hover:not(:disabled) { transform: translateY(-2px); }
-.resource-picker button.selected { border-color: var(--brass-hi); box-shadow: 0 0 0 2px var(--brass-hi), var(--rim-light); }
-.resource-picker button:disabled { opacity: .26; cursor: not-allowed; }
-.resource-picker .resource-glyph { width: 74%; height: 74%; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .5)); }
-.ratio-picker { display: flex; justify-content: center; gap: 7px; margin-top: 11px; }
-.ratio-picker button { min-width: 56px; min-height: 40px; border: 1px solid rgba(216, 177, 104, .26); border-radius: 999px; color: var(--fg); background: linear-gradient(180deg, rgba(52, 66, 69, .92), rgba(12, 19, 22, .96)); font-size: var(--t-ui); font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer; }
-.ratio-picker button.selected { color: #2a1a06; background: linear-gradient(180deg, #f4d484, #c4913a); }
 
-.trade-partners { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
-.trade-partners > button {
-  --partner: var(--ivory); min-width: 0; min-height: 68px; display: grid; grid-template-columns: 28px 1fr; align-items: center; gap: 2px 8px; padding: 8px 8px 8px 12px;
-  border: 1px solid rgba(216, 177, 104, .2); border-radius: var(--r-ctl); color: var(--fg);
-  background: linear-gradient(170deg, rgba(52, 66, 69, .92), rgba(12, 19, 22, .96));
-  box-shadow: var(--rim-light), inset 2px 0 0 var(--partner); cursor: pointer;
-  transition: transform var(--dur-1) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
-}
-.trade-partners > button.coral { --partner: var(--coral); } .trade-partners > button.blue { --partner: var(--blue); } .trade-partners > button.amber { --partner: var(--amber); } .trade-partners > button.ivory { --partner: var(--ivory); }
-.trade-partners > button:hover { transform: translateY(-2px); }
-.trade-partners > button.selected { box-shadow: 0 0 0 2px var(--brass-hi), inset 2px 0 0 var(--partner), var(--rim-light); }
-.trade-partners .player-crest { grid-row: 1 / 3; width: 28px; height: 28px; flex-basis: 28px; font-size: 11px; }
-.trade-partners strong { overflow: hidden; font-size: var(--t-ui); font-weight: 650; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
-.trade-partners small { display: flex; flex-wrap: wrap; gap: 3px 7px; min-width: 0; }
-.trade-partners small b { display: inline-flex; align-items: center; gap: 3px; color: var(--fg-muted); font-size: var(--t-micro); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.trade-partners small svg { width: 11px; height: 11px; opacity: .8; }
-
+/* The discard stepper grid. Trade no longer uses one. */
 .trade-bundle { min-width: 0; margin: 12px 0 0; padding: 9px; border: 1px solid rgba(216, 177, 104, .24); border-radius: var(--r-ctl); }
 .trade-bundle legend { padding: 0 6px; color: var(--fg-2); font-size: var(--t-micro); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .trade-bundle > div { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
@@ -868,40 +831,215 @@ button { -webkit-tap-highlight-color: transparent; }
 .resource-stepper button:hover:not(:disabled) { filter: brightness(1.16); }
 .resource-stepper button:disabled { opacity: .28; cursor: not-allowed; }
 .resource-stepper small { display: block; overflow: hidden; color: var(--fg-2); font-size: 9px; font-weight: 600; letter-spacing: .04em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
-.harbor-rates { display: grid; gap: 4px; margin: 16px 0 0; padding: 0; }
-.harbor-rates dt { margin-bottom: 4px; color: var(--fg-2); font-size: var(--t-micro); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
-.harbor-rates dd { display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 9px; margin: 0; padding: 6px 10px; border: 1px solid rgba(216, 177, 104, .18); border-radius: var(--r-ctl); background: rgba(255, 255, 255, .03); color: var(--fg-2); font-size: var(--t-ui); }
-.harbor-rates dd.ready { border-color: rgba(255, 233, 179, .5); background: rgba(94, 66, 18, .38); color: var(--brass-hi); }
-.harbor-rates .resource-glyph { width: 20px; height: 20px; }
-.harbor-rates b { color: var(--fg); font-size: var(--t-body); font-weight: 700; }
-.trade-warning { margin: 9px 0 0 !important; color: #ffb9a6 !important; font-weight: 650; }
-.trade-summary { min-height: 46px; display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 12px; padding: 10px; border: 1px dashed rgba(216, 177, 104, .34); border-radius: var(--r-ctl); color: var(--fg-2); font-size: var(--t-ui); font-weight: 600; }
-.trade-summary .resource-glyph { width: 22px; height: 22px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .5)); }
-.trade-summary > div { display: flex; align-items: center; gap: 5px; }
-.trade-summary em { color: var(--fg-muted); font-style: normal; }
-.trade-summary svg.swap { flex: 0 0 auto; width: 18px; height: 18px; color: var(--brass); }
+
 .modal-primary { display: inline-flex; align-items: center; justify-content: center; gap: 9px; }
 .modal-primary svg { width: 16px; height: 16px; }
-.trade-reset { min-height: 36px; margin-top: 10px; padding: 0 14px; border: 1px solid rgba(216, 177, 104, .26); border-radius: var(--r-ctl); color: var(--fg-2); background: rgba(255, 255, 255, .06); font-size: var(--t-ui); font-weight: 600; cursor: pointer; }
-.trade-reset:hover:not(:disabled) { background: rgba(255, 255, 255, .1); }
-.trade-reset:disabled { opacity: .35; cursor: not-allowed; }
 
-.trade-response { display: grid; grid-template-columns: 1fr 38px 1fr; align-items: center; gap: 10px; }
-.trade-response > span { display: grid; place-items: center; color: var(--brass); }
-.trade-response > span svg { width: 22px; height: 22px; }
-.trade-contents { min-height: 110px; display: grid; align-content: center; gap: 10px; padding: 12px; border: 1px solid rgba(216, 177, 104, .24); border-radius: var(--r-card); background: rgba(255, 255, 255, .04); }
-.trade-contents > small { color: var(--fg-2); font-size: var(--t-micro); font-weight: 700; letter-spacing: .1em; text-align: center; text-transform: uppercase; }
-.trade-contents > div { display: flex; flex-wrap: wrap; justify-content: center; gap: 7px; }
-.trade-contents > div > span { position: relative; width: 50px; height: 56px; display: grid; place-items: center; border: 1px solid rgba(216, 177, 104, .24); border-radius: var(--r-ctl); background: linear-gradient(170deg, rgba(52, 66, 69, .92), rgba(12, 19, 22, .96)); }
-.trade-contents .resource-glyph { width: 28px; height: 28px; }
-.trade-contents b { position: absolute; right: -3px; bottom: -4px; min-width: 21px; padding: 2px 5px; border-radius: 999px; color: var(--brass-hi); background: rgba(2, 7, 10, .78); font-size: var(--t-micro); font-weight: 700; font-variant-numeric: tabular-nums; text-align: center; }
-.trade-response-actions { display: grid; grid-template-columns: 1fr 1.35fr; gap: 10px; }
-.trade-response-actions > button { min-height: 48px; margin-top: 16px; border: 1px solid rgba(216, 177, 104, .3); border-radius: var(--r-ctl); color: var(--fg); background: linear-gradient(180deg, rgba(52, 66, 69, .92), rgba(12, 19, 22, .96)); font-size: var(--t-body); font-weight: 650; cursor: pointer; }
-.trade-response-actions .modal-primary { color: #2a1a06; background: linear-gradient(180deg, #f4d484, #c4913a); }
-.counter-offer { display: grid; gap: 8px; margin-top: 16px; padding: 13px; border: 1px solid rgba(216, 177, 104, .24); border-radius: var(--r-card); background: rgba(255, 255, 255, .035); }
-.counter-offer > strong { font-family: var(--display); font-size: var(--t-h3); font-weight: 600; color: var(--fg); }
-.counter-offer > button { min-height: 46px; border: 1px solid #7d5a1f; border-radius: var(--r-ctl); color: #2a1a06; background: linear-gradient(180deg, #f4d484, #c4913a); font-size: var(--t-ui); font-weight: 650; cursor: pointer; }
-.counter-offer > button:disabled { opacity: .38; cursor: not-allowed; }
+/* The trade table -------------------------------------------------------- */
+/* Trading does not happen in a dialog. The board dims under the scrim, the
+   lower part of the screen becomes the table, and the whole design is one
+   asymmetry: your side is real face-up card stock you move out of your hand,
+   their side is silhouettes you are asking someone to fill. */
+
+/* The veil paints the scrim and takes no pointer events, so the island stays
+   pannable for the whole negotiation. Who you trade with is partly a question
+   of what is on the board. */
+.trade-veil { position: absolute; inset: 0; z-index: 20; background: var(--scrim); pointer-events: none; animation: veil-in var(--dur-2) ease both; }
+.trade-table {
+  --table-card: clamp(52px, 6.4vh, 74px);
+  --table-strip: max(44px, calc(var(--table-card) * .78));
+  --cross: 184px;
+  position: absolute; left: 0; right: 0; bottom: 0; height: min(76dvh, 860px);
+  display: grid; grid-template-rows: auto 1fr; gap: 4px; padding: 44px 0 22px; pointer-events: auto;
+  /* A pool of light on the table over a dark rise from the bottom edge. The
+     table is a plane you are sitting at, not a panel floating on the island. */
+  background:
+    radial-gradient(78% 88% at 50% 104%, rgba(38, 54, 60, .5) 0%, rgba(20, 30, 35, .22) 46%, transparent 74%),
+    linear-gradient(to top, rgba(1, 6, 10, .96) 0%, rgba(1, 6, 10, .9) 52%, rgba(1, 6, 10, .74) 82%, rgba(1, 6, 10, 0) 100%);
+  animation: table-rise var(--dur-3) var(--ease-out) both;
+}
+.table-header { width: min(1120px, 100%); margin: 0 auto 12px; display: grid; grid-template-columns: 24px auto 1fr auto; align-items: center; gap: 12px; padding: 0 24px 8px; border-bottom: 1px solid rgba(216, 177, 104, .16); }
+.table-header > svg { width: 24px; height: 24px; color: var(--brass); }
+.table-header h2 { margin: 0; font-family: var(--display); font-size: 21px; font-weight: 600; letter-spacing: .02em; }
+.table-header .privacy-mark { justify-self: start; }
+.icon-button-spacer { width: 44px; height: 44px; }
+
+.table-body { width: min(1136px, 100%); min-height: 0; margin: 0 auto; display: grid; grid-template-columns: 268px minmax(0, 1fr); gap: 28px; padding: 0 24px; }
+/* The hand is pushed to the near edge of the table, everything else stacks from
+   the far edge down, so the seating reads at any table height. */
+.table-play { min-width: 0; height: 100%; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.table-hand { margin-top: auto; }
+
+/* Partners are seated around the far edge. Picking one aims the offer. */
+.partner-seats { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.partner-seat {
+  --partner: var(--ivory); position: relative; min-width: 152px; min-height: 60px; overflow: hidden;
+  display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: center; gap: 1px 9px; padding: 8px 12px 8px 13px;
+  border: 1px solid rgba(216, 177, 104, .2); border-radius: var(--r-ctl); color: var(--fg);
+  background: linear-gradient(170deg, rgba(46, 60, 63, .9), rgba(11, 18, 21, .95));
+  box-shadow: var(--rim-light), var(--lift-1); cursor: pointer; text-align: left;
+  transition: transform var(--dur-1) var(--ease-out), box-shadow var(--dur-2) var(--ease-out), opacity var(--dur-2) var(--ease-out);
+}
+.partner-seat.coral { --partner: var(--coral); } .partner-seat.blue { --partner: var(--blue); }
+.partner-seat.amber { --partner: var(--amber); } .partner-seat.ivory { --partner: var(--ivory); }
+/* Identity is a 2px bar at full strength, as everywhere else. */
+.partner-seat::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--partner); }
+.partner-seat .player-crest { grid-row: 1 / 3; width: 30px; height: 30px; flex-basis: 30px; font-size: 12px; }
+.partner-seat strong { overflow: hidden; font-size: var(--t-ui); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.partner-seat small { display: flex; gap: 8px; }
+.partner-seat small b { display: inline-flex; align-items: center; gap: 3px; color: var(--fg-muted); font-size: var(--t-micro); font-weight: 700; }
+.partner-seat small svg { width: 11px; height: 11px; opacity: .85; }
+.partner-seat:hover:not(:disabled) { transform: translateY(-2px); }
+.partner-seat.selected { border-color: var(--brass-hi); box-shadow: 0 0 0 1px var(--brass-hi), var(--rim-light), var(--lift-1); }
+.partner-seat:disabled { cursor: not-allowed; }
+/* A refused seat is struck through, not removed: you still need to see who said no. */
+.partner-seat.struck { opacity: .52; }
+.partner-seat.struck::after { content: ""; position: absolute; left: 10px; right: 10px; top: 50%; height: 1.5px; border-radius: 1px; background: var(--fg-2); }
+.seat-hairline { position: absolute; left: 0; right: 0; bottom: 0; height: 1px; overflow: hidden; opacity: 0; }
+.seat-hairline.waiting, .trade-table[data-state="sent"] .partner-seat.selected .seat-hairline { opacity: 1; }
+.seat-hairline::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, var(--brass-hi), transparent);
+  animation: hairline-run 2.4s var(--ease-in-out) infinite;
+}
+
+.zone-label { color: var(--brass); font-size: var(--t-micro); font-weight: 650; letter-spacing: .16em; text-transform: uppercase; }
+.offer-zone { display: grid; justify-items: center; gap: 7px; }
+/* Their side is one group: the silhouettes and the glyphs that fill them. */
+.offer-zone.ask { gap: 9px; }
+
+/* Your side: real card stock, face up, stacked and countable. */
+.offer-stack { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: center; max-width: 100%; min-height: calc(var(--table-card) / .7); }
+.table-card {
+  position: relative; flex: 0 0 auto; width: var(--table-card); aspect-ratio: .7;
+  margin: 0 calc(var(--table-strip) - var(--table-card)) 0 0; padding: 0;
+  border: 0; border-radius: 9px; background: var(--card-stock); cursor: pointer;
+  box-shadow: var(--card-edge), var(--lift-card);
+  transform: translateY(calc(var(--i) * -1.5px));
+  transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
+}
+.table-card:last-child { margin-right: 0; }
+.table-card img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
+button.table-card:hover, button.table-card:focus-visible { z-index: 5; transform: translateY(-10px); box-shadow: var(--card-edge), 0 2px 0 rgba(0, 0, 0, .6), 0 18px 28px -10px rgba(0, 4, 8, .7); }
+/* Nothing staged reads as an empty place setting, not as a disabled control. */
+.table-card.ghost:last-child { margin-right: 0; }
+.table-card.ghost { margin-right: 9px; border: 1px dashed rgba(216, 177, 104, .2); background: rgba(2, 8, 12, .26); box-shadow: none; }
+
+/* Their side: a request, drawn as a silhouette, because you cannot see a hand. */
+.ask-slots { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: center; gap: 8px; max-width: 100%; min-height: calc(var(--table-card) / .7); }
+.ask-slot {
+  position: relative; flex: 0 0 auto; width: var(--table-card); aspect-ratio: .7;
+  padding: 0; display: grid; place-items: center; cursor: pointer;
+  border: 1.5px dashed var(--edge-brass-strong); border-radius: 9px; background: rgba(2, 8, 12, .46);
+  transition: border-color var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out);
+}
+.ask-slot .resource-glyph { width: 44%; height: 44%; opacity: .58; }
+.ask-slot:hover, .ask-slot:focus-visible { z-index: 5; border-color: var(--brass-hi); transform: translateY(-6px); }
+.ask-slot.empty { border-color: rgba(216, 177, 104, .18); background: rgba(2, 8, 12, .26); cursor: default; }
+
+.ask-picker { display: flex; gap: 6px; }
+.ask-picker button {
+  width: 44px; height: 44px; display: grid; place-items: center;
+  border: 1px solid rgba(216, 177, 104, .2); border-radius: var(--r-ctl); color: var(--fg);
+  background: linear-gradient(170deg, rgba(46, 60, 63, .88), rgba(12, 19, 22, .95));
+  box-shadow: var(--rim-light); cursor: pointer;
+  transition: transform var(--dur-1) var(--ease-out), filter var(--dur-1) var(--ease-out);
+}
+.ask-picker button:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.14); }
+.ask-picker button:disabled { opacity: .28; cursor: not-allowed; }
+.ask-picker .resource-glyph { width: 22px; height: 22px; }
+
+.give-drop { display: grid; justify-items: center; }
+.table-status { min-height: 20px; margin: 2px 0 0; color: var(--fg); font-size: var(--t-ui); font-weight: 600; text-align: center; text-wrap: balance; }
+.trade-table[data-state="no-takers"] .table-status, .trade-table[data-state="declined"] .table-status { color: var(--brass-hi); }
+
+.table-actions { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.table-reset, .table-counter {
+  min-height: 44px; padding: 0 18px; border: 1px solid rgba(216, 177, 104, .26); border-radius: var(--r-ctl);
+  color: var(--fg); background: rgba(255, 255, 255, .06); font-size: var(--t-ui); font-weight: 650; cursor: pointer;
+  transition: filter var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+}
+.table-reset:hover:not(:disabled), .table-counter:hover:not(:disabled) { filter: brightness(1.35); }
+.table-reset:disabled { opacity: .35; cursor: not-allowed; }
+/* One brass-filled control on the table at a time. */
+.table-send {
+  min-width: 210px; min-height: 50px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; padding: 0 22px;
+  border: 1px solid #7d5a1f; border-radius: var(--r-ctl); color: #2a1a06;
+  background: linear-gradient(180deg, #f7d989 0%, #e0b45c 46%, #bd8c33 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 253, 236, .7), 0 1px 0 rgba(0, 0, 0, .5), 0 6px 16px rgba(74, 44, 6, .38);
+  font-size: var(--t-body); font-weight: 650; cursor: pointer;
+  transition: filter var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+}
+.table-send svg { width: 16px; height: 16px; }
+.table-send:hover:not(:disabled) { transform: translateY(-1.5px); filter: brightness(1.06); }
+.table-send:active:not(:disabled) { transform: translateY(1px); }
+.table-send:disabled { opacity: .38; cursor: not-allowed; }
+
+/* The same fan as the HUD, at the same edge, so the hand reads as continuous
+   rather than as a second widget that merely resembles it. */
+.table-hand { display: flex; align-items: flex-end; justify-content: center; gap: 12px; }
+.table-hand .hand-fan { --card-w: clamp(54px, 6.6vh, 68px); --strip: max(46px, calc(var(--card-w) * .72)); }
+
+/* The harbor is a rate card pinned to the edge of the table, never a peer of
+   player trade: pick a stack, pick what you want back, two clicks. */
+.harbor-rail { min-width: 0; align-self: start; display: grid; gap: 10px; padding: 12px; border: 1px solid rgba(216, 177, 104, .2); border-radius: var(--r-card); background: rgba(2, 8, 12, .5); box-shadow: var(--rim-light), var(--lift-1); }
+.harbor-rail h3 { display: flex; align-items: center; gap: 9px; margin: 0; font-family: var(--display); font-size: var(--t-h3); font-weight: 600; color: var(--fg); }
+.harbor-rail h3 svg { width: 18px; height: 18px; color: var(--brass); }
+.harbor-rates { display: grid; gap: 3px; margin: 0; padding: 0; }
+.harbor-rates dt { margin-bottom: 3px; color: var(--fg-2); font-size: var(--t-micro); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.harbor-rates dd { margin: 0; }
+.harbor-rates dd button {
+  width: 100%; min-height: 44px; display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 9px;
+  padding: 0 10px; border: 1px solid rgba(216, 177, 104, .16); border-radius: var(--r-ctl);
+  color: var(--fg-2); background: rgba(255, 255, 255, .03); font-size: var(--t-ui); cursor: pointer; text-align: left;
+  transition: border-color var(--dur-2) var(--ease-out), background var(--dur-2) var(--ease-out), color var(--dur-2) var(--ease-out);
+}
+.harbor-rates dd button.ready { color: var(--fg); }
+.harbor-rates dd button:hover:not(:disabled) { background: rgba(255, 255, 255, .08); }
+.harbor-rates dd button.selected { border-color: var(--brass-hi); color: var(--brass-hi); background: rgba(94, 66, 18, .38); }
+.harbor-rates dd button:disabled { opacity: .42; cursor: not-allowed; }
+.harbor-rates .resource-glyph { width: 20px; height: 20px; }
+.harbor-rates b { color: inherit; font-size: var(--t-body); font-weight: 700; }
+.harbor-return { display: grid; gap: 6px; }
+.harbor-note { margin: 0; color: var(--fg-2); font-size: var(--t-micro); font-weight: 600; letter-spacing: .04em; }
+.harbor-get { display: grid; grid-template-columns: repeat(5, minmax(44px, 1fr)); gap: 4px; }
+.harbor-get button {
+  min-width: 44px; height: 44px; display: grid; place-items: center;
+  border: 1px solid rgba(216, 177, 104, .2); border-radius: var(--r-ctl);
+  background: linear-gradient(170deg, rgba(46, 60, 63, .88), rgba(12, 19, 22, .95)); box-shadow: var(--rim-light); cursor: pointer;
+  transition: transform var(--dur-1) var(--ease-out), filter var(--dur-1) var(--ease-out);
+}
+.harbor-get button:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.14); }
+.harbor-get button:disabled { opacity: .26; cursor: not-allowed; }
+.harbor-get .resource-glyph { width: 22px; height: 22px; }
+
+.table-tabs { display: flex; gap: 4px; margin: 0 14px 6px; padding: 4px; border: 1px solid rgba(216, 177, 104, .16); border-radius: var(--r-ctl); background: rgba(3, 9, 12, .62); }
+.table-tabs button { flex: 1; min-height: 44px; border: 0; border-radius: 7px; background: transparent; color: var(--fg-2); font-size: var(--t-ui); font-weight: 650; cursor: pointer; }
+.table-tabs button[aria-selected="true"] { color: #2a1a06; background: linear-gradient(180deg, #f4d484, #c4913a); }
+
+/* The offer travels as one element with one transform, never as N cards. */
+.trade-table[data-state="sent"] .offer-zone.give { animation: offer-cross var(--dur-4) var(--ease-out) both; }
+.trade-table[data-state="sent"] .ask-slots { opacity: .55; }
+/* Nothing to do while they think, and the row holds its place rather than reflowing. */
+.trade-table[data-state="sent"] .table-actions, .trade-table[data-state="accepted"] .table-actions { opacity: .26; }
+.trade-table[data-state="declined"] .offer-zone.give { animation: offer-return var(--dur-4) var(--ease-out) both; }
+.trade-table[data-state="accepted"] .offer-zone.give { animation: offer-land var(--dur-4) var(--ease-out) both; }
+.trade-table[data-state="accepted"] .ask-slots { animation: ask-land var(--dur-4) var(--ease-out) both; }
+
+/* Spectating a rival's trade. Two thirds of a match is watching. */
+.trade-watch {
+  position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px; padding: 8px 14px; overflow: hidden;
+  border: 1px solid var(--edge-brass); border-radius: 999px; background: var(--panel-solid);
+  box-shadow: var(--rim-light), var(--lift-1); pointer-events: none;
+  animation: toast-in var(--dur-3) var(--ease-out) both;
+}
+.trade-watch .player-crest { width: 28px; height: 28px; flex-basis: 28px; font-size: 12px; }
+.trade-watch > div { display: flex; align-items: center; gap: 10px; }
+.watch-side { display: flex; gap: 7px; }
+.watch-side b { display: inline-flex; align-items: center; gap: 3px; color: var(--fg); font-size: var(--t-ui); font-weight: 700; }
+.watch-side .resource-glyph { width: 17px; height: 17px; }
+.trade-watch svg.watch-swap { width: 16px; height: 16px; color: var(--brass); }
 
 /* Cards, choices, history ------------------------------------------------ */
 /* Only the cards you hold. The five-type catalogue with grey ghosts turned a
@@ -1006,6 +1144,12 @@ button { -webkit-tap-highlight-color: transparent; }
 @keyframes transition-moment { 0% { opacity: 0; transform: translate(-50%, 12px) scale(.96); } 12%, 78% { opacity: 1; transform: translate(-50%, 0) scale(1); } 100% { opacity: 0; transform: translate(-50%, -8px) scale(.98); } }
 @keyframes dice-moment { 0% { opacity: 0; transform: translate(-50%, -30px) scale(.7) rotate(-5deg); } 18% { opacity: 1; transform: translate(-50%, 4px) scale(1.08) rotate(2deg); } 35%, 72% { opacity: 1; transform: translate(-50%, 0) scale(1) rotate(0); } 100% { opacity: 0; transform: translate(-50%, -12px) scale(.94); } }
 @keyframes summary-pulse { 50% { opacity: .55; transform: scale(1.08); } }
+@keyframes table-rise { from { opacity: 0; transform: translateY(20px); } }
+/* Send, decline and accept, each one transform on one element. */
+@keyframes offer-cross { to { transform: translateY(calc(-1 * var(--cross))) scale(.82); opacity: .5; } }
+@keyframes offer-return { from { transform: translateY(calc(-1 * var(--cross))) scale(.82); opacity: .5; } }
+@keyframes offer-land { to { transform: translateY(calc(-1.3 * var(--cross))) scale(.86); opacity: 0; } }
+@keyframes ask-land { to { transform: translateY(calc(.7 * var(--cross))) scale(.86); opacity: 0; } }
 
 /* ------------------------------------------------------------ responsive */
 
@@ -1038,8 +1182,14 @@ button { -webkit-tap-highlight-color: transparent; }
   .turn-command { min-width: 104px; }
   .action-preview, .transition-moment { bottom: 178px; }
   .copyright-note { display: none; }
-  .trade-columns, .rules-columns { grid-template-columns: 1fr; }
+  .rules-columns { grid-template-columns: 1fr; }
   .seat-grid { grid-template-columns: 1fr 1fr; }
+  .trade-table { --table-card: clamp(48px, 6vh, 64px); padding-top: 36px; }
+  .table-header { padding: 0 14px 8px; }
+  .table-body { grid-template-columns: 236px minmax(0, 1fr); gap: 14px; padding: 0 14px; }
+  .harbor-rail { padding: 11px; }
+  .partner-seat { min-width: 132px; }
+  .trade-watch { top: 128px; }
 }
 
 @media (min-width: 521px) and (max-width: 620px) {
@@ -1099,9 +1249,23 @@ button { -webkit-tap-highlight-color: transparent; }
   .dev-fan { --card-w: 104px; --strip: 62px; min-height: 176px; }
   .dev-control { grid-template-columns: 1fr; gap: 10px; }
   .dev-control .modal-primary { width: 100%; }
-  .trade-columns { grid-template-columns: 1fr; }
-  .trade-partners { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .trade-bundle > div { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* Full-height sheet, Players first and default, Harbor behind the second tab. */
+  .trade-table { height: 100dvh; grid-template-rows: auto auto 1fr; padding: 10px 0 10px; gap: 2px; --table-card: clamp(46px, 8vh, 62px); --cross: 140px; }
+  .table-header { grid-template-columns: 22px minmax(0, 1fr) auto; padding: 0 10px 8px; }
+  .table-header h2 { font-size: 18px; }
+  .table-header .privacy-mark { display: none; }
+  .table-body { grid-template-columns: 1fr; gap: 0; padding: 0 10px; overflow: auto; }
+  .table-play { gap: 8px; }
+  .partner-seats { width: 100%; }
+  .partner-seat { flex: 1; min-width: 0; }
+  .partner-seat small { display: none; }
+  .table-send { min-width: 0; flex: 1; }
+  .table-actions { width: 100%; }
+  .harbor-rail { background: transparent; border: 0; box-shadow: none; padding: 0; }
+  .table-hand .hand-fan { --card-w: 54px; --strip: 44px; max-width: calc(100vw - 32px); overflow-x: auto; }
+  .table-hand .hand-empties { display: none; }
+  .trade-watch { top: 128px; gap: 8px; padding: 6px 10px; }
   .choice-list.compact { grid-template-columns: 1fr; }
   .journey-layer { padding: 12px; }
   .title-screen { align-content: end; padding-bottom: 8vh; }

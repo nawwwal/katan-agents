@@ -26,8 +26,10 @@ const boardSector = (x: number, z: number) => {
  * and summary work can be screenshotted. Stripped from production builds by
  * the `import.meta.env.DEV` guard and never reachable from the shipped app.
  */
-type UiPreviewStage = 'match' | 'trade' | 'cards' | 'rules' | 'history' | 'summary' | 'introduction'
-const UI_PREVIEW_STAGES: UiPreviewStage[] = ['match', 'trade', 'cards', 'rules', 'history', 'summary', 'introduction']
+type UiPreviewStage = 'match' | 'trade' | 'trade-sent' | 'trade-declined' | 'trade-no-takers' | 'trade-empty' | 'trade-response' | 'trade-watch'
+  | 'cards' | 'rules' | 'history' | 'summary' | 'introduction'
+const UI_PREVIEW_STAGES: UiPreviewStage[] = ['match', 'trade', 'trade-sent', 'trade-declined', 'trade-no-takers', 'trade-empty', 'trade-response', 'trade-watch',
+  'cards', 'rules', 'history', 'summary', 'introduction']
 
 const uiPreviewStage = (): UiPreviewStage | undefined => {
   if (!import.meta.env.DEV) return undefined
@@ -71,6 +73,32 @@ const buildUiPreview = (stage: UiPreviewStage) => {
     state.phase = 'game-over'
     state.winnerId = state.players[0].id
   }
+  // Trade is the one surface whose states cannot be reached by clicking in a
+  // harness with no live opponents, so each is pinned to its own stage.
+  const [you, atlas, ember] = state.players
+  const offer = { fromPlayerId: you.id, toPlayerId: atlas.id, give: { lumber: 2 }, receive: { ore: 1 } }
+  if (stage === 'trade-sent') {
+    state.pendingTrade = offer
+    state.phase = 'trade-response'
+    state.actingPlayerId = atlas.id
+  }
+  if (stage === 'trade-declined' || stage === 'trade-no-takers') {
+    state.events.push({ id: `ev-${state.revision}-9`, revision: state.revision, type: 'trade-rejected', message: `${atlas.name} declined ${you.name}'s trade.`, playerId: atlas.id, trade: offer })
+  }
+  if (stage === 'trade-no-takers') {
+    state.events.push({ id: `ev-${state.revision}-10`, revision: state.revision, type: 'trade-rejected', message: `${ember.name} declined ${you.name}'s trade.`, playerId: ember.id, trade: { ...offer, toPlayerId: ember.id } })
+  }
+  if (stage === 'trade-empty') state.players[0].resources = { brick: 0, lumber: 0, ore: 0, grain: 0, wool: 0 }
+  if (stage === 'trade-response') {
+    state.pendingTrade = { fromPlayerId: atlas.id, toPlayerId: you.id, give: { ore: 3 }, receive: { grain: 1, wool: 1 } }
+    state.phase = 'trade-response'
+    state.actingPlayerId = you.id
+  }
+  if (stage === 'trade-watch') {
+    state.pendingTrade = { fromPlayerId: atlas.id, toPlayerId: ember.id, give: { brick: 1 }, receive: { wool: 2 } }
+    state.phase = 'trade-response'
+    state.actingPlayerId = ember.id
+  }
   const view = getPlayerView(state, state.players[0].id)
   return { game: toDisplayState(view), viewerPlayerId: state.players[0].id }
 }
@@ -90,7 +118,9 @@ export default function App() {
   const preview = useMemo(uiPreviewStage, [])
   const previewState = useMemo(() => preview ? buildUiPreview(preview) : undefined, [preview])
   const [stage, setStage] = useState<JourneyStage>(preview ? (preview === 'summary' || preview === 'introduction' ? preview : 'match') : initialRoomCode ? 'join' : 'title')
-  const [dialog, setDialog] = useState<DialogName>(preview === 'trade' || preview === 'cards' || preview === 'rules' || preview === 'history' ? preview : null)
+  const [dialog, setDialog] = useState<DialogName>(preview?.startsWith('trade') && preview !== 'trade-response' && preview !== 'trade-watch'
+    ? 'trade'
+    : preview === 'cards' || preview === 'rules' || preview === 'history' ? preview : null)
   const [placementMode, setPlacementMode] = useState<PlacementMode>(null)
   const [pendingAction, setPendingAction] = useState<GameAction>()
   const displayedGame = game ?? previewState?.game ?? previewGame
@@ -130,11 +160,16 @@ export default function App() {
     setPendingAction(undefined)
   }, [hasCredentials, room])
 
+  // The trade table survives the handoff to the other seat. An offer you sent is
+  // still your offer while they think about it, and a declined one has to come
+  // back to a live table so it can be retargeted rather than simply vanishing.
+  const offerOut = Boolean(game?.pendingTrade && viewerPlayerId && game.pendingTrade.fromPlayerId === viewerPlayerId)
+
   useEffect(() => {
     if (preview) return
     if (viewerMustAct && game?.phase === 'action') return
     setPlacementMode(null)
-    if (!viewerMustAct) setDialog(null)
+    if (!viewerMustAct && !offerOut) setDialog(null)
     if (!viewerMustAct) setPendingAction(undefined)
   }, [game?.phase, viewerMustAct])
 
@@ -224,6 +259,7 @@ export default function App() {
       presentation={presentation}
       muted={muted}
       placementMode={placementMode}
+      dialog={dialog}
       pendingAction={pendingAction}
       error={hudError}
       onDialog={setDialog}

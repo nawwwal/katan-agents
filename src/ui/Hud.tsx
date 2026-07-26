@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { currentActorId } from '../game/engine'
 import { visibleScore } from '../game/room'
-import type { AgentStatus, GameAction, GameDisplayState, Resource, Resources } from '../game/types'
+import type { AgentStatus, GameAction, GameDisplayState, Resource } from '../game/types'
 import type { GamePresentation } from '../game/useGame'
 import { RESOURCES, emptyResources } from '../game/types'
 import type { PlacementMode } from '../scene/GameScene'
@@ -9,8 +9,10 @@ import {
   BUILD_ICON, BookIcon, CardsIcon, DiceIcon, DiePips, FlagIcon, HandIcon, HomeIcon, KnightIcon,
   LargestArmyIcon, LongestRoadIcon, ResourceGlyph, RobberIcon, ScrollIcon, SoundOffIcon, SoundOnIcon, TradeIcon,
 } from './Icons'
-import { BUILD_COSTS, RESOURCE_IMAGE, RESOURCE_LABEL } from './gameVisuals'
+import { TradeWatch } from './Trade'
+import { BUILD_COSTS, RESOURCE_IMAGE, RESOURCE_LABEL, buildHand } from './gameVisuals'
 import { uiSound, useControlSound } from './uiSound'
+import { useRovingFocus } from './useRovingFocus'
 
 export type DialogName = 'trade' | 'cards' | 'rules' | 'history' | null
 
@@ -22,6 +24,7 @@ type HudProps = {
   presentation?: GamePresentation
   muted: boolean
   placementMode: PlacementMode
+  dialog: DialogName
   pendingAction?: GameAction
   error?: string
   onDialog: (dialog: DialogName) => void
@@ -40,14 +43,14 @@ const phaseCopy: Record<GameDisplayState['phase'], string> = {
   'setup-settlement': 'Place settlement',
   'setup-road': 'Place adjacent road',
   'pre-roll': 'Roll dice',
-  action: 'Build · trade · cards',
+  action: 'Build and trade',
   discard: 'Discard half',
   'move-robber': 'Move robber',
   'choose-victim': 'Choose rival',
   'road-building': 'Place free roads',
   'year-of-plenty': 'Choose two resources',
   monopoly: 'Choose one resource',
-  'trade-response': 'Trade waiting',
+  'trade-response': 'Answer pending',
   'game-over': 'Match complete',
 }
 
@@ -65,7 +68,7 @@ const coachCopy: Partial<Record<GameDisplayState['phase'], string>> = {
   'road-building': 'Place up to two free roads, or finish early.',
   'year-of-plenty': 'Take any two cards the bank can still supply.',
   monopoly: 'Name one resource; every rival gives you all of that type.',
-  'trade-response': 'Accept, decline, or send a counteroffer without revealing your hand.',
+  'trade-response': 'Accept, decline, or counter. Nothing about your hand is revealed either way.',
 }
 
 const countResources = (game: GameDisplayState, playerId: string) => {
@@ -103,9 +106,12 @@ function TurnPanel({ game, humanId, thinkingPlayerId, agentStatuses, onAction, p
           : 'Move robber to suggested hex'
   // One fixed footprint: the phase line and the detail line are always both present,
   // so nothing below the panel ever moves as the turn changes.
-  const detail = waiting
-    ? thinkingPlayerId === actorId && agentStage === 'thinking' ? 'Choosing a move' : `${actor?.name ?? 'A player'} is acting`
-    : coachCopy[game.phase] ?? 'Your move.'
+  const yourOfferOut = game.phase === 'trade-response' && game.pendingTrade?.fromPlayerId === humanId
+  const detail = yourOfferOut
+    ? `Offer sent. Waiting on ${actor?.name ?? 'them'}.`
+    : waiting
+      ? thinkingPlayerId === actorId && agentStage === 'thinking' ? 'Choosing a move' : `${actor?.name ?? 'A player'} is acting`
+      : coachCopy[game.phase] ?? 'Your move.'
   return <section ref={panelRef} className={`turn-panel ${waiting ? 'waiting' : ''}`} aria-live="polite" tabIndex={-1}>
     <div className="turn-owner">
       <span className={`player-crest ${actor?.color ?? 'ivory'}`}>{actor?.name.slice(0, 1)}</span>
@@ -170,26 +176,6 @@ function PlayerRail({ game, humanId, agentStatuses, muted, onMuted }: Pick<HudPr
 
 /* ----------------------------------------------------------------- hand -- */
 
-type HandCard = { key: string; resource: Resource; index: number; stacked: number }
-
-/**
- * Turns a resource count into card objects. Three lumber is three cards, not a chip
- * reading "3". Above the threshold a resource collapses into one stack carrying a
- * numeral, which also keeps the rendered node count inside the animation budget.
- */
-const buildHand = (resources: Resources) => {
-  const total = RESOURCES.reduce((sum, resource) => sum + resources[resource], 0)
-  const threshold = total <= 12 ? 4 : total <= 18 ? 3 : total <= 26 ? 2 : 1
-  const cards: HandCard[] = []
-  for (const resource of RESOURCES) {
-    const count = resources[resource]
-    if (!count) continue
-    if (count > threshold) cards.push({ key: `${resource}-stack`, resource, index: 0, stacked: count })
-    else for (let index = 0; index < count; index += 1) cards.push({ key: `${resource}-${index}`, resource, index, stacked: 0 })
-  }
-  return cards
-}
-
 /** Flags a card for one beat when its count moves, so gains and spends register peripherally. */
 const useCountPulse = (counts: Record<string, number>) => {
   const previous = useRef(counts)
@@ -209,26 +195,6 @@ const useCountPulse = (counts: Record<string, number>) => {
     return () => window.clearTimeout(timeout)
   }, [signature])
   return pulses
-}
-
-/**
- * Roving tabindex: the whole hand is one tab stop, arrow keys walk the cards. That
- * replaces six sequential stops and keeps an overlapped card reachable without
- * relying on its visible strip.
- */
-const useRovingFocus = (length: number) => {
-  const [active, setActive] = useState(0)
-  const listRef = useRef<HTMLDivElement>(null)
-  const index = length ? Math.min(active, length - 1) : 0
-  const onKeyDown = (event: React.KeyboardEvent) => {
-    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : event.key === 'Home' ? -length : event.key === 'End' ? length : 0
-    if (!step || !length) return
-    event.preventDefault()
-    const next = Math.max(0, Math.min(length - 1, index + step))
-    setActive(next)
-    listRef.current?.querySelectorAll<HTMLElement>('[data-roving]')[next]?.focus()
-  }
-  return { listRef, index, setActive, onKeyDown }
 }
 
 type HandProps = Pick<HudProps, 'game' | 'humanId'> & { costPreview: CostPreview; yourTurn: boolean }
@@ -383,9 +349,9 @@ const actionLabel: Partial<Record<GameAction['type'], string>> = {
   'build-road': 'Road built',
   'build-city': 'City raised',
   'buy-development': 'Development card bought',
-  'maritime-trade': 'Harbor trade complete',
-  'offer-trade': 'Trade offered',
-  'counter-trade': 'Counteroffer made',
+  'maritime-trade': 'Traded at the harbor',
+  'offer-trade': 'Offer sent',
+  'counter-trade': 'Counteroffer sent',
   'respond-trade': 'Trade answered',
   'move-robber': 'Robber moved',
   'end-turn': 'Turn passed',
@@ -457,7 +423,10 @@ export function Hud(props: HudProps) {
     <PlayerRail game={game} humanId={props.humanId} agentStatuses={props.agentStatuses} muted={muted} onMuted={onMuted} />
     {/* One continuous band along the bottom edge: your hand flowing into your commands.
         No tray, no utility cluster, no rounded box floating above the edge. */}
-    <div className="table-band">
+    {/* The trade table draws the same hand at the same edge, so the band steps
+        aside rather than stacking a second fan under it. Hidden, never unmounted:
+        nothing in the bottom band is allowed to reflow. */}
+    <div className={`table-band ${props.dialog === 'trade' ? 'handed-off' : ''}`}>
       <div className="band-hand">
         <ResourceHand game={game} humanId={props.humanId} costPreview={costPreview} yourTurn={humanTurn} />
         <div className="hand-marks">
@@ -467,6 +436,7 @@ export function Hud(props: HudProps) {
       </div>
       <Commands {...props} onCostPreview={setCostPreview} />
     </div>
+    <TradeWatch game={game} humanId={props.humanId} />
     <DiceMoment game={game} presentation={props.presentation} />
     {props.presentation ? <TransitionMoment key={props.presentation.revision} presentation={props.presentation} humanId={props.humanId} /> : null}
     {props.pendingAction ? <ActionPreview action={props.pendingAction} onConfirm={props.onConfirmAction} onCancel={props.onCancelAction} /> : null}
