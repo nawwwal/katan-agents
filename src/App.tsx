@@ -164,7 +164,14 @@ export default function App() {
   }, [boardSeed, boardOptions])
   const preview = useMemo(uiPreviewStage, [])
   const previewState = useMemo(() => preview ? buildUiPreview(preview) : undefined, [preview])
-  const [stage, setStage] = useState<JourneyStage>(preview ? (preview === 'summary' || preview === 'introduction' ? preview : 'match') : initialRoomCode ? 'join' : 'title')
+  // A reload that still holds a seat token opens on the reconnecting shell, not
+  // on the join form. The old order asked a seated player to join a room they
+  // were already in, and only left that screen once a snapshot arrived, so a
+  // socket that could not land left them staring at a form while holding a live
+  // seat. `join` is now reached only by a room that actually refuses the token.
+  const [stage, setStage] = useState<JourneyStage>(preview
+    ? (preview === 'summary' || preview === 'introduction' ? preview : 'match')
+    : hasCredentials ? 'reconnecting' : initialRoomCode ? 'join' : 'title')
   const [dialog, setDialog] = useState<DialogName>(preview?.startsWith('trade') && preview !== 'trade-response' && preview !== 'trade-watch'
     ? 'trade'
     : preview === 'cards' || preview === 'rules' || preview === 'history' ? preview : null)
@@ -208,9 +215,14 @@ export default function App() {
     else setStage('summary')
   }, [room?.code, room?.status])
 
+  // Losing the credentials is the room refusing the seat: the hook clears them
+  // only on `invalid_seat_token` or `room_not_found`. That, and only that, is
+  // what turns the reconnecting shell into the join form. Every other failure
+  // keeps retrying behind the shell with the seat still held.
   useEffect(() => {
-    if (hasCredentials || !room) return
-    setStage('join')
+    if (hasCredentials) return
+    setStage((current) => room || current === 'reconnecting' ? 'join' : current)
+    if (!room) return
     setDialog(null)
     setPlacementMode(null)
     setPendingAction(undefined)

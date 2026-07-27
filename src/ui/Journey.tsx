@@ -6,7 +6,25 @@ import type { RoomView } from '../game/room'
 import type { RoomConnectionState } from '../game/useGame'
 import { ChevronLeftIcon, LargestArmyIcon, LongestRoadIcon, VictoryIcon } from './Icons'
 
-export type JourneyStage = 'title' | 'create' | 'join' | 'lobby' | 'introduction' | 'match' | 'summary'
+/**
+ * `reconnecting` is a real stage, not a flag on the join screen. A reload that
+ * still holds a seat token is not a player who wants to join a room; they are
+ * already in one. Showing them the join form while their seat is live was the
+ * surface that made a held seat look like a lost one.
+ */
+export type JourneyStage = 'title' | 'create' | 'join' | 'reconnecting' | 'lobby' | 'introduction' | 'match' | 'summary'
+
+const connectionLabel: Record<RoomConnectionState, string> = {
+  idle: 'Offline',
+  connecting: 'Connecting',
+  connected: 'Live',
+  // Third state on purpose. Collapsing this into "Connecting" hid the difference
+  // between a first attempt and a socket that keeps failing while a seat is held.
+  reconnecting: 'Reconnecting',
+}
+
+const ConnectionPill = ({ state }: { state: RoomConnectionState }) =>
+  <span className={`connection-pill ${state}`}><i />{connectionLabel[state]}</span>
 
 const colors: PlayerColor[] = ['coral', 'blue', 'amber', 'ivory']
 const colorNames: Record<PlayerColor, string> = {
@@ -64,7 +82,7 @@ const copyText = async (value: string) => {
   }
 }
 
-const desertChoices: Array<[DesertPlacement, string]> = [['random', 'Anywhere'], ['center', 'Centre'], ['edge', 'Coast']]
+const desertChoices: Array<[DesertPlacement, string]> = [['random', 'Anywhere'], ['center', 'Center'], ['edge', 'Coast']]
 const harborChoices: Array<[HarborLayout, string]> = [['shuffled', 'Shuffled'], ['fixed', 'Classic']]
 
 export function Journey({ stage, room, game, viewerPlayerId, busy, connectionState, error, initialRoomCode = '', boardSeed, boardOptions, boardRelaxed, onShuffleBoard, onBoardSeed, onBoardOptions, onChoose, onCreate, onJoin, onBack, onStart, onEnter, onRematch }: JourneyProps) {
@@ -104,6 +122,24 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
         </ol>
         <div className="summary-events"><strong>Closing moments</strong>{game.events.slice(-3).map((event) => <span key={event.id}>{event.message}</span>)}</div>
         <div className="summary-actions"><button className="journey-secondary" onClick={onBack}>Leave table</button>{room?.isHost ? <button className="journey-primary" onClick={onRematch}>Start rematch</button> : <span className="waiting-copy">Waiting for the host</span>}</div>
+      </div>
+    </section>
+  }
+
+  if (stage === 'reconnecting') {
+    const code = room?.code ?? initialRoomCode
+    return <section ref={stageRef} className="journey-layer configure-screen" aria-labelledby="reconnecting-title" tabIndex={-1}>
+      <div className="configuration-card reconnect-card">
+        <header>
+          <button type="button" className="journey-back" onClick={onBack} aria-label="Leave the room"><ChevronLeftIcon /></button>
+          <div><span>{code ? `Room ${code}` : 'Private room'}</span><h2 id="reconnecting-title">Getting you back to the table</h2></div>
+          <ConnectionPill state={connectionState} />
+        </header>
+        <div className="reconnect-body">
+          <p>Your seat is still held. The island lives on the server, so nothing has been lost, and play resumes where you left it the moment the room answers.</p>
+          {error ? <p className="journey-error" role="alert">{error}</p> : null}
+        </div>
+        <footer><p>Leaving gives the seat up.</p><button type="button" className="journey-secondary" onClick={onBack}>Leave the room</button></footer>
       </div>
     </section>
   }
@@ -165,7 +201,7 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
               <div className="board-option"><span id="desert-label">Desert</span><div className="seat-count" role="group" aria-labelledby="desert-label">
                 {desertChoices.map(([value, label]) => <button key={value} type="button" aria-pressed={boardOptions.desert === value} className={boardOptions.desert === value ? 'active' : ''} onClick={() => setOption('desert', value)}>{label}</button>)}
               </div></div>
-              <div className="board-option"><span id="harbor-label">Harbours</span><div className="seat-count" role="group" aria-labelledby="harbor-label">
+              <div className="board-option"><span id="harbor-label">Harbors</span><div className="seat-count" role="group" aria-labelledby="harbor-label">
                 {harborChoices.map(([value, label]) => <button key={value} type="button" aria-pressed={boardOptions.harbors === value} className={boardOptions.harbors === value ? 'active' : ''} onClick={() => setOption('harbors', value)}>{label}</button>)}
               </div></div>
               <label className="board-toggle"><input type="checkbox" checked={boardOptions.balancedPips} onChange={(event) => setOption('balancedPips', event.target.checked)} />Balance the pips, so no corner of the island is starved or overloaded</label>
@@ -196,8 +232,11 @@ export function Journey({ stage, room, game, viewerPlayerId, busy, connectionSta
         <header>
           <button className="journey-back" onClick={onBack} aria-label="Leave room"><ChevronLeftIcon /></button>
           <div><span>Private room</span><h2 id="lobby-title">Gather the table</h2></div>
-          <span className={`connection-pill ${connectionState}`}><i />{connectionState === 'connected' ? 'Live' : 'Connecting'}</span>
+          <ConnectionPill state={connectionState} />
         </header>
+        {/* The lobby used to swallow every error the hook raised, so a refused
+            start or an unreachable room looked like a button that did nothing. */}
+        {error ? <p className="journey-error lobby-error" role="alert">{error}</p> : null}
         <div className="room-invite">
           <div><span>Room code</span><strong data-testid="room-code">{room.code}</strong>{room.boardSeed === undefined ? null : <em className="island-seed">Island {room.boardSeed}</em>}</div>
           <div className="invite-actions"><button onClick={() => doCopy('code', room.code)}>{copied === 'code' ? 'Copied' : 'Copy code'}</button><button onClick={() => doCopy('link', shareUrl)}>{copied === 'link' ? 'Copied' : 'Copy invite link'}</button><button className="agent-invite-trigger" onClick={() => doCopy('universal', universalInvite)} title="Paste into Claude, Codex, Grok, Cursor, or any MCP agent">{copied === 'universal' ? 'Copied' : 'Copy agent invite'}</button></div>
