@@ -9,9 +9,9 @@ export type ProceduralModelRuntime = {
 }
 
 const loader = new THREE.TextureLoader()
-const groundAlbedo = loader.load('/assets/generated/forest/ground-albedo-runtime.png')
-const groundNormal = loader.load('/assets/generated/forest/ground-normal.png')
-const groundRoughness = loader.load('/assets/generated/forest/ground-roughness.png')
+const groundAlbedo = loader.load('/assets/generated/forest/ground-albedo-runtime.webp')
+const groundNormal = loader.load('/assets/generated/forest/ground-normal.webp')
+const groundRoughness = loader.load('/assets/generated/forest/ground-roughness.webp')
 const loadMaterialTexture = (path: string, color = false) => {
   const texture = loader.load(path)
   texture.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace
@@ -21,15 +21,15 @@ const loadMaterialTexture = (path: string, color = false) => {
   texture.anisotropy = 8
   return texture
 }
-const needleAlbedo = loadMaterialTexture('/assets/generated/forest/materials/needles-albedo-runtime.png?v=2', true)
-const needleNormal = loadMaterialTexture('/assets/generated/forest/materials/needles-normal.png')
-const needleRoughness = loadMaterialTexture('/assets/generated/forest/materials/needles-roughness.png')
+const needleAlbedo = loadMaterialTexture('/assets/generated/forest/materials/needles-albedo-runtime.webp', true)
+const needleNormal = loadMaterialTexture('/assets/generated/forest/materials/needles-normal.webp')
+const needleRoughness = loadMaterialTexture('/assets/generated/forest/materials/needles-roughness.webp')
 for (const texture of [groundAlbedo, groundNormal, groundRoughness]) {
   texture.colorSpace = texture === groundAlbedo ? THREE.SRGBColorSpace : THREE.NoColorSpace
   texture.anisotropy = 8
 }
 
-const sideAlbedo = loader.load('/assets/generated/forest/side-albedo-runtime.png')
+const sideAlbedo = loader.load('/assets/generated/forest/side-albedo-runtime.webp')
 sideAlbedo.colorSpace = THREE.SRGBColorSpace
 sideAlbedo.wrapS = THREE.RepeatWrapping
 sideAlbedo.repeat.set(3, 1)
