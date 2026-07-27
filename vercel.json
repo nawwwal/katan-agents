@@ -7,6 +7,20 @@
     { "source": "/api/rooms/:path*", "destination": "/api/server" },
     { "source": "/api/ws", "destination": "/api/server" }
   ],
+  "headers": [
+    {
+      "source": "/assets/baked/manifest.json",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=300, stale-while-revalidate=3600" }
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=604800, stale-while-revalidate=2592000" }
+      ]
+    }
+  ],
   "functions": {
     "api/server.ts": {
       "maxDuration": 300,

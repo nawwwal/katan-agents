@@ -1,0 +1,21 @@
+# Nothing here is read by `tsc -b && vite build` or served to a player.
+# Keeping it out of the upload keeps deployments small and stops a visitor
+# ever being able to pull a source asset the game does not use.
+
+# Reference boards and critique sheets. Repo-only, 264MB of them.
+art/
+docs/
+
+# Bake inputs and intermediates. `-runtime` variants are the ones the game
+# loads; these are the sources they were derived from.
+public/assets/generated/forest/source-sam.glb
+public/assets/generated/forest/ground-albedo.png
+public/assets/generated/forest/side-albedo.png
+public/assets/generated/forest/materials/needles-albedo.png
+public/assets/generated/forest/materials/needles-albedo-delighted.png
+public/assets/generated/forest/materials/stone-albedo.png
+public/assets/generated/forest/materials/stone-albedo-runtime.png
+public/assets/generated/forest/materials/stone-albedo-delighted.png
+public/assets/generated/forest/materials/stone-normal.png
+public/assets/generated/forest/materials/stone-roughness.png
+public/assets/generated/forest/sprays/

@@ -34,6 +34,18 @@ const MAX_RECONNECT_MS = 10_000
 
 /** Consecutive attempts that never reached a snapshot before we say so out loud. */
 const UNREACHABLE_AFTER = 3
+
+/**
+ * How long a hidden tab keeps its socket before letting go of it.
+ *
+ * A backgrounded tab cannot show anything, but it will happily hold a
+ * connection open and beat every fifteen seconds for as long as the browser
+ * lives, which on the server side is a room and a function held for a player
+ * who walked away. The seat itself is kept by the room for a day, so dropping
+ * the socket costs nothing: coming back to the tab reconnects and pulls a fresh
+ * snapshot. Nobody loses their place by minimising the window.
+ */
+const IDLE_SLEEP_MS = 5 * 60_000
 const normalizeRoomCode = (value: string | null | undefined) => value?.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6) ?? ''
 const sessionKey = (code: string) => `${SESSION_PREFIX}:${normalizeRoomCode(code)}`
 
@@ -158,6 +170,10 @@ export const useGame = () => {
     let heartbeat = 0
     let reconnectDelay = 250
     let failures = 0
+    // Asleep is not stopped. The effect is still live and the seat is still
+    // ours; we simply hold no socket until the tab is looked at again.
+    let sleeping = false
+    let sleepTimer = 0
 
     const connect = () => {
       if (stopped) return
@@ -229,7 +245,7 @@ export const useGame = () => {
       })
       socket.addEventListener('close', () => {
         window.clearInterval(heartbeat)
-        if (stopped) return
+        if (stopped || sleeping) return
         // A move that was in flight did not land. Releasing it is what keeps the
         // next tap from being swallowed by a submit that can never resolve.
         const lostMove = pendingRevisionRef.current !== undefined
@@ -247,9 +263,44 @@ export const useGame = () => {
       socket.addEventListener('error', () => socket.close())
     }
 
+    const sleep = () => {
+      if (sleeping) return
+      sleeping = true
+      window.clearTimeout(reconnectTimer)
+      window.clearInterval(heartbeat)
+      // A move cannot be in flight after five idle minutes, but if one somehow
+      // is, release it so the first tap after waking is not swallowed.
+      if (pendingRevisionRef.current !== undefined) {
+        pendingRevisionRef.current = undefined
+        setSubmitting(false)
+      }
+      setConnectionState('reconnecting')
+      socketRef.current?.close()
+      socketRef.current = undefined
+    }
+
+    const wake = () => {
+      if (!sleeping) return
+      sleeping = false
+      reconnectDelay = 250
+      failures = 0
+      connect()
+    }
+
+    const onVisibility = () => {
+      window.clearTimeout(sleepTimer)
+      if (document.hidden) sleepTimer = window.setTimeout(sleep, IDLE_SLEEP_MS)
+      else wake()
+    }
+
+    document.addEventListener('visibilitychange', onVisibility)
+    if (document.hidden) sleepTimer = window.setTimeout(sleep, IDLE_SLEEP_MS)
+
     connect()
     return () => {
       stopped = true
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.clearTimeout(sleepTimer)
       window.clearTimeout(reconnectTimer)
       window.clearInterval(heartbeat)
       socketRef.current?.close()
