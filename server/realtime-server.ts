@@ -1,6 +1,6 @@
 import http from 'node:http'
 import { WebSocketServer, WebSocket } from 'ws'
-import { assertSeatLive, clientIdentity, createRoom, enforceRateLimit, getRoomView, joinRoom, onRoomChange, playRoomAction, releaseRateLimit, RoomError, roomStoreHealth, startRoom } from './room-service.js'
+import { assertRoomLive, clientIdentity, createRoom, enforceRateLimit, getRoomView, joinRoom, onRoomChange, playRoomAction, releaseRateLimit, RoomError, roomStoreHealth, startRoom, tryGetRoomViews } from './room-service.js'
 import { parseClientRoomMessage } from '../src/game/room.js'
 import type { ServerRoomMessage } from '../src/game/room.js'
 import { handleHostedMcp } from './hosted-mcp.js'
@@ -102,9 +102,24 @@ export const createRealtimeServer = () => {
   let stopRoomEvents: (() => void) | undefined
 
   const broadcastRoom = async (code?: string) => {
-    await Promise.all([...connections].flatMap(([socket, connection]) => {
-      if (!connection.code || (code && connection.code !== code) || !connection.token || socket.readyState !== WebSocket.OPEN) return []
-      return [getRoomView(connection.code, connection.token).then((room) => send(socket, { type: 'snapshot', room })).catch(() => socket.close(4003, 'Seat expired'))]
+    const rooms = new Map<string, Array<[WebSocket, Connection]>>()
+    for (const [socket, connection] of connections) {
+      if (!connection.code || (code && connection.code !== code) || !connection.token || socket.readyState !== WebSocket.OPEN) continue
+      const entries = rooms.get(connection.code) ?? []
+      entries.push([socket, connection])
+      rooms.set(connection.code, entries)
+    }
+    await Promise.all([...rooms].map(async ([roomCode, entries]) => {
+      try {
+        const views = await tryGetRoomViews(roomCode, entries.map(([, connection]) => connection.token!))
+        for (const [index, [socket]] of entries.entries()) {
+          const room = views[index]
+          if (room) send(socket, { type: 'snapshot', room })
+          else socket.close(4003, 'Seat expired')
+        }
+      } catch {
+        for (const [socket] of entries) socket.close(4003, 'Seat expired')
+      }
     }))
   }
 
@@ -235,11 +250,11 @@ export const createRealtimeServer = () => {
           }
         }
         if (message.type === 'hello') return send(socket, { type: 'error', error: { code: 'already_authenticated', message: 'This socket already owns a seat.' } })
-        // The heartbeat is the client's only way to tell a quiet room from a room
-        // that is gone, so it answers for the seat rather than for the socket.
+        // The seat was authenticated during hello. Later heartbeats only need
+        // to tell a quiet room from one that is gone.
         if (message.type === 'ping') {
           try {
-            await assertSeatLive(connection.code, connection.token)
+            await assertRoomLive(connection.code)
           } catch (error) {
             const roomError = error instanceof RoomError ? error : new RoomError('server_error', 'The room could not be reached.', 500)
             return refuse(socket, roomError, 4003, 'Room gone')

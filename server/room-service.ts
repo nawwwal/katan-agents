@@ -80,7 +80,8 @@ const parseRoom = (value: string | null) => value ? JSON.parse(value) as StoredR
 const getStoredRoom = async (code: string) => {
   assertRoomStore()
   const normalized = normalizeCode(code)
-  const room = redis ? parseRoom(await redis.get(roomKey(normalized))) : localRooms.get(normalized)
+  if (redis) return parseRoom(await redis.get(roomKey(normalized)))
+  const room = localRooms.get(normalized)
   return room ? cloneRoom(room) : undefined
 }
 
@@ -248,14 +249,14 @@ export const releaseRateLimit = async (scope: RateScope, identity: string) => {
 }
 
 /**
- * The cheapest honest answer to "is this seat still real": no player view, no
- * board clone. A live socket asks this on every heartbeat, which is how a client
- * tells a quiet room from one that is gone.
+ * A socket reaches this only after its seat token passed `getRoomView`.
+ * ponytail: seats are append-only; restore token checks if revocation is added.
  */
-export const assertSeatLive = async (code: string, token: string) => {
-  const room = await getStoredRoom(code)
-  if (!room) throw new RoomError('room_not_found', 'No room with that code. Check the six characters, or ask the host for a fresh code.', 404)
-  if (!seatForToken(room, token)) throw new RoomError('invalid_seat_token', 'This seat is no longer yours. Rejoin with the room code.', 403)
+export const assertRoomLive = async (code: string) => {
+  assertRoomStore()
+  const normalized = normalizeCode(code)
+  const exists = redis ? await redis.exists(roomKey(normalized)) : Number(localRooms.has(normalized))
+  if (!exists) throw new RoomError('room_not_found', 'No room with that code. Check the six characters, or ask the host for a fresh code.', 404)
 }
 
 /**
@@ -367,6 +368,18 @@ export const getRoomView = async (code: string, token: string) => {
   const room = await getStoredRoom(code)
   if (!room) throw new RoomError('room_not_found', 'No room with that code. Check the six characters, or ask the host for a fresh code.', 404)
   return roomView(room, token)
+}
+
+export const tryGetRoomViews = async (code: string, tokens: string[]) => {
+  const room = await getStoredRoom(code)
+  if (!room) return tokens.map(() => undefined)
+  return tokens.map((token) => {
+    try {
+      return roomView(room, token)
+    } catch {
+      return undefined
+    }
+  })
 }
 
 export const startRoom = async (code: string, token: string) => mutateRoom(code, (room) => {
@@ -485,12 +498,10 @@ export const onRoomChange = (listener: (code?: string) => void) => {
 }
 
 export const waitForRoomChange = async (code: string, token: string, afterUpdatedAt: number, timeoutMs: number) => {
-  const current = await getRoomView(code, token)
-  if (current.updatedAt > afterUpdatedAt) return { room: current, timedOut: false }
-
   return new Promise<{ room: RoomView; timedOut: boolean }>((resolve, reject) => {
     let settled = false
     let reading = false
+    let readAgain = false
     const finish = (room: RoomView, timedOut: boolean) => {
       if (settled) return
       settled = true
@@ -506,11 +517,21 @@ export const waitForRoomChange = async (code: string, token: string, afterUpdate
       reject(error)
     }
     const read = async () => {
-      if (settled || reading) return
+      if (settled) return
+      if (reading) {
+        readAgain = true
+        return
+      }
       reading = true
       try {
-        const room = await getRoomView(code, token)
-        if (room.updatedAt > afterUpdatedAt) finish(room, false)
+        do {
+          readAgain = false
+          const room = await getRoomView(code, token)
+          if (room.updatedAt > afterUpdatedAt) {
+            finish(room, false)
+            return
+          }
+        } while (readAgain && !settled)
       } catch (error) {
         fail(error)
       } finally {
@@ -518,7 +539,7 @@ export const waitForRoomChange = async (code: string, token: string, afterUpdate
       }
     }
     const unsubscribe = onRoomChange((changedCode) => {
-      if (!changedCode || changedCode === current.code) void read()
+      if (!changedCode || changedCode === normalizeCode(code)) void read()
     })
     const timeout = setTimeout(() => {
       void getRoomView(code, token)
