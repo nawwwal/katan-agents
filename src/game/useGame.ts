@@ -45,7 +45,7 @@ const UNREACHABLE_AFTER = 3
  * the socket costs nothing: coming back to the tab reconnects and pulls a fresh
  * snapshot. Nobody loses their place by minimising the window.
  */
-const IDLE_SLEEP_MS = 5 * 60_000
+const IDLE_SLEEP_MS = 60_000
 const normalizeRoomCode = (value: string | null | undefined) => value?.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6) ?? ''
 const sessionKey = (code: string) => `${SESSION_PREFIX}:${normalizeRoomCode(code)}`
 
@@ -176,7 +176,11 @@ export const useGame = () => {
     let sleepTimer = 0
 
     const connect = () => {
-      if (stopped) return
+      if (stopped || sleeping) return
+      if (document.hidden) {
+        sleep()
+        return
+      }
       setConnectionState((state) => state === 'connected' ? 'reconnecting' : 'connecting')
       const socket = new WebSocket(`${window.location.origin.replace(/^http/, 'ws')}/api/ws`)
       socketRef.current = socket
@@ -245,7 +249,12 @@ export const useGame = () => {
       })
       socket.addEventListener('close', () => {
         window.clearInterval(heartbeat)
+        if (socketRef.current === socket) socketRef.current = undefined
         if (stopped || sleeping) return
+        if (document.hidden) {
+          sleep()
+          return
+        }
         // A move that was in flight did not land. Releasing it is what keeps the
         // next tap from being swallowed by a submit that can never resolve.
         const lostMove = pendingRevisionRef.current !== undefined
@@ -266,9 +275,10 @@ export const useGame = () => {
     const sleep = () => {
       if (sleeping) return
       sleeping = true
+      window.clearTimeout(sleepTimer)
       window.clearTimeout(reconnectTimer)
       window.clearInterval(heartbeat)
-      // A move cannot be in flight after five idle minutes, but if one somehow
+      // A move cannot be in flight after a hidden minute, but if one somehow
       // is, release it so the first tap after waking is not swallowed.
       if (pendingRevisionRef.current !== undefined) {
         pendingRevisionRef.current = undefined
@@ -282,6 +292,7 @@ export const useGame = () => {
     const wake = () => {
       if (!sleeping) return
       sleeping = false
+      window.clearTimeout(sleepTimer)
       reconnectDelay = 250
       failures = 0
       connect()
@@ -289,17 +300,23 @@ export const useGame = () => {
 
     const onVisibility = () => {
       window.clearTimeout(sleepTimer)
-      if (document.hidden) sleepTimer = window.setTimeout(sleep, IDLE_SLEEP_MS)
+      if (document.hidden && socketRef.current?.readyState === WebSocket.OPEN) sleepTimer = window.setTimeout(sleep, IDLE_SLEEP_MS)
+      else if (document.hidden) sleep()
       else wake()
     }
+    const onPageShow = () => { if (!document.hidden) wake() }
 
     document.addEventListener('visibilitychange', onVisibility)
-    if (document.hidden) sleepTimer = window.setTimeout(sleep, IDLE_SLEEP_MS)
+    window.addEventListener('pagehide', sleep)
+    window.addEventListener('pageshow', onPageShow)
 
-    connect()
+    if (document.hidden) sleep()
+    else connect()
     return () => {
       stopped = true
       document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', sleep)
+      window.removeEventListener('pageshow', onPageShow)
       window.clearTimeout(sleepTimer)
       window.clearTimeout(reconnectTimer)
       window.clearInterval(heartbeat)
