@@ -14,6 +14,7 @@ export class AgentRoomClient {
   private room?: RoomView
   private socket?: WebSocket
   private reconnectTimer?: NodeJS.Timeout
+  private idleTimer?: NodeJS.Timeout
   private reconnectDelay = 250
   private stopped = false
   private authenticated = false
@@ -21,7 +22,7 @@ export class AgentRoomClient {
   private readonly listeners = new Set<(room: RoomView) => void>()
   private readonly pendingActions = new Map<string, PendingAction>()
 
-  constructor(serverUrl = process.env.KATAN_SERVER_URL ?? 'http://127.0.0.1:8787') {
+  constructor(serverUrl = process.env.KATAN_SERVER_URL ?? 'http://127.0.0.1:8787', private readonly idleMs = 60_000) {
     this.serverUrl = normalizeServerUrl(serverUrl)
   }
 
@@ -31,7 +32,7 @@ export class AgentRoomClient {
   async join(code: string, name: string, serverUrl?: string) {
     if (serverUrl) this.serverUrl = normalizeServerUrl(serverUrl)
     this.stopSocket()
-    this.stopped = false
+    this.resume()
     const normalizedCode = code.trim().toUpperCase().replace(/[^A-Z2-9]/g, '')
     const joinId = randomUUID()
     const playerKey = randomBytes(32).toString('base64url')
@@ -56,52 +57,79 @@ export class AgentRoomClient {
     this.credentials = payload.data.credentials
     this.setRoom(payload.data.room)
     await this.connect()
+    this.armIdle()
     return this.room!
   }
 
+  async read() {
+    if (!this.credentials) throw new Error('Join a room before reading it.')
+    this.resume()
+    try {
+      await this.connect()
+      if (!this.room) throw new Error('The room is no longer available.')
+      return this.room
+    } finally {
+      this.armIdle()
+    }
+  }
+
   async play(expectedRevision: number, action: unknown) {
-    if (!this.credentials || !this.room?.game) throw new Error('Join a room before playing.')
-    if (this.room.game.revision !== expectedRevision) throw new Error(`The room is now at revision ${this.room.game.revision}. Read the current view before playing.`)
-    await this.connect()
-    const socket = this.socket
-    if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error('The room is reconnecting. Wait for the connection, then try again.')
-    const requestId = randomUUID()
-    const result = new Promise<RoomView>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pendingActions.delete(requestId)
-        reject(new Error('The action was not confirmed within 12 seconds. Read the room again before retrying.'))
-      }, 12_000)
-      this.pendingActions.set(requestId, { expectedRevision, resolve, reject, timeout })
-    })
-    socket.send(JSON.stringify({ type: 'action', requestId, expectedRevision, action }))
-    return result
+    if (!this.credentials) throw new Error('Join a room before playing.')
+    this.resume()
+    try {
+      await this.connect()
+      if (!this.room?.game) throw new Error('Join a room before playing.')
+      if (this.room.game.revision !== expectedRevision) throw new Error(`The room is now at revision ${this.room.game.revision}. Read the current view before playing.`)
+      const socket = this.socket
+      if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error('The room is reconnecting. Wait for the connection, then try again.')
+      const requestId = randomUUID()
+      const result = new Promise<RoomView>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          this.pendingActions.delete(requestId)
+          reject(new Error('The action was not confirmed within 12 seconds. Read the room again before retrying.'))
+        }, 12_000)
+        this.pendingActions.set(requestId, { expectedRevision, resolve, reject, timeout })
+      })
+      socket.send(JSON.stringify({ type: 'action', requestId, expectedRevision, action }))
+      return await result
+    } finally {
+      this.armIdle()
+    }
   }
 
   async waitForTurn(timeoutMs: number) {
-    if (!this.room) throw new Error('Join a room before waiting for a turn.')
-    const deadline = Date.now() + timeoutMs
-    while (true) {
-      const current: RoomView | undefined = this.room
-      if (!current) throw new Error('The room is no longer available.')
-      if (current.status === 'finished') return { room: current, timedOut: false }
-      if (current.status === 'playing' && current.game) {
-        const publicState: PublicGameState = current.game.publicState
-        const actorIndex = publicState.actingPlayerId
-          ? publicState.players.findIndex((player) => player.id === publicState.actingPlayerId)
-          : publicState.phase === 'discard'
-            ? publicState.players.findIndex((player) => player.id === publicState.discardQueue[0])
-            : publicState.activePlayerIndex
-        const actorId = publicState.players[actorIndex]?.id
-        if (actorId === current.viewerPlayerId && current.game.legalActions.length) return { room: current, timedOut: false }
+    if (!this.credentials) throw new Error('Join a room before waiting for a turn.')
+    this.resume()
+    try {
+      await this.connect()
+      const deadline = Date.now() + timeoutMs
+      while (true) {
+        const current: RoomView | undefined = this.room
+        if (!current) throw new Error('The room is no longer available.')
+        if (current.status === 'finished') return { room: current, timedOut: false }
+        if (current.status === 'playing' && current.game) {
+          const publicState: PublicGameState = current.game.publicState
+          const actorIndex = publicState.actingPlayerId
+            ? publicState.players.findIndex((player) => player.id === publicState.actingPlayerId)
+            : publicState.phase === 'discard'
+              ? publicState.players.findIndex((player) => player.id === publicState.discardQueue[0])
+              : publicState.activePlayerIndex
+          const actorId = publicState.players[actorIndex]?.id
+          if (actorId === current.viewerPlayerId && current.game.legalActions.length) return { room: current, timedOut: false }
+        }
+        const remaining = deadline - Date.now()
+        if (remaining <= 0) return { room: current, timedOut: true }
+        await this.waitForChange(current.updatedAt, Math.min(remaining, 5_000))
       }
-      const remaining = deadline - Date.now()
-      if (remaining <= 0) return { room: current, timedOut: true }
-      await this.waitForChange(current.updatedAt, Math.min(remaining, 5_000))
+    } finally {
+      this.armIdle()
     }
   }
 
   close() {
     this.stopped = true
+    if (this.idleTimer) clearTimeout(this.idleTimer)
+    this.idleTimer = undefined
     this.stopSocket()
     for (const pending of this.pendingActions.values()) {
       clearTimeout(pending.timeout)
@@ -204,6 +232,23 @@ export class AgentRoomClient {
       void this.connect().catch(() => this.scheduleReconnect())
     }, this.reconnectDelay)
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, 5_000)
+  }
+
+  private resume() {
+    this.stopped = false
+    if (this.idleTimer) clearTimeout(this.idleTimer)
+    this.idleTimer = undefined
+  }
+
+  private armIdle() {
+    if (this.stopped || !this.credentials) return
+    if (this.idleTimer) clearTimeout(this.idleTimer)
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = undefined
+      this.stopped = true
+      this.stopSocket()
+    }, this.idleMs)
+    this.idleTimer.unref?.()
   }
 
   private stopSocket() {

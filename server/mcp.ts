@@ -45,8 +45,7 @@ server.registerTool('get_board', {
   title: 'Read the island once',
   description: 'Read the static island: hexes with terrain and number, which hexes each corner touches, which corners each road slot joins, and the harbors. None of it changes for the whole game, so call it once and keep the answer. get_view carries everything that moves, including the robber.',
 }, async () => {
-  if (!client.view) throw new Error('Join a room first.')
-  const room = client.view
+  const room = await client.read()
   if (!room.game) return textResult({ status: room.status, note: 'The host has not started the game, so no island has been dealt yet.' })
   return textResult({
     code: room.code,
@@ -63,8 +62,8 @@ server.registerTool('get_view', {
     afterRevision: z.number().int().min(0).default(0),
   },
 }, async ({ afterRevision }) => {
-  if (!client.view) throw new Error('Join a room first.')
-  return textResult(toAgentView(client.view, { afterRevision, connected: client.connected }))
+  const room = await client.read()
+  return textResult(toAgentView(room, { afterRevision, connected: client.connected }))
 })
 
 server.registerTool('wait_for_turn', {

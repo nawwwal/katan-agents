@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import WebSocket from 'ws'
+import { AgentRoomClient } from './mcp-client'
 import { createRealtimeServer } from './realtime-server'
 import { closeRoomStore } from './room-service'
 import type { RoomView, ServerRoomMessage } from '../src/game/room'
@@ -121,7 +122,23 @@ try {
   await waitForRevision(browsers, before + 1)
   assert.equal(latest(browsers[0]).game?.revision, after.revision)
 
-  console.log('mcp check passed: Codex tool discovery, rules, lobby wait, agent seat join, one-time board, realtime turn, grouped legal action, recoverable stale move, browser fanout')
+  const idleRoomResponse = await post('/api/rooms', { name: 'Idle host', seatsTotal: 3 })
+  const idleRoom = (await idleRoomResponse.json()).data
+  const idleClient = new AgentRoomClient(baseUrl, 20)
+  try {
+    await idleClient.join(idleRoom.credentials.code, 'Sleeper')
+    assert.equal(idleClient.connected, true)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    assert.equal(idleClient.connected, false, 'an unused MCP seat should release its socket')
+    await post(`/api/rooms/${idleRoom.credentials.code}/seats`, { name: 'Late arrival', controller: 'human' })
+    const refreshed = await idleClient.read()
+    assert.equal(idleClient.connected, true)
+    assert.equal(refreshed.seats.length, 3, 'the next tool call must reconnect and read a fresh room snapshot')
+  } finally {
+    idleClient.close()
+  }
+
+  console.log('mcp check passed: Codex tool discovery, rules, lobby wait, agent seat join, one-time board, realtime turn, grouped legal action, recoverable stale move, browser fanout, idle disconnect and fresh resume')
 } finally {
   for (const browser of browsers) browser.socket.close()
   await Promise.all(browsers.map((browser) => browser.socket.readyState === WebSocket.CLOSED ? Promise.resolve() : once(browser.socket, 'close')))
